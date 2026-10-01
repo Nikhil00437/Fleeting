@@ -12,6 +12,7 @@ import json
 import logging
 import re
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -36,24 +37,59 @@ ENRICH_SCHEMA = {
         "title": {"type": "string"},
         "summary": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
-        "action_items": {"type": "array", "items": {"type": "string"}},
+        "action_items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "priority": {"type": "string", "enum": ["P1", "P2", "P3"]},
+                    "due_date": {"type": "string"},
+                    "repo": {"type": "string"},
+                },
+                "required": ["text"],
+            },
+        },
     },
     "required": ["title", "summary", "tags", "action_items"],
 }
 
-ENRICH_SYSTEM = (
+ENRICH_SYSTEM_TEMPLATE = (
+    "Today's date is {today_iso}.\n"
     "You organize raw personal notes for a local note-taking app. "
     "You receive a captured note (possibly a messy voice transcript) and must respond "
     "with ONLY a JSON object with these keys:\n"
     '- "title": a short specific title, max 60 characters, no quotes around it\n'
     '- "summary": 1-3 sentence summary of the key content\n'
     '- "tags": 2-6 short lowercase topical tags (single words or-hyphenated), no "#" prefix\n'
-    '- "action_items": array of concrete actionable tasks stated in the note, as short '
-    "imperative sentences (e.g. 'Update the resume with ARIA deployment experience'). Phrases "
-    "like 'remember to …', 'need to …', 'have to …', 'todo: …' ARE action items — extract them. "
+    '- "action_items": array of concrete actionable tasks stated in the note. '
+    'Each task is an object with:\n'
+    '  - "text": short imperative sentence (e.g. \'Update the resume with ARIA deployment experience\')\n'
+    '  - "priority": \'P1\' for urgent/blocker/asap/critical, \'P3\' for someday/low-priority, \'P2\' for normal\n'
+    '  - "due_date": format as YYYY-MM-DD if mentioned (resolving \'tomorrow\', \'next monday\', etc. relative to today); null if not mentioned\n'
+    '  - "repo": project or codebase name if referenced; null if not referenced\n'
+    "Phrases like 'remember to …', 'need to …', 'have to …', 'todo: …' ARE action items — extract them. "
     "Empty array only if the note truly contains no task or intent to act. Do NOT invent tasks.\n"
     "Use the same language as the note."
 )
+
+ENRICH_SYSTEM = ENRICH_SYSTEM_TEMPLATE.format(
+    today_iso=datetime.now(timezone.utc).date().isoformat()
+)
+
+
+class ActionItemDict(dict):
+    """Dictionary representing an action item with backward compatibility for string operations."""
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self.get("text") == other
+        return super().__eq__(other)
+
+    def __contains__(self, key: object) -> bool:
+        if super().__contains__(key):
+            return True
+        return isinstance(key, str) and key in self.get("text", "")
 
 
 class LLMUnavailable(Exception):
@@ -118,11 +154,14 @@ async def enrich(text: str, cfg: LLMConfig) -> dict:
     base = normalize_base_url(cfg.base_url)
     snippet = text[:MAX_ENRICH_CHARS]
 
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    system_prompt = ENRICH_SYSTEM_TEMPLATE.format(today_iso=today_iso)
+
     if cfg.provider == "lmstudio":
         payload = {
             "model": cfg.model,
             "messages": [
-                {"role": "system", "content": ENRICH_SYSTEM},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": snippet},
             ],
             "temperature": 0.3,
@@ -134,7 +173,7 @@ async def enrich(text: str, cfg: LLMConfig) -> dict:
         payload = {
             "model": cfg.model,
             "messages": [
-                {"role": "system", "content": ENRICH_SYSTEM},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": snippet},
             ],
             "stream": False,
@@ -187,6 +226,88 @@ def _parse_json_loose(content: str) -> dict | None:
     return None
 
 
+PRIORITY_P1_RE = re.compile(r"\b(p1|urgent|critical|asap|blocker|immediately)\b", re.IGNORECASE)
+PRIORITY_P3_RE = re.compile(r"\b(p3|someday|eventually|low[- ]priority)\b", re.IGNORECASE)
+
+DUE_DATE_RE = re.compile(
+    r"\b(?:by|due|before|on)\s+(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
+
+REPO_RE = re.compile(
+    r"\b(?:in|for|repo:)\s+([a-zA-Z0-9_-]+)(?:\s+repo)?\b|#([a-zA-Z0-9_-]+)",
+    re.IGNORECASE,
+)
+
+WEEKDAYS = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+
+REPO_STOPWORDS = frozenset({
+    "the", "a", "an", "this", "that", "these", "those", "it",
+    "today", "tomorrow", "yesterday",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "now", "later", "soon", "work", "home",
+})
+
+
+def _extract_priority(line: str) -> str:
+    if PRIORITY_P1_RE.search(line):
+        return "P1"
+    if PRIORITY_P3_RE.search(line):
+        return "P3"
+    return "P2"
+
+
+def _resolve_due_date(match_str: str, today: datetime.date) -> str | None:
+    token = match_str.lower()
+    if token == "today":
+        return today.isoformat()
+    if token == "tomorrow":
+        return (today + timedelta(days=1)).isoformat()
+    if token in WEEKDAYS:
+        target = WEEKDAYS[token]
+        days_ahead = (target - today.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        return (today + timedelta(days=days_ahead)).isoformat()
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", token):
+        try:
+            datetime.strptime(token, "%Y-%m-%d")
+            return token
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_repo(line: str) -> str | None:
+    # 1. Check #tag
+    hash_match = re.search(r"#([a-zA-Z0-9_-]+)", line)
+    if hash_match:
+        tag = hash_match.group(1).lower()
+        if tag not in REPO_STOPWORDS:
+            return tag
+
+    # 2. Check repo: <name>
+    prefix_match = re.search(r"\brepo:\s*([a-zA-Z0-9_-]+)", line, re.IGNORECASE)
+    if prefix_match:
+        return prefix_match.group(1).lower()
+
+    # 3. Check in/for <name> repo or in/for <name>
+    for m in REPO_RE.finditer(line):
+        name = (m.group(1) or m.group(2) or "").strip().lower()
+        if not name or name in REPO_STOPWORDS:
+            continue
+        return name
+    return None
+
+
 def _sanitize(parsed: dict) -> dict:
     title = str(parsed.get("title") or "").strip().strip('"').strip()
     summary = str(parsed.get("summary") or "").strip()
@@ -200,10 +321,58 @@ def _sanitize(parsed: dict) -> dict:
         if t and t not in tags:
             tags.append(t)
     tags = tags[:6]
+
     raw_items = parsed.get("action_items") or []
     if isinstance(raw_items, str):
         raw_items = [raw_items]
-    action_items = [str(x).strip() for x in raw_items if str(x).strip()]
+    elif not isinstance(raw_items, list):
+        raw_items = []
+
+    action_items = []
+    for raw in raw_items:
+        if isinstance(raw, str):
+            text = raw.strip()
+            priority = "P2"
+            due_date = None
+            repo = None
+        elif isinstance(raw, dict):
+            text = str(raw.get("text") or "").strip()
+            raw_p = str(raw.get("priority") or "P2").strip().upper()
+            priority = raw_p if raw_p in ("P1", "P2", "P3") else "P2"
+
+            raw_due = raw.get("due_date")
+            due_date = None
+            if raw_due and isinstance(raw_due, str):
+                raw_due = raw_due.strip()
+                if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_due):
+                    try:
+                        datetime.strptime(raw_due, "%Y-%m-%d")
+                        due_date = raw_due
+                    except ValueError:
+                        due_date = None
+
+            raw_repo = raw.get("repo")
+            repo = None
+            if raw_repo:
+                r = str(raw_repo).strip().lower()
+                r = re.sub(r"^(?:#|repo:)", "", r).strip()
+                r = re.sub(r"[^a-z0-9_-]", "", r)
+                repo = r if r else None
+        else:
+            continue
+
+        if not text:
+            continue
+
+        action_items.append(
+            ActionItemDict({
+                "text": text[:200],
+                "priority": priority,
+                "due_date": due_date,
+                "repo": repo,
+            })
+        )
+
     return {
         "title": title[:80],
         "summary": summary[:1200],
@@ -242,21 +411,51 @@ def heuristic_enrich(text: str) -> dict:
     tags = [w for w, _ in Counter(words).most_common(5) if _]
 
     action_items = []
+    today = datetime.now(timezone.utc).date()
     todo_re = re.compile(
         r"^(?:todo|task|fix|remember|call|email|mail|buy|send|ask|review|write|finish|"
         r"deploy|ship|check|read|watch|book|pay|schedule|prep(?:are)?|follow[ -]up)\b[,: ]+(.{4,})",
         re.IGNORECASE,
     )
     for line in lines:
+        raw_item_text = None
         m = todo_re.match(line)
         if m:
-            action_items.append(m.group(1).strip().rstrip(".")[:140])
+            raw_item_text = m.group(1).strip().rstrip(".")[:140]
         elif re.match(r"^[-*•]\s*\[ \]", line):
-            action_items.append(re.sub(r"^[-*•]\s*\[ \]\s*", "", line)[:140])
+            raw_item_text = re.sub(r"^[-*•]\s*\[ \]\s*", "", line)[:140]
         elif line.lower().startswith("todo:") or "need to " in line.lower() or "have to " in line.lower():
-            action_items.append(line[:140])
+            raw_item_text = line[:140]
+
+        if not raw_item_text:
+            continue
+
+        priority = _extract_priority(line)
+
+        due_date = None
+        due_m = DUE_DATE_RE.search(line)
+        if due_m:
+            due_date = _resolve_due_date(due_m.group(1), today)
+
+        repo = _extract_repo(line)
+
+        action_items.append(
+            ActionItemDict({
+                "text": raw_item_text,
+                "priority": priority,
+                "due_date": due_date,
+                "repo": repo,
+            })
+        )
+
     # de-dup, cap
     seen = set()
-    action_items = [a for a in action_items if not (a in seen or seen.add(a))][:10]
+    deduped = []
+    for a in action_items:
+        txt = a["text"]
+        if txt not in seen:
+            seen.add(txt)
+            deduped.append(a)
+    action_items = deduped[:10]
 
     return {"title": title, "summary": summary, "tags": tags[:5], "action_items": action_items}

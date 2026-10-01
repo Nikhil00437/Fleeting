@@ -128,21 +128,29 @@ class Processor:
                 source["enrichment"] = "heuristic"
 
             # 3) persist structured fields
-            action_items = [
-                {"id": f"t{i + 1}", "text": text, "done": False}
-                for i, text in enumerate(enriched["action_items"])
-            ]
             changes = {
                 "title": enriched["title"],
                 "summary": enriched["summary"],
                 "tags": enriched["tags"],
-                "action_items": action_items,
                 "source": source,
                 "status": "done",
                 "error": None,
                 "processed_at": now_iso(),
             }
             note = self.db.update_note(note_id, changes)
+
+            default_repo = source.get("repo")
+            for item in enriched.get("action_items") or []:
+                if isinstance(item, str):
+                    item = {"text": item, "priority": "P2", "due_date": None, "repo": None}
+                self.db.insert_task({
+                    "note_id": note["id"] if note else note_id,
+                    "text": item.get("text", ""),
+                    "priority": item.get("priority", "P2"),
+                    "due_date": item.get("due_date"),
+                    "repo": item.get("repo") or default_repo,
+                })
+            note = self.db.get_note(note_id)
 
             # 4) vault mirror + notify
             if note:
