@@ -564,13 +564,29 @@ body.hud-body #root {
   transition: height 60ms ease;
 }
 
+@keyframes sdot-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(239 68 68 / 0.65);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgb(239 68 68 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(239 68 68 / 0);
+  }
+}
+
 .sdot {
   width: 8px;
   height: 8px;
   border-radius: 9999px;
   background: #ef4444;
   box-shadow: 0 0 10px #ef4444;
-  animation: pulse-ring 1.4s infinite;
+  animation: sdot-pulse 1.4s infinite;
+}
+
+.sdot-pulse {
+  animation: sdot-pulse 1.4s infinite;
 }
 
 .sspinner {

@@ -18,4 +18,12 @@ contextBridge.exposeInMainWorld("fleetingDesktop", {
     ipcRenderer.on("app:navigate", handler);
     return () => ipcRenderer.removeListener("app:navigate", handler);
   },
+  hideHud: () => ipcRenderer.invoke("hud:hide"),
+  resizeHud: (height) => ipcRenderer.invoke("hud:resize", height),
+  typeText: (text) => ipcRenderer.invoke("hud:type-text", text),
+  onHudTrigger: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on("hud:trigger", handler);
+    return () => ipcRenderer.removeListener("hud:trigger", handler);
+  },
 });

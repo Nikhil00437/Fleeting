@@ -37,6 +37,7 @@ export default function CaptureHud({
   const [errorMessage, setErrorMessage] = useState<string | null>(() => audioError || null);
 
   const closeTimerRef = useRef<number | null>(null);
+  const isCancelledRef = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
   const modeRef = useRef(mode);
@@ -45,6 +46,7 @@ export default function CaptureHud({
   const getDesktop = () => (typeof window !== "undefined" ? window.fleetingDesktop : undefined);
 
   const handleCancel = useCallback(() => {
+    isCancelledRef.current = true;
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
@@ -58,15 +60,19 @@ export default function CaptureHud({
 
   const handleCommit = useCallback(async () => {
     if (stateRef.current !== "listening") return;
+    isCancelledRef.current = false;
     setState("processing");
 
     try {
       const blob = await stop();
+      if (isCancelledRef.current) return;
       if (!blob || blob.size === 0) {
         throw new Error("No audio recorded");
       }
 
       const note = await api.captureAudio(blob);
+      if (isCancelledRef.current) return;
+
       const text = (note.raw_text || note.title || "").trim();
       setPreviewText(text);
 
@@ -76,6 +82,7 @@ export default function CaptureHud({
           await desktop.typeText(text);
         }
       }
+      if (isCancelledRef.current) return;
 
       setState("preview");
       void desktop?.resizeHud?.(140);
@@ -87,6 +94,7 @@ export default function CaptureHud({
         onDone?.();
       }, 1200);
     } catch (err) {
+      if (isCancelledRef.current) return;
       setState("error");
       setErrorMessage(err instanceof Error ? err.message : "Transcription failed");
       void getDesktop()?.resizeHud?.(72);
@@ -94,6 +102,7 @@ export default function CaptureHud({
   }, [stop, onDone]);
 
   const handleRestart = useCallback(async () => {
+    isCancelledRef.current = false;
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
@@ -139,6 +148,20 @@ export default function CaptureHud({
     };
   }, [start]);
 
+  // Background hide cleanup
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (stateRef.current === "listening") {
+          cancel();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [cancel]);
+
   // Keyboard shortcut handlers
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -156,7 +179,9 @@ export default function CaptureHud({
         }
       } else if (e.key === "Tab") {
         e.preventDefault();
-        setMode((prev) => (prev === "dictate" ? "note" : "dictate"));
+        if (stateRef.current === "listening") {
+          setMode((prev) => (prev === "dictate" ? "note" : "dictate"));
+        }
       }
     };
 
@@ -169,14 +194,10 @@ export default function CaptureHud({
     const desktop = getDesktop();
     if (!desktop?.onHudTrigger) return;
     const unsub = desktop.onHudTrigger(() => {
-      if (stateRef.current === "listening") {
-        void handleCommit();
-      } else {
-        void handleRestart();
-      }
+      void handleRestart();
     });
     return unsub;
-  }, [handleCommit, handleRestart]);
+  }, [handleRestart]);
 
   return (
     <div

@@ -181,5 +181,24 @@ describe("CaptureHud Component & Helpers", () => {
       const html = renderToStaticMarkup(<CaptureHud initialState="preview" initialMode="note" />);
       expect(html).toContain("Saved to Fleeting vault");
     });
+
+    it("renders mode toggle button in listening state", () => {
+      const html = renderToStaticMarkup(<CaptureHud initialState="listening" />);
+      expect(html).toContain("Toggle mode (Tab)");
+    });
+
+    it("does not render mode toggle button in processing or preview state", () => {
+      const procHtml = renderToStaticMarkup(<CaptureHud initialState="processing" />);
+      expect(procHtml).not.toContain("Toggle mode (Tab)");
+
+      const prevHtml = renderToStaticMarkup(<CaptureHud initialState="preview" />);
+      expect(prevHtml).not.toContain("Toggle mode (Tab)");
+    });
+
+    it("renders sdot element for pulse recording indicator", () => {
+      const html = renderToStaticMarkup(<CaptureHud initialState="listening" />);
+      expect(html).toContain('class="sdot"');
+    });
   });
 });
+

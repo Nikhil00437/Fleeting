@@ -7,6 +7,10 @@ const {
   nativeImage,
   session,
   shell,
+  clipboard,
+  globalShortcut,
+  Notification,
+  screen,
 } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
@@ -31,6 +35,7 @@ const TRAY_ICON_PATH = path.join(ROOT_DIR, "deploy", "fleeting-tray.png");
 const STATE_FILE = path.join(os.homedir(), ".config", "fleeting", "window-state.json");
 
 let mainWindow = null;
+let hudWindow = null;
 let tray = null;
 let backendProc = null;
 let isQuitting = false;
@@ -226,6 +231,144 @@ async function createWindow() {
   await mainWindow.loadURL(BACKEND_URL);
 }
 
+async function createHudWindow() {
+  if (hudWindow && !hudWindow.isDestroyed()) {
+    return hudWindow;
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight, x: screenX = 0, y: screenY = 0 } =
+    primaryDisplay.workArea || primaryDisplay.bounds;
+
+  const hudWidth = 520;
+  const hudHeight = 72;
+  const x = Math.round(screenX + (screenWidth - hudWidth) / 2);
+  const y = Math.round(screenY + screenHeight * 0.18);
+
+  hudWindow = new BrowserWindow({
+    width: hudWidth,
+    height: hudHeight,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    show: false,
+    backgroundColor: "#00000000",
+    hasShadow: false,
+    title: "Fleeting Dictation HUD",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  });
+
+  hudWindow.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
+  hudWindow.setAlwaysOnTop(true, "screen-saver");
+
+  hudWindow.on("close", (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      hudWindow.hide();
+    }
+  });
+
+  await hudWindow.loadURL(`${BACKEND_URL}?mode=hud`);
+  return hudWindow;
+}
+
+async function toggleHud() {
+  if (!hudWindow || hudWindow.isDestroyed()) {
+    await createHudWindow();
+  }
+  if (!hudWindow) return;
+
+  if (hudWindow.isVisible()) {
+    hudWindow.hide();
+  } else {
+    hudWindow.show();
+    hudWindow.focus();
+    hudWindow.webContents.send("hud:trigger");
+  }
+}
+
+function fallbackCopy(text) {
+  return new Promise((resolve) => {
+    try {
+      clipboard.writeText(text);
+    } catch {
+      /* ignore */
+    }
+    const wlCopyBin = fs.existsSync("/usr/bin/wl-copy") ? "/usr/bin/wl-copy" : "wl-copy";
+    try {
+      const copyProc = spawn(wlCopyBin, ["--", text]);
+      copyProc.on("error", () => resolve(false));
+      copyProc.on("exit", (code) => resolve(code === 0));
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+function alertFallback() {
+  try {
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "Fleeting Dictation",
+        body: "wtype unavailable. Transcribed text copied to clipboard.",
+      }).show();
+    }
+  } catch {
+    /* ignore notification errors */
+  }
+}
+
+async function handleTypeText(text) {
+  if (hudWindow && !hudWindow.isDestroyed()) {
+    hudWindow.hide();
+  }
+  if (!text || typeof text !== "string") return false;
+
+  // Wait ~60ms for previous application focus restoration
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  return new Promise((resolve) => {
+    const wtypeBin = fs.existsSync("/usr/bin/wtype") ? "/usr/bin/wtype" : "wtype";
+    let proc;
+    try {
+      proc = spawn(wtypeBin, ["--", text]);
+    } catch {
+      fallbackCopy(text).then((copied) => {
+        alertFallback();
+        resolve(copied);
+      });
+      return;
+    }
+
+    proc.on("error", () => {
+      fallbackCopy(text).then((copied) => {
+        alertFallback();
+        resolve(copied);
+      });
+    });
+
+    proc.on("exit", (code) => {
+      if (code === 0) {
+        resolve(true);
+      } else {
+        fallbackCopy(text).then((copied) => {
+          alertFallback();
+          resolve(copied);
+        });
+      }
+    });
+  });
+}
+
 function setupTray() {
   try {
     const iconFile = fs.existsSync(TRAY_ICON_PATH) ? TRAY_ICON_PATH : ICON_PATH;
@@ -250,6 +393,13 @@ function setupTray() {
           mainWindow.show();
           mainWindow.focus();
           mainWindow.webContents.send("app:navigate", "capture");
+        },
+      },
+      {
+        label: "Dictation HUD",
+        accelerator: "CommandOrControl+Alt+Space",
+        click: () => {
+          void toggleHud();
         },
       },
       { type: "separator" },
@@ -307,6 +457,10 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on("second-instance", (_event, argv) => {
+    if (argv.includes("--hud")) {
+      toggleHud();
+      return;
+    }
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -342,13 +496,42 @@ if (!gotLock) {
       }
     });
 
+    // HUD IPC Handlers
+    ipcMain.handle("hud:hide", () => {
+      if (hudWindow && !hudWindow.isDestroyed()) {
+        hudWindow.hide();
+      }
+    });
+    ipcMain.handle("hud:resize", (_event, height) => {
+      if (hudWindow && !hudWindow.isDestroyed() && typeof height === "number") {
+        hudWindow.setSize(520, Math.round(height));
+      }
+    });
+    ipcMain.handle("hud:type-text", (_event, text) => handleTypeText(text));
+
+    // Register global shortcut
+    try {
+      globalShortcut.register("CommandOrControl+Alt+Space", () => {
+        toggleHud();
+      });
+    } catch {
+      /* ignore shortcut registration failure */
+    }
+
     setupTray();
     await createWindow();
+    await createHudWindow();
+
+    if (process.argv.includes("--hud")) {
+      mainWindow?.hide();
+      toggleHud();
+    }
   });
 }
 
 app.on("before-quit", () => {
   isQuitting = true;
+  globalShortcut.unregisterAll();
   if (backendProc) {
     try {
       backendProc.kill("SIGTERM");

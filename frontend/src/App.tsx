@@ -9,6 +9,7 @@ import SearchView from "./components/SearchView";
 import SettingsView from "./components/SettingsView";
 import TasksView from "./components/TasksView";
 import TimelineView from "./components/TimelineView";
+import CaptureHud from "./components/CaptureHud";
 import {
   ActivityIcon,
   BotIcon,
@@ -34,6 +35,16 @@ interface Toast {
 }
 
 export default function App() {
+  const isHudMode =
+    typeof window !== "undefined" &&
+    (new URLSearchParams(window.location.search).get("mode") === "hud" ||
+      window.location.hash === "#hud" ||
+      new URLSearchParams(window.location.hash.slice(1)).get("mode") === "hud");
+
+  if (isHudMode) {
+    return <CaptureHud />;
+  }
+
   const [view, setView] = useState<View>("inbox");
   const [notes, setNotes] = useState<Note[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
