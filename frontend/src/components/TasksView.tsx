@@ -40,7 +40,18 @@ export function cyclePriority(current: TaskPriority): TaskPriority {
   return "P1";
 }
 
-export function formatDueDate(due_date: string | null): { label: string; className: string } {
+export function toLocalDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function formatDueDate(
+  due_date: string | null,
+  now: Date = new Date(),
+  isDone = false
+): { label: string; className: string } {
   if (!due_date) {
     return { label: "No date", className: "" };
   }
@@ -51,8 +62,7 @@ export function formatDueDate(due_date: string | null): { label: string; classNa
   }
   const [y, m, d] = parts;
 
-  const today = new Date();
-  const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const targetZero = new Date(y, m - 1, d);
 
   const diffMs = targetZero.getTime() - todayZero.getTime();
@@ -60,24 +70,31 @@ export function formatDueDate(due_date: string | null): { label: string; classNa
 
   if (diffDays < 0) {
     const daysAgo = Math.abs(diffDays);
+    const label = daysAgo === 1 ? "Overdue (yesterday)" : `Overdue by ${daysAgo}d`;
+    if (isDone) {
+      return {
+        label,
+        className: "text-ink-400 border border-ink-800/80 bg-ink-950/70",
+      };
+    }
     return {
-      label: daysAgo === 1 ? "Overdue (yesterday)" : `Overdue by ${daysAgo}d`,
+      label,
       className: "due-overdue",
     };
   } else if (diffDays === 0) {
     return {
       label: "Today",
-      className: "due-today",
+      className: isDone ? "text-ink-400 border border-ink-800/80 bg-ink-950/70" : "due-today",
     };
   } else if (diffDays === 1) {
     return {
       label: "Tomorrow",
-      className: "due-soon",
+      className: isDone ? "text-ink-400 border border-ink-800/80 bg-ink-950/70" : "due-soon",
     };
   } else if (diffDays <= 7) {
     return {
       label: `In ${diffDays}d`,
-      className: "due-soon",
+      className: isDone ? "text-ink-400 border border-ink-800/80 bg-ink-950/70" : "due-soon",
     };
   } else {
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -283,7 +300,7 @@ export default function TasksView({
   onNoteCreated: _onNoteCreated,
   initialTasks,
   initialRepos,
-  initialStats,
+  initialStats: _initialStats,
   initialStatusFilter = "open",
   initialPriorityFilter = "all",
   initialDueDateFilter = "all",
@@ -293,7 +310,6 @@ export default function TasksView({
 }: TasksViewProps) {
   const [tasks, setTasks] = useState<TaskItem[] | null>(initialTasks ?? null);
   const [repos, setRepos] = useState<RepoInfo[]>(initialRepos ?? []);
-  const [, setStats] = useState<TaskStats | null>(initialStats ?? null);
 
   const updateTasks = (updater: (prev: TaskItem[]) => TaskItem[]) => {
     setTasks((prev) => updater(prev ?? []));
@@ -340,13 +356,6 @@ export default function TasksView({
       })
       .catch(() => {});
 
-    api
-      .taskStats()
-      .then((res) => {
-        if (active) setStats(res);
-      })
-      .catch(() => {});
-
     return () => {
       active = false;
     };
@@ -380,8 +389,8 @@ export default function TasksView({
   const filtered = useMemo(() => {
     if (!tasks) return [];
     const q = query.trim().toLowerCase();
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const todayStr = toLocalDateString();
+    const weekEnd = toLocalDateString(new Date(Date.now() + 7 * 86400000));
 
     return tasks.filter((t) => {
       // Status
@@ -862,7 +871,7 @@ export default function TasksView({
   function renderTaskRow(t: TaskItem, compact = false) {
     const isDone = Boolean(t.done);
     const isEditing = editingTaskId === t.id;
-    const dueInfo = formatDueDate(t.due_date);
+    const dueInfo = formatDueDate(t.due_date, undefined, isDone);
     const isDatePickerOpen = activeDatePickerTaskId === t.id;
 
     const prioBadgeClass =
@@ -981,59 +990,68 @@ export default function TasksView({
 
             {/* Quick Date Popover */}
             {isDatePickerOpen && (
-              <div className="absolute right-0 z-50 mt-1 flex w-44 flex-col gap-1 rounded-xl border border-ink-800 bg-ink-950 p-2 shadow-xl">
-                <span className="font-mono text-[10px] text-ink-400 px-1">Quick Due Date</span>
-                <button
-                  onClick={() => {
-                    const todayStr = new Date().toISOString().slice(0, 10);
-                    void updateTaskDueDateAction(t, todayStr, updateTasks, onTasksChanged, onToast);
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setActiveDatePickerTaskId(null);
                   }}
-                  className="rounded px-2 py-1 text-left text-xs text-ink-200 hover:bg-ink-800"
-                >
-                  Today
-                </button>
-                <button
-                  onClick={() => {
-                    const tomStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-                    void updateTaskDueDateAction(t, tomStr, updateTasks, onTasksChanged, onToast);
-                    setActiveDatePickerTaskId(null);
-                  }}
-                  className="rounded px-2 py-1 text-left text-xs text-ink-200 hover:bg-ink-800"
-                >
-                  Tomorrow
-                </button>
-                <button
-                  onClick={() => {
-                    const weekStr = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-                    void updateTaskDueDateAction(t, weekStr, updateTasks, onTasksChanged, onToast);
-                    setActiveDatePickerTaskId(null);
-                  }}
-                  className="rounded px-2 py-1 text-left text-xs text-ink-200 hover:bg-ink-800"
-                >
-                  Next Week
-                </button>
-                <input
-                  type="date"
-                  value={t.due_date ?? ""}
-                  onChange={(e) => {
-                    void updateTaskDueDateAction(t, e.target.value || null, updateTasks, onTasksChanged, onToast);
-                    setActiveDatePickerTaskId(null);
-                  }}
-                  className="rounded border border-ink-800 bg-ink-900 px-2 py-1 text-xs text-ink-200 outline-none"
                 />
-                {t.due_date && (
+                <div className="absolute right-0 z-50 mt-1 flex w-44 flex-col gap-1 rounded-xl border border-ink-800 bg-ink-950 p-2 shadow-xl">
+                  <span className="font-mono text-[10px] text-ink-400 px-1">Quick Due Date</span>
                   <button
                     onClick={() => {
-                      void updateTaskDueDateAction(t, null, updateTasks, onTasksChanged, onToast);
+                      const todayStr = toLocalDateString();
+                      void updateTaskDueDateAction(t, todayStr, updateTasks, onTasksChanged, onToast);
                       setActiveDatePickerTaskId(null);
                     }}
-                    className="rounded px-2 py-1 text-left text-xs text-red-400 hover:bg-ink-800"
+                    className="rounded px-2 py-1 text-left text-xs text-ink-200 hover:bg-ink-800"
                   >
-                    Clear date
+                    Today
                   </button>
-                )}
-              </div>
+                  <button
+                    onClick={() => {
+                      const tomStr = toLocalDateString(new Date(Date.now() + 86400000));
+                      void updateTaskDueDateAction(t, tomStr, updateTasks, onTasksChanged, onToast);
+                      setActiveDatePickerTaskId(null);
+                    }}
+                    className="rounded px-2 py-1 text-left text-xs text-ink-200 hover:bg-ink-800"
+                  >
+                    Tomorrow
+                  </button>
+                  <button
+                    onClick={() => {
+                      const weekStr = toLocalDateString(new Date(Date.now() + 7 * 86400000));
+                      void updateTaskDueDateAction(t, weekStr, updateTasks, onTasksChanged, onToast);
+                      setActiveDatePickerTaskId(null);
+                    }}
+                    className="rounded px-2 py-1 text-left text-xs text-ink-200 hover:bg-ink-800"
+                  >
+                    Next Week
+                  </button>
+                  <input
+                    type="date"
+                    value={t.due_date ?? ""}
+                    onChange={(e) => {
+                      void updateTaskDueDateAction(t, e.target.value || null, updateTasks, onTasksChanged, onToast);
+                      setActiveDatePickerTaskId(null);
+                    }}
+                    className="rounded border border-ink-800 bg-ink-900 px-2 py-1 text-xs text-ink-200 outline-none"
+                  />
+                  {t.due_date && (
+                    <button
+                      onClick={() => {
+                        void updateTaskDueDateAction(t, null, updateTasks, onTasksChanged, onToast);
+                        setActiveDatePickerTaskId(null);
+                      }}
+                      className="rounded px-2 py-1 text-left text-xs text-red-400 hover:bg-ink-800"
+                    >
+                      Clear date
+                    </button>
+                  )}
+                </div>
+              </>
             )}
           </div>
 

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import TasksView, {
   cyclePriority,
   formatDueDate,
+  toLocalDateString,
   sortTasksStream,
   groupTasksByPriority,
   groupTasksByNote,
@@ -112,11 +113,21 @@ describe("TasksView Component & Helpers", () => {
       expect(cyclePriority("P3")).toBe("P1");
     });
 
+    it("formats dates in local calendar time using toLocalDateString", () => {
+      const d = new Date(2026, 9, 15); // Month is 0-indexed: 9 = October
+      expect(toLocalDateString(d)).toBe("2026-10-15");
+    });
+
     it("formats due dates with relative indicators and css badge classes", () => {
       // Overdue
       const overdue = formatDueDate("2020-01-01");
       expect(overdue.className).toContain("due-overdue");
       expect(overdue.label.toLowerCase()).toContain("overdue");
+
+      // Overdue but completed task: badge must be muted and NOT alert red
+      const overdueDone = formatDueDate("2020-01-01", undefined, true);
+      expect(overdueDone.className).not.toContain("due-overdue");
+      expect(overdueDone.className).toContain("text-ink-400");
 
       // No date
       const noDate = formatDueDate(null);
