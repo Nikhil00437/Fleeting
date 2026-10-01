@@ -288,7 +288,7 @@ async function toggleHud() {
   if (!hudWindow) return;
 
   if (hudWindow.isVisible()) {
-    hudWindow.hide();
+    hudWindow.webContents.send("hud:trigger");
   } else {
     hudWindow.show();
     hudWindow.focus();
@@ -298,19 +298,33 @@ async function toggleHud() {
 
 function fallbackCopy(text) {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (!settled) {
+        settled = true;
+        resolve(result);
+      }
+    };
+
+    let copiedToClipboard = false;
     try {
       clipboard.writeText(text);
+      copiedToClipboard = true;
     } catch {
       /* ignore */
     }
+
     const wlCopyBin = fs.existsSync("/usr/bin/wl-copy") ? "/usr/bin/wl-copy" : "wl-copy";
+    let copyProc;
     try {
-      const copyProc = spawn(wlCopyBin, ["--", text]);
-      copyProc.on("error", () => resolve(false));
-      copyProc.on("exit", (code) => resolve(code === 0));
+      copyProc = spawn(wlCopyBin, ["--", text]);
     } catch {
-      resolve(false);
+      finish(copiedToClipboard);
+      return;
     }
+
+    copyProc.on("error", () => finish(copiedToClipboard));
+    copyProc.on("exit", (code) => finish(code === 0 || copiedToClipboard));
   });
 }
 
@@ -337,33 +351,39 @@ async function handleTypeText(text) {
   await new Promise((resolve) => setTimeout(resolve, 60));
 
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (success) => {
+      if (!settled) {
+        settled = true;
+        resolve(success);
+      }
+    };
+
+    const handleFallback = () => {
+      fallbackCopy(text).then((copied) => {
+        alertFallback();
+        settle(copied);
+      });
+    };
+
     const wtypeBin = fs.existsSync("/usr/bin/wtype") ? "/usr/bin/wtype" : "wtype";
     let proc;
     try {
       proc = spawn(wtypeBin, ["--", text]);
     } catch {
-      fallbackCopy(text).then((copied) => {
-        alertFallback();
-        resolve(copied);
-      });
+      handleFallback();
       return;
     }
 
     proc.on("error", () => {
-      fallbackCopy(text).then((copied) => {
-        alertFallback();
-        resolve(copied);
-      });
+      handleFallback();
     });
 
     proc.on("exit", (code) => {
       if (code === 0) {
-        resolve(true);
+        settle(true);
       } else {
-        fallbackCopy(text).then((copied) => {
-          alertFallback();
-          resolve(copied);
-        });
+        handleFallback();
       }
     });
   });

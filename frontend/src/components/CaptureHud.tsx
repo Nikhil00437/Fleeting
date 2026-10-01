@@ -27,7 +27,7 @@ export default function CaptureHud({
   initialMode = "dictate",
   initialState,
 }: CaptureHudProps = {}): React.JSX.Element {
-  const { levels, elapsed, error: audioError, start, stop, cancel } = useAudioVisualizer();
+  const { levels, elapsed, error: audioError, isRecording, start, stop, cancel } = useAudioVisualizer();
 
   const [state, setState] = useState<CaptureHudState>(
     () => initialState || (audioError ? "error" : "listening")
@@ -38,6 +38,8 @@ export default function CaptureHud({
 
   const closeTimerRef = useRef<number | null>(null);
   const isCancelledRef = useRef(false);
+  const isRecordingRef = useRef(isRecording);
+  isRecordingRef.current = isRecording;
   const stateRef = useRef(state);
   stateRef.current = state;
   const modeRef = useRef(mode);
@@ -133,10 +135,14 @@ export default function CaptureHud({
     if (typeof document !== "undefined") {
       document.body.classList.add("hud-body");
     }
-    void start().catch((err) => {
-      setState("error");
-      setErrorMessage(err instanceof Error ? err.message : "Microphone access denied");
-    });
+
+    // Do NOT start audio recording on mount if window is hidden (e.g. pre-warmed hidden hudWindow)
+    if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+      void start().catch((err) => {
+        setState("error");
+        setErrorMessage(err instanceof Error ? err.message : "Microphone access denied");
+      });
+    }
 
     return () => {
       if (typeof document !== "undefined") {
@@ -145,15 +151,17 @@ export default function CaptureHud({
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
       }
+      cancel();
     };
-  }, [start]);
+  }, [start, cancel]);
 
   // Background hide cleanup
   useEffect(() => {
     if (typeof document === "undefined") return;
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") {
-        if (stateRef.current === "listening") {
+        // Only cancel if actively listening/recording; do not abort if processing or preview
+        if (stateRef.current === "listening" && isRecordingRef.current) {
           cancel();
         }
       }
@@ -194,10 +202,14 @@ export default function CaptureHud({
     const desktop = getDesktop();
     if (!desktop?.onHudTrigger) return;
     const unsub = desktop.onHudTrigger(() => {
-      void handleRestart();
+      if (stateRef.current === "listening" && isRecordingRef.current) {
+        void handleCommit();
+      } else {
+        void handleRestart();
+      }
     });
     return unsub;
-  }, [handleRestart]);
+  }, [handleCommit, handleRestart]);
 
   return (
     <div
