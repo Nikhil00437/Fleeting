@@ -93,7 +93,7 @@ class TaskCreateIn(BaseModel):
 
 
 class TaskUpdateIn(BaseModel):
-    text: str | None = Field(default=None, max_length=2000)
+    text: str | None = Field(default=None, min_length=1, max_length=2000)
     done: bool | None = None
     priority: Literal["P1", "P2", "P3"] | None = None
     due_date: str | None = None

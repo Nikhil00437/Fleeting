@@ -878,9 +878,12 @@ class Database:
         elif status in ("done", "completed"):
             where.append("t.done = 1")
 
-        if priority and priority.upper() in ("P1", "P2", "P3"):
-            where.append("t.priority = :priority")
-            params["priority"] = priority.upper()
+        if priority:
+            if priority.upper() in ("P1", "P2", "P3"):
+                where.append("t.priority = :priority")
+                params["priority"] = priority.upper()
+            else:
+                where.append("1 = 0")
 
         if repo:
             where.append("t.repo = :repo")

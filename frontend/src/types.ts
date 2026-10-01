@@ -50,13 +50,43 @@ export interface TagCount {
   count: number;
 }
 
-export interface TaskRef {
+export type TaskPriority = "P1" | "P2" | "P3";
+
+export interface TaskItem {
+  id: string;
   note_id: string;
-  note_title: string;
-  item_id: string;
+  note_title?: string;
   text: string;
-  done?: boolean;
+  done: boolean;
+  priority: TaskPriority;
+  due_date: string | null;
+  repo: string | null;
   created_at: string;
+  completed_at: string | null;
+}
+
+export interface TaskStats {
+  total: number;
+  open: number;
+  done: number;
+  completion_rate: number;
+  by_priority: {
+    P1: number;
+    P2: number;
+    P3: number;
+  };
+  overdue: number;
+  due_today: number;
+}
+
+export interface RepoInfo {
+  name: string;
+  path?: string | null;
+  task_count: number;
+}
+
+export interface TaskRef extends TaskItem {
+  item_id?: string;
 }
 
 export interface HealthStatus {

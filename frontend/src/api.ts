@@ -3,7 +3,10 @@ import type {
   Settings,
   Stats,
   TagCount,
-  TaskRef,
+  TaskItem,
+  TaskPriority,
+  TaskStats,
+  RepoInfo,
   HealthStatus,
   ConnectionTest,
   ActivityDay,
@@ -71,8 +74,55 @@ export const api = {
 
   tags: () => req<TagCount[]>("/tags"),
 
-  tasks: (includeDone = false) =>
-    req<TaskRef[]>(`/tasks${includeDone ? "?include_done=true" : ""}`),
+  tasks: (
+    params?:
+      | boolean
+      | {
+          status?: string;
+          priority?: string;
+          repo?: string;
+          due?: string;
+          q?: string;
+          limit?: number;
+          offset?: number;
+        }
+  ) => {
+    if (typeof params === "boolean") {
+      return req<TaskItem[]>(`/tasks${params ? "?include_done=true" : ""}`);
+    }
+    if (!params) {
+      return req<TaskItem[]>("/tasks");
+    }
+    const sp = new URLSearchParams();
+    if (params.status) sp.set("status", params.status);
+    if (params.priority) sp.set("priority", params.priority);
+    if (params.repo) sp.set("repo", params.repo);
+    if (params.due) sp.set("due", params.due);
+    if (params.q) sp.set("q", params.q);
+    if (params.limit !== undefined) sp.set("limit", String(params.limit));
+    if (params.offset !== undefined) sp.set("offset", String(params.offset));
+    const query = sp.toString();
+    return req<TaskItem[]>(`/tasks${query ? `?${query}` : ""}`);
+  },
+
+  toggleTask: (id: string) => req<TaskItem>(`/tasks/${id}/toggle`, { method: "POST" }),
+
+  updateTask: (id: string, data: Partial<TaskItem>) =>
+    req<TaskItem>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  createTask: (data: {
+    text: string;
+    priority?: TaskPriority;
+    due_date?: string | null;
+    repo?: string | null;
+    note_id?: string;
+  }) => req<TaskItem>("/tasks", { method: "POST", body: JSON.stringify(data) }),
+
+  deleteTask: (id: string) => req<{ ok: boolean; id: string }>(`/tasks/${id}`, { method: "DELETE" }),
+
+  taskRepos: () => req<RepoInfo[]>("/tasks/repos"),
+
+  taskStats: () => req<TaskStats>("/tasks/stats"),
 
   stats: (days = 7) => req<Stats>(`/stats?days=${days}`),
 
