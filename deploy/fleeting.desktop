@@ -9,3 +9,8 @@ Terminal=false
 Categories=Office;Utility;
 StartupWMClass=fleeting
 X-KDE-StartupNotify=true
+Actions=Hud;
+
+[Desktop Action Hud]
+Name=Dictation & Quick Capture HUD
+Exec=/home/nikhil/Projects/fleeting/bin/fleeting-app --hud

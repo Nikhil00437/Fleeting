@@ -4,12 +4,32 @@
 #   flee "remember to review the PR"     capture a thought
 #   echo "some text" | flee              capture from stdin/pipe
 #   flee --youtube <url>                 send a YouTube link
+#   flee --hud                           toggle dictation & quick capture HUD
 #
 # Wire it to a Hyprland keybind (see README):
 #   bind = SUPER, F, exec, kitty --class fleeting-quick flee-edit
+#   bind = SUPER SHIFT, Space, exec, flee --hud
 
 set -euo pipefail
 URL="${FLEETING_URL:-http://127.0.0.1:7425}"
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+flee — quick capture from the terminal into Fleeting.
+
+Usage:
+  flee "remember to review the PR"     capture a thought
+  echo "some text" | flee              capture from stdin/pipe
+  flee --youtube <url>                 send a YouTube link
+  flee --hud                           toggle dictation & quick capture HUD
+  flee --help                          show this help message
+EOF
+  exit 0
+fi
+
+if [[ "${1:-}" == "--hud" ]]; then
+  exec "$(dirname "$0")/fleeting-app" --hud
+fi
 
 json_escape() {
   python3 - "$1" <<'EOF'

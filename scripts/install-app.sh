@@ -14,7 +14,7 @@ fi
 
 echo "==> desktop entry"
 mkdir -p "$HOME/.local/share/applications"
-sed "s|Exec=.*|Exec=$ROOT/bin/fleeting-app|" deploy/fleeting.desktop > "$HOME/.local/share/applications/fleeting.desktop"
+sed "s|/home/nikhil/Projects/fleeting|$ROOT|g" deploy/fleeting.desktop > "$HOME/.local/share/applications/fleeting.desktop"
 
 echo "==> CLI tools on PATH"
 mkdir -p "$HOME/.local/bin"

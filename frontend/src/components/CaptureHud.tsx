@@ -202,6 +202,7 @@ export default function CaptureHud({
     const desktop = getDesktop();
     if (!desktop?.onHudTrigger) return;
     const unsub = desktop.onHudTrigger(() => {
+      if (stateRef.current === "processing") return;
       if (stateRef.current === "listening" && isRecordingRef.current) {
         void handleCommit();
       } else {

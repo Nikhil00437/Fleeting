@@ -178,6 +178,7 @@ async function createWindow() {
     autoHideMenuBar: true,
     backgroundColor: "#090b10",
     title: "Fleeting",
+    show: !process.argv.includes("--hud"),
     icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -187,7 +188,7 @@ async function createWindow() {
     },
   });
 
-  if (state.maximized) {
+  if (state.maximized && !process.argv.includes("--hud")) {
     mainWindow.maximize();
   }
 
@@ -359,7 +360,10 @@ async function handleTypeText(text) {
       }
     };
 
+    let fallbackTriggered = false;
     const handleFallback = () => {
+      if (fallbackTriggered) return;
+      fallbackTriggered = true;
       fallbackCopy(text).then((copied) => {
         alertFallback();
         settle(copied);
