@@ -2,13 +2,132 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class ActionItem(BaseModel):
     id: str
     text: str
     done: bool = False
+    priority: Literal["P1", "P2", "P3"] = "P2"
+    due_date: str | None = None
+    repo: str | None = None
+    completed_at: str | None = None
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def normalize_priority(cls, v: Any) -> str:
+        if v is None:
+            return "P2"
+        v_str = str(v).strip().upper()
+        if v_str in ("P1", "P2", "P3"):
+            return v_str
+        raise ValueError("priority must be one of 'P1', 'P2', 'P3'")
+
+    @field_validator("repo", mode="before")
+    @classmethod
+    def normalize_repo(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        v_str = str(v).strip().lower()
+        return v_str or None
+
+    @field_validator("due_date", mode="before")
+    @classmethod
+    def normalize_due_date(cls, v: Any) -> str | None:
+        if not v:
+            return None
+        v_str = str(v).strip()
+        try:
+            datetime.strptime(v_str, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("due_date must be in 'YYYY-MM-DD' format")
+        return v_str
+
+
+class TaskOut(ActionItem):
+    note_id: str
+    note_title: str = ""
+    created_at: str
+
+
+class TaskCreateIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    priority: Literal["P1", "P2", "P3"] = "P2"
+    due_date: str | None = None
+    repo: str | None = None
+    note_id: str | None = None
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def normalize_priority(cls, v: Any) -> str:
+        if v is None:
+            return "P2"
+        v_str = str(v).strip().upper()
+        if v_str in ("P1", "P2", "P3"):
+            return v_str
+        raise ValueError("priority must be one of 'P1', 'P2', 'P3'")
+
+    @field_validator("repo", mode="before")
+    @classmethod
+    def normalize_repo(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        v_str = str(v).strip().lower()
+        return v_str or None
+
+    @field_validator("due_date", mode="before")
+    @classmethod
+    def normalize_due_date(cls, v: Any) -> str | None:
+        if not v:
+            return None
+        v_str = str(v).strip()
+        try:
+            datetime.strptime(v_str, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("due_date must be in 'YYYY-MM-DD' format")
+        return v_str
+
+
+class TaskUpdateIn(BaseModel):
+    text: str | None = Field(default=None, max_length=2000)
+    done: bool | None = None
+    priority: Literal["P1", "P2", "P3"] | None = None
+    due_date: str | None = None
+    repo: str | None = None
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def normalize_priority(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        v_str = str(v).strip().upper()
+        if v_str in ("P1", "P2", "P3"):
+            return v_str
+        raise ValueError("priority must be one of 'P1', 'P2', 'P3'")
+
+    @field_validator("repo", mode="before")
+    @classmethod
+    def normalize_repo(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        v_str = str(v).strip().lower()
+        return v_str or None
+
+    @field_validator("due_date", mode="before")
+    @classmethod
+    def normalize_due_date(cls, v: Any) -> str | None:
+        if not v:
+            return None
+        v_str = str(v).strip()
+        try:
+            datetime.strptime(v_str, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("due_date must be in 'YYYY-MM-DD' format")
+        return v_str
 
 
 class NoteOut(BaseModel):

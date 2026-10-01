@@ -119,6 +119,25 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL
     );
     """,
+    # v5 — relational tasks table with indexes
+    """
+    CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        priority TEXT NOT NULL DEFAULT 'P2',
+        due_date TEXT,
+        repo TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_tasks_note_id ON tasks(note_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
+    CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+    CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+    CREATE INDEX IF NOT EXISTS idx_tasks_repo ON tasks(repo);
+    """,
 ]
 
 
@@ -136,6 +155,11 @@ class Database:
     def __init__(self, path: Path | str):
         self.path = str(path)
         self._local = threading.local()
+        # Attempt one-time migration if database schema exists
+        try:
+            self._migrate_action_items()
+        except sqlite3.OperationalError:
+            pass
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -163,6 +187,7 @@ class Database:
             conn.executescript(script)
             conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
             conn.commit()
+        self._migrate_action_items()
 
     def execute(self, sql: str, params: tuple | list = ()) -> sqlite3.Cursor:
         return self.conn.execute(sql, params)
@@ -173,7 +198,13 @@ class Database:
     # ---- note helpers -------------------------------------------------
 
     def insert_note(self, note: dict) -> dict:
-        note = {**note, "id": note.get("id") or new_id()}
+        now = now_iso()
+        note = {
+            **note,
+            "id": note.get("id") or new_id(),
+            "created_at": note.get("created_at") or now,
+            "updated_at": note.get("updated_at") or now,
+        }
         self.execute(
             """
             INSERT INTO notes (id, type, title, summary, raw_text, tags, action_items,
@@ -186,6 +217,9 @@ class Database:
             _note_to_sql(note),
         )
         self.commit()
+        if note.get("action_items"):
+            self._sync_tasks_from_note(note["id"], note["action_items"])
+            self._sync_note_action_items(note["id"])
         return self.get_note(note["id"])  # type: ignore[return-value]
 
     def update_note(self, note_id: str, changes: dict) -> dict | None:
@@ -202,6 +236,9 @@ class Database:
         if cur.rowcount == 0:
             return None
         self.commit()
+        if "action_items" in changes:
+            self._sync_tasks_from_note(note_id, changes["action_items"])
+            self._sync_note_action_items(note_id)
         return self.get_note(note_id)
 
     def get_note(self, note_id: str) -> dict | None:
@@ -248,6 +285,7 @@ class Database:
     def delete_note(self, note_id: str) -> dict | None:
         note = self.get_note(note_id)
         if note:
+            self.execute("DELETE FROM tasks WHERE note_id = ?", (note_id,))
             self.execute("DELETE FROM notes WHERE id = ?", (note_id,))
             self.commit()
         return note
@@ -454,14 +492,18 @@ class Database:
             FROM notes
             """
         ).fetchone()
-        open_tasks = 0
-        done_tasks = 0
-        for r in self.execute("SELECT action_items FROM notes WHERE archived = 0").fetchall():
-            for item in json.loads(r["action_items"] or "[]"):
-                if item.get("done"):
-                    done_tasks += 1
-                else:
-                    open_tasks += 1
+        t_row = self.execute(
+            """
+            SELECT
+              SUM(CASE WHEN t.done = 0 THEN 1 ELSE 0 END) AS open_tasks,
+              SUM(CASE WHEN t.done = 1 THEN 1 ELSE 0 END) AS done_tasks
+            FROM tasks t
+            LEFT JOIN notes n ON t.note_id = n.id
+            WHERE (n.archived = 0 OR n.id IS NULL)
+            """
+        ).fetchone()
+        open_tasks = int(t_row["open_tasks"] or 0)
+        done_tasks = int(t_row["done_tasks"] or 0)
         return {
             "total": row["total"] or 0,
             "today": row["today"] or 0,
@@ -477,27 +519,454 @@ class Database:
 
     def open_tasks(self, limit: int = 200, include_done: bool = False) -> list[dict]:
         """Action items joined with their note (unfinished only by default)."""
-        results: list[dict] = []
+        status = "all" if include_done else "open"
+        tasks = self.list_tasks(status=status, limit=limit)
+        return [
+            {
+                "note_id": t["note_id"],
+                "note_title": t["note_title"],
+                "item_id": t["id"],
+                "text": t["text"],
+                "done": t["done"],
+                "created_at": t["created_at"],
+            }
+            for t in tasks
+        ]
+
+    # ---- tasks & action items -------------------------------------------
+
+    def _migrate_action_items(self) -> None:
+        """Idempotently migrate legacy action_items JSON arrays from notes into the tasks table."""
+        check_notes = self.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='notes'"
+        ).fetchone()
+        if not check_notes:
+            return
+
+        self.conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                text TEXT NOT NULL,
+                done INTEGER NOT NULL DEFAULT 0,
+                priority TEXT NOT NULL DEFAULT 'P2',
+                due_date TEXT,
+                repo TEXT,
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_tasks_note_id ON tasks(note_id);
+            CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
+            CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+            CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+            CREATE INDEX IF NOT EXISTS idx_tasks_repo ON tasks(repo);
+            """
+        )
+
         rows = self.execute(
-            "SELECT id, title, action_items, created_at FROM notes "
-            "WHERE archived = 0 ORDER BY created_at DESC LIMIT :limit",
-            {"limit": limit},
+            "SELECT id, action_items, created_at, updated_at, source FROM notes WHERE archived = 0"
         ).fetchall()
-        for r in rows:
-            for item in json.loads(r["action_items"] or "[]"):
-                is_done = bool(item.get("done"))
-                if include_done or not is_done:
-                    results.append(
-                        {
-                            "note_id": r["id"],
-                            "note_title": r["title"],
-                            "item_id": item.get("id"),
-                            "text": item.get("text", ""),
-                            "done": is_done,
-                            "created_at": r["created_at"],
-                        }
-                    )
-        return results
+        for row in rows:
+            items = json.loads(row["action_items"] or "[]")
+            for it in items:
+                if isinstance(it, str):
+                    it = {"text": it}
+                task_id = it.get("id") or new_id()
+                full_id = f"{row['id']}_{task_id}" if not task_id.startswith(f"{row['id']}_") else task_id
+
+                priority = (it.get("priority") or "P2").strip().upper()
+                if priority not in ("P1", "P2", "P3"):
+                    priority = "P2"
+                due_date = it.get("due_date") or None
+                repo = (it.get("repo") or "").strip().lower() or None
+                done = 1 if it.get("done") else 0
+                completed_at = it.get("completed_at") or (row["updated_at"] if done else None)
+
+                self.execute(
+                    """
+                    INSERT OR IGNORE INTO tasks (id, note_id, text, done, priority, due_date, repo, created_at, completed_at)
+                    VALUES (:id, :note_id, :text, :done, :priority, :due_date, :repo, :created_at, :completed_at)
+                    """,
+                    {
+                        "id": full_id,
+                        "note_id": row["id"],
+                        "text": (it.get("text") or "").strip(),
+                        "done": done,
+                        "priority": priority,
+                        "due_date": due_date,
+                        "repo": repo,
+                        "created_at": it.get("created_at") or row["created_at"],
+                        "completed_at": completed_at,
+                    },
+                )
+        self.commit()
+
+    def _sync_note_action_items(self, note_id: str) -> None:
+        """Keep parent note's action_items JSON column in sync with tasks table."""
+        rows = self.execute(
+            """
+            SELECT id, text, done, priority, due_date, repo, completed_at
+            FROM tasks
+            WHERE note_id = ?
+            ORDER BY created_at ASC
+            """,
+            (note_id,),
+        ).fetchall()
+        items = [
+            {
+                "id": r["id"],
+                "text": r["text"],
+                "done": bool(r["done"]),
+                "priority": r["priority"],
+                "due_date": r["due_date"],
+                "repo": r["repo"],
+                "completed_at": r["completed_at"],
+            }
+            for r in rows
+        ]
+        self.execute(
+            "UPDATE notes SET action_items = :items, updated_at = :ts WHERE id = :id",
+            {
+                "items": json.dumps(items, ensure_ascii=False),
+                "ts": now_iso(),
+                "id": note_id,
+            },
+        )
+        self.commit()
+
+    def _sync_tasks_from_note(self, note_id: str, action_items: list | str) -> None:
+        """Keep tasks table in sync when note.action_items is directly updated."""
+        if isinstance(action_items, str):
+            try:
+                items = json.loads(action_items)
+            except Exception:
+                items = []
+        else:
+            items = list(action_items or [])
+
+        existing = {
+            r["id"]: dict(r)
+            for r in self.execute("SELECT * FROM tasks WHERE note_id = ?", (note_id,)).fetchall()
+        }
+        seen_ids = set()
+
+        for it in items:
+            if isinstance(it, str):
+                it = {"text": it}
+            elif hasattr(it, "model_dump"):
+                it = it.model_dump()
+            elif hasattr(it, "dict"):
+                it = it.dict()
+            else:
+                it = dict(it)
+
+            task_id = it.get("id") or new_id()
+            full_id = task_id
+            if full_id not in existing and f"{note_id}_{task_id}" in existing:
+                full_id = f"{note_id}_{task_id}"
+            elif full_id not in existing and not full_id.startswith(f"{note_id}_") and len(full_id) < 8:
+                full_id = f"{note_id}_{task_id}"
+
+            text = (it.get("text") or "").strip()
+            done = 1 if it.get("done") else 0
+            priority = (it.get("priority") or "P2").strip().upper()
+            if priority not in ("P1", "P2", "P3"):
+                priority = "P2"
+            due_date = it.get("due_date") or None
+            repo = (it.get("repo") or "").strip().lower() or None
+            completed_at = it.get("completed_at")
+            if done and not completed_at:
+                completed_at = existing.get(full_id, {}).get("completed_at") or now_iso()
+            elif not done:
+                completed_at = None
+
+            if full_id in existing:
+                self.execute(
+                    """
+                    UPDATE tasks
+                    SET text = :text, done = :done, priority = :priority,
+                        due_date = :due_date, repo = :repo, completed_at = :completed_at
+                    WHERE id = :id
+                    """,
+                    {
+                        "id": full_id,
+                        "text": text,
+                        "done": done,
+                        "priority": priority,
+                        "due_date": due_date,
+                        "repo": repo,
+                        "completed_at": completed_at,
+                    },
+                )
+            else:
+                self.execute(
+                    """
+                    INSERT INTO tasks (id, note_id, text, done, priority, due_date, repo, created_at, completed_at)
+                    VALUES (:id, :note_id, :text, :done, :priority, :due_date, :repo, :created_at, :completed_at)
+                    """,
+                    {
+                        "id": full_id,
+                        "note_id": note_id,
+                        "text": text,
+                        "done": done,
+                        "priority": priority,
+                        "due_date": due_date,
+                        "repo": repo,
+                        "created_at": it.get("created_at") or now_iso(),
+                        "completed_at": completed_at,
+                    },
+                )
+            seen_ids.add(full_id)
+
+        for old_id in existing:
+            if old_id not in seen_ids:
+                self.execute("DELETE FROM tasks WHERE id = ?", (old_id,))
+        self.commit()
+
+    def _get_or_create_inbox_note(self) -> str:
+        row = self.execute("SELECT id FROM notes WHERE title = 'Inbox' AND archived = 0 LIMIT 1").fetchone()
+        if row:
+            return str(row["id"])
+        new_note = self.insert_note({
+            "title": "Inbox",
+            "type": "text",
+            "summary": "Standalone tasks and quick action items.",
+            "raw_text": "",
+            "tags": ["tasks"],
+        })
+        return str(new_note["id"])
+
+    def insert_task(self, task: dict) -> dict:
+        task_id = task.get("id") or new_id()
+        note_id = task.get("note_id")
+        if not note_id:
+            note_id = self._get_or_create_inbox_note()
+
+        text = (task.get("text") or "").strip()
+        done = 1 if task.get("done") else 0
+        priority = (task.get("priority") or "P2").strip().upper()
+        if priority not in ("P1", "P2", "P3"):
+            priority = "P2"
+        due_date = task.get("due_date") or None
+        repo = (str(task.get("repo")).strip().lower() or None) if task.get("repo") else None
+        created_at = task.get("created_at") or now_iso()
+        completed_at = task.get("completed_at") or (now_iso() if done else None)
+
+        self.execute(
+            """
+            INSERT INTO tasks (id, note_id, text, done, priority, due_date, repo, created_at, completed_at)
+            VALUES (:id, :note_id, :text, :done, :priority, :due_date, :repo, :created_at, :completed_at)
+            """,
+            {
+                "id": task_id,
+                "note_id": note_id,
+                "text": text,
+                "done": done,
+                "priority": priority,
+                "due_date": due_date,
+                "repo": repo,
+                "created_at": created_at,
+                "completed_at": completed_at,
+            },
+        )
+        self.commit()
+        self._sync_note_action_items(note_id)
+        return self.get_task(task_id)  # type: ignore[return-value]
+
+    def get_task(self, task_id: str) -> dict | None:
+        row = self.execute(
+            """
+            SELECT t.*, n.title AS note_title
+            FROM tasks t
+            LEFT JOIN notes n ON t.note_id = n.id
+            WHERE t.id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        return _row_to_task(row) if row else None
+
+    def update_task(self, task_id: str, changes: dict) -> dict | None:
+        current = self.get_task(task_id)
+        if not current:
+            return None
+        if not changes:
+            return current
+
+        clean_changes = {}
+        for key in ("text", "priority", "due_date", "repo", "completed_at", "note_id"):
+            if key in changes:
+                clean_changes[key] = changes[key]
+
+        if "priority" in clean_changes and clean_changes["priority"] is not None:
+            p = str(clean_changes["priority"]).strip().upper()
+            clean_changes["priority"] = p if p in ("P1", "P2", "P3") else "P2"
+
+        if "repo" in clean_changes:
+            val = clean_changes["repo"]
+            clean_changes["repo"] = str(val).strip().lower() if val else None
+
+        if "due_date" in clean_changes:
+            val = clean_changes["due_date"]
+            clean_changes["due_date"] = str(val).strip() if val else None
+
+        if "done" in changes:
+            new_done = bool(changes["done"])
+            clean_changes["done"] = 1 if new_done else 0
+            if "completed_at" not in changes:
+                clean_changes["completed_at"] = now_iso() if new_done else None
+
+        if clean_changes:
+            sets = ", ".join(f"{k} = :{k}" for k in clean_changes)
+            self.execute(f"UPDATE tasks SET {sets} WHERE id = :_id", {**clean_changes, "_id": task_id})
+            self.commit()
+
+        new_task = self.get_task(task_id)
+        self._sync_note_action_items(current["note_id"])
+        if new_task and new_task["note_id"] != current["note_id"]:
+            self._sync_note_action_items(new_task["note_id"])
+        return new_task
+
+    def toggle_task(self, task_id: str) -> dict | None:
+        task = self.get_task(task_id)
+        if not task:
+            return None
+        new_done = not task["done"]
+        completed_at = now_iso() if new_done else None
+        self.execute(
+            "UPDATE tasks SET done = :done, completed_at = :completed_at WHERE id = :id",
+            {"done": 1 if new_done else 0, "completed_at": completed_at, "id": task_id},
+        )
+        self.commit()
+        self._sync_note_action_items(task["note_id"])
+        return self.get_task(task_id)
+
+    def delete_task(self, task_id: str) -> dict | None:
+        task = self.get_task(task_id)
+        if not task:
+            return None
+        self.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        self.commit()
+        self._sync_note_action_items(task["note_id"])
+        return task
+
+    def list_tasks(
+        self,
+        status: str = "open",
+        priority: str | None = None,
+        repo: str | None = None,
+        due: str | None = None,
+        q: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[dict]:
+        where = ["(n.archived = 0 OR n.id IS NULL)"]
+        params: dict = {"limit": limit, "offset": offset}
+
+        if status == "open":
+            where.append("t.done = 0")
+        elif status in ("done", "completed"):
+            where.append("t.done = 1")
+
+        if priority and priority.upper() in ("P1", "P2", "P3"):
+            where.append("t.priority = :priority")
+            params["priority"] = priority.upper()
+
+        if repo:
+            where.append("t.repo = :repo")
+            params["repo"] = repo.strip().lower()
+
+        today = datetime_now_local().strftime("%Y-%m-%d")
+        if due == "overdue":
+            where.append("t.due_date IS NOT NULL AND t.due_date < :today AND t.done = 0")
+            params["today"] = today
+        elif due == "today":
+            where.append("t.due_date = :today")
+            params["today"] = today
+        elif due == "week":
+            week_end = (datetime_now_local() + timedelta(days=7)).strftime("%Y-%m-%d")
+            where.append("t.due_date IS NOT NULL AND t.due_date >= :today AND t.due_date <= :week_end")
+            params["today"] = today
+            params["week_end"] = week_end
+        elif due == "nodate":
+            where.append("t.due_date IS NULL")
+
+        if q and q.strip():
+            where.append("(t.text LIKE :q OR n.title LIKE :q)")
+            params["q"] = f"%{q.strip()}%"
+
+        where_clause = " AND ".join(where)
+        sql = f"""
+            SELECT t.*, n.title AS note_title
+            FROM tasks t
+            LEFT JOIN notes n ON t.note_id = n.id
+            WHERE {where_clause}
+            ORDER BY
+                t.done ASC,
+                CASE t.priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END ASC,
+                CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END ASC,
+                t.due_date ASC,
+                t.created_at DESC
+            LIMIT :limit OFFSET :offset
+        """
+        rows = self.execute(sql, params).fetchall()
+        return [_row_to_task(r) for r in rows]
+
+    def task_stats(self) -> dict:
+        today = datetime_now_local().strftime("%Y-%m-%d")
+        row = self.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN t.done = 0 THEN 1 ELSE 0 END) AS open,
+                SUM(CASE WHEN t.done = 1 THEN 1 ELSE 0 END) AS done,
+                SUM(CASE WHEN t.done = 0 AND t.priority = 'P1' THEN 1 ELSE 0 END) AS p1,
+                SUM(CASE WHEN t.done = 0 AND t.priority = 'P2' THEN 1 ELSE 0 END) AS p2,
+                SUM(CASE WHEN t.done = 0 AND t.priority = 'P3' THEN 1 ELSE 0 END) AS p3,
+                SUM(CASE WHEN t.done = 0 AND t.due_date IS NOT NULL AND t.due_date < :today THEN 1 ELSE 0 END) AS overdue,
+                SUM(CASE WHEN t.done = 0 AND t.due_date = :today THEN 1 ELSE 0 END) AS due_today
+            FROM tasks t
+            LEFT JOIN notes n ON t.note_id = n.id
+            WHERE (n.archived = 0 OR n.id IS NULL)
+            """,
+            {"today": today},
+        ).fetchone()
+
+        total = int(row["total"] or 0)
+        done = int(row["done"] or 0)
+        open_cnt = int(row["open"] or 0)
+        rate = round(done / total, 2) if total > 0 else 0.0
+
+        return {
+            "open": open_cnt,
+            "done": done,
+            "total": total,
+            "completion_rate": rate,
+            "by_priority": {
+                "P1": int(row["p1"] or 0),
+                "P2": int(row["p2"] or 0),
+                "P3": int(row["p3"] or 0),
+            },
+            "overdue": int(row["overdue"] or 0),
+            "due_today": int(row["due_today"] or 0),
+        }
+
+    def task_repos(self) -> list[dict]:
+        rows = self.execute(
+            """
+            SELECT t.repo, COUNT(*) AS count
+            FROM tasks t
+            LEFT JOIN notes n ON t.note_id = n.id
+            WHERE t.repo IS NOT NULL AND TRIM(t.repo) != '' AND (n.archived = 0 OR n.id IS NULL)
+            GROUP BY t.repo
+            ORDER BY count DESC, t.repo ASC
+            """
+        ).fetchall()
+        return [
+            {"name": r["repo"], "repo": r["repo"], "count": int(r["count"])}
+            for r in rows
+        ]
+
 
 
 # ---- serialization helpers -------------------------------------------
@@ -549,9 +1018,27 @@ def _note_to_sql(note: dict) -> dict:
     out.setdefault("archived", 0)
     out.setdefault("audio_path", None)
     out.setdefault("processed_at", None)
+    now = now_iso()
+    out.setdefault("created_at", now)
+    out.setdefault("updated_at", now)
     out["pinned"] = int(bool(out.get("pinned")))
     out["archived"] = int(bool(out.get("archived")))
     return out
+
+
+def _row_to_task(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "note_id": row["note_id"],
+        "note_title": row["note_title"] if "note_title" in row.keys() and row["note_title"] is not None else "",
+        "text": row["text"],
+        "done": bool(row["done"]),
+        "priority": row["priority"],
+        "due_date": row["due_date"],
+        "repo": row["repo"],
+        "created_at": row["created_at"],
+        "completed_at": row["completed_at"],
+    }
 
 
 def _fts_query(raw: str) -> str:
