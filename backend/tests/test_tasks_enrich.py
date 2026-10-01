@@ -382,3 +382,70 @@ async def test_processor_reprocessing_clears_old_tasks(tmp_path):
     assert len(updated_note["action_items"]) == 1
     assert "replaced new task item" in updated_note["action_items"][0]["text"]
 
+
+@pytest.mark.anyio
+async def test_processor_reprocessing_preserves_task_done_and_metadata(tmp_path):
+    db_path = tmp_path / "processor_preserve_state.db"
+    db = Database(db_path)
+    db.migrate()
+
+    cfg = Config()
+    cfg.paths.data_dir = tmp_path
+    cfg.llm.provider = "none"
+    cfg.notifications.desktop = False
+
+    bus = EventBus()
+    transcriber = MagicMock()
+
+    processor = Processor(db=db, cfg=cfg, bus=bus, transcriber=transcriber)
+
+    note = db.insert_note({
+        "title": "Task State Note",
+        "raw_text": "todo: deploy release build in backend repo",
+        "type": "text",
+        "status": "pending",
+    })
+
+    # Initial processing
+    await processor._process(note["id"])
+    tasks = db.list_tasks(status="all")
+    assert len(tasks) == 1
+    task_id = tasks[0]["id"]
+    assert tasks[0]["done"] is False
+    assert tasks[0]["completed_at"] is None
+
+    # User marks task as completed and sets priority to P1
+    db.update_task(task_id, {
+        "done": True,
+        "completed_at": "2026-10-01T15:30:00Z",
+        "priority": "P1",
+    })
+    completed_task = db.get_task(task_id)
+    assert completed_task["done"] is True
+    assert completed_task["completed_at"] == "2026-10-01T15:30:00Z"
+    assert completed_task["priority"] == "P1"
+
+    # Reprocess the note (e.g. note re-enrichment triggered)
+    db.update_note(note["id"], {"status": "pending"})
+    await processor._process(note["id"])
+
+    # Verify task completion state, id, timestamp, priority, and repo are preserved
+    reprocessed_tasks = db.list_tasks(status="all")
+    assert len(reprocessed_tasks) == 1
+    t = reprocessed_tasks[0]
+    assert t["id"] == task_id
+    assert t["done"] is True
+    assert t["completed_at"] == "2026-10-01T15:30:00Z"
+    assert t["priority"] == "P1"
+    assert t["repo"] == "backend"
+
+    # Verify parent note's action_items JSON column reflects preserved state
+    updated_note = db.get_note(note["id"])
+    assert len(updated_note["action_items"]) == 1
+    item = updated_note["action_items"][0]
+    assert item["id"] == task_id
+    assert item["done"] is True
+    assert item["completed_at"] == "2026-10-01T15:30:00Z"
+    assert item["priority"] == "P1"
+
+

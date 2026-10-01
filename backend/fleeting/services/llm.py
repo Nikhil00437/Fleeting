@@ -74,7 +74,7 @@ ENRICH_SYSTEM_TEMPLATE = (
 )
 
 ENRICH_SYSTEM = ENRICH_SYSTEM_TEMPLATE.format(
-    today_iso=datetime.now(timezone.utc).date().isoformat()
+    today_iso=date.today().isoformat()
 )
 
 
@@ -366,7 +366,7 @@ def _sanitize(parsed: dict) -> dict:
 # ---- offline fallback --------------------------------------------------
 
 
-def heuristic_enrich(text: str) -> dict:
+def heuristic_enrich(text: str, today: date | None = None) -> dict:
     """Structure a note without any model — decent titles, tags, TODO mining."""
     text = text.strip()
     if not text:
@@ -393,7 +393,8 @@ def heuristic_enrich(text: str) -> dict:
     tags = [w for w, _ in Counter(words).most_common(5) if _]
 
     action_items = []
-    today: date = datetime.now(timezone.utc).date()
+    if today is None:
+        today = date.today()
     todo_re = re.compile(
         r"^(?:todo|task|fix|remember|call|email|mail|buy|send|ask|review|write|finish|"
         r"deploy|ship|check|read|watch|book|pay|schedule|prep(?:are)?|follow[ -]up)\b[,: ]+(.{4,})",

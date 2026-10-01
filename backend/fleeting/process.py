@@ -139,21 +139,70 @@ class Processor:
             }
             note = self.db.update_note(note_id, changes)
 
-            # Clear existing tasks for this note to prevent duplication on reprocessing
-            self.db.execute("DELETE FROM tasks WHERE note_id = :nid", {"nid": note_id})
-            self.db.commit()
+            # Fetch existing tasks for this note to preserve state on reprocessing
+            existing_rows = self.db.execute(
+                "SELECT * FROM tasks WHERE note_id = :nid", {"nid": note_id}
+            ).fetchall()
+            existing_tasks = [dict(r) for r in existing_rows]
+            by_id = {t["id"]: t for t in existing_tasks if t.get("id")}
+            by_norm_text: dict[str, list[dict]] = {}
+            for t in existing_tasks:
+                key = (t.get("text") or "").strip().lower()
+                if key:
+                    by_norm_text.setdefault(key, []).append(t)
 
+            matched_ids = set()
+            new_tasks = []
             default_repo = source.get("repo")
             for item in enriched.get("action_items") or []:
                 if isinstance(item, str):
                     item = {"text": item, "priority": "P2", "due_date": None, "repo": None}
-                self.db.insert_task({
-                    "note_id": note["id"] if note else note_id,
-                    "text": item.get("text", ""),
-                    "priority": item.get("priority", "P2"),
-                    "due_date": item.get("due_date"),
-                    "repo": item.get("repo") or default_repo,
-                })
+
+                text = (item.get("text") or "").strip()
+                norm_text = text.lower()
+                item_id = item.get("id")
+
+                match = None
+                if item_id and item_id in by_id and item_id not in matched_ids:
+                    match = by_id[item_id]
+                elif norm_text and norm_text in by_norm_text:
+                    for candidate in by_norm_text[norm_text]:
+                        if candidate["id"] not in matched_ids:
+                            match = candidate
+                            break
+
+                if match:
+                    matched_ids.add(match["id"])
+                    new_tasks.append({
+                        "id": match["id"],
+                        "note_id": note["id"] if note else note_id,
+                        "text": text or match["text"],
+                        "done": bool(match["done"]),
+                        "completed_at": match["completed_at"] if match["done"] else None,
+                        "created_at": match.get("created_at"),
+                        "priority": match.get("priority") or item.get("priority", "P2"),
+                        "due_date": item.get("due_date") or match.get("due_date"),
+                        "repo": item.get("repo") or match.get("repo") or default_repo,
+                    })
+                else:
+                    new_tasks.append({
+                        "id": item.get("id"),
+                        "note_id": note["id"] if note else note_id,
+                        "text": text,
+                        "done": bool(item.get("done", False)),
+                        "completed_at": item.get("completed_at"),
+                        "created_at": item.get("created_at"),
+                        "priority": item.get("priority", "P2"),
+                        "due_date": item.get("due_date"),
+                        "repo": item.get("repo") or default_repo,
+                    })
+
+            self.db.execute("DELETE FROM tasks WHERE note_id = :nid", {"nid": note_id})
+            self.db.commit()
+
+            for task_data in new_tasks:
+                self.db.insert_task(task_data)
+
             self.db._sync_note_action_items(note_id)
             note = self.db.get_note(note_id)
 

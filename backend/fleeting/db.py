@@ -541,32 +541,12 @@ class Database:
 
     def _migrate_action_items(self) -> None:
         """Idempotently migrate legacy action_items JSON arrays from notes into the tasks table."""
-        check_notes = self.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='notes'"
-        ).fetchone()
-        if not check_notes:
+        check_tables = self.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('notes', 'tasks')"
+        ).fetchall()
+        table_names = {r["name"] for r in check_tables}
+        if "notes" not in table_names or "tasks" not in table_names:
             return
-
-        self.conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS tasks (
-                id TEXT PRIMARY KEY,
-                note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-                text TEXT NOT NULL,
-                done INTEGER NOT NULL DEFAULT 0,
-                priority TEXT NOT NULL DEFAULT 'P2',
-                due_date TEXT,
-                repo TEXT,
-                created_at TEXT NOT NULL,
-                completed_at TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_tasks_note_id ON tasks(note_id);
-            CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
-            CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
-            CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
-            CREATE INDEX IF NOT EXISTS idx_tasks_repo ON tasks(repo);
-            """
-        )
 
         rows = self.execute(
             "SELECT id, action_items, created_at, updated_at, source FROM notes WHERE archived = 0"
