@@ -1,0 +1,11 @@
+{
+  "name": "fleeting",
+  "productName": "Fleeting",
+  "version": "0.2.0",
+  "description": "Local-first memory inbox, voice memo & activity workbench",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron43 ."
+  }
+}

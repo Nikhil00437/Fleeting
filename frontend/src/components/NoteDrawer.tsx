@@ -1,0 +1,507 @@
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import { renderMarkdown } from "../markdown";
+import { fmtDuration, relTime, timeOfDay } from "../time";
+import {
+  ArchiveIcon,
+  BotIcon,
+  CheckIcon,
+  CopyIcon,
+  ExportIcon,
+  LinkIcon,
+  MicIcon,
+  PinIcon,
+  RefreshIcon,
+  TextIcon,
+  TrashIcon,
+  XIcon,
+} from "./Icons";
+import { StatusBadge } from "./NoteCard";
+import type { Note } from "../types";
+
+interface Props {
+  note: Note;
+  onClose: () => void;
+  onUpdate: (note: Note) => void;
+  onDelete?: (id: string) => void;
+  onToast: (message: string, kind?: "ok" | "err") => void;
+}
+
+const TYPE_LABEL: Record<string, { icon: React.ReactNode; label: string; badgeCls: string }> = {
+  text: {
+    icon: <TextIcon className="h-3.5 w-3.5" />,
+    label: "Note",
+    badgeCls: "bg-ember-500/15 text-ember-300 ring-1 ring-ember-400/30",
+  },
+  voice: {
+    icon: <MicIcon className="h-3.5 w-3.5" />,
+    label: "Voice Memo",
+    badgeCls: "bg-iris-500/15 text-iris-300 ring-1 ring-iris-400/30",
+  },
+  youtube: {
+    icon: <LinkIcon className="h-3.5 w-3.5" />,
+    label: "YouTube",
+    badgeCls: "bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-400/30",
+  },
+};
+
+function toMarkdown(n: Note): string {
+  const lines = [`# ${n.title || "Untitled capture"}`];
+  if (n.summary) lines.push("", n.summary);
+  if (n.action_items.length) {
+    lines.push("", "## Action items");
+    n.action_items.forEach((it) => lines.push(`- [${it.done ? "x" : " "}] ${it.text}`));
+  }
+  if (n.raw_text) lines.push("", "## Content", "", n.raw_text);
+  if (n.source?.url) lines.push("", `> ${n.source.url}`);
+  return lines.join("\n");
+}
+
+export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast }: Props) {
+  const [title, setTitle] = useState(note.title);
+  const [summary, setSummary] = useState(note.summary || "");
+  const [tagInput, setTagInput] = useState("");
+  const [newTaskText, setNewTaskText] = useState("");
+  const [inspectorTab, setInspectorTab] = useState<"overview" | "raw" | "markdown">("overview");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    setTitle(note.title);
+    setSummary(note.summary || "");
+    setConfirmDelete(false);
+    setNewTaskText("");
+  }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setTitle(note.title);
+    setSummary(note.summary || "");
+  }, [note.title, note.summary]);
+
+  async function patch(changes: Partial<Note>) {
+    try {
+      onUpdate(await api.updateNote(note.id, changes));
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function toggleItem(itemId: string) {
+    const items = note.action_items.map((it) =>
+      it.id === itemId ? { ...it, done: !it.done } : it,
+    );
+    await patch({ action_items: items } as Partial<Note>);
+  }
+
+  async function addTaskItem() {
+    const text = newTaskText.trim();
+    if (!text) return;
+    const nextItem = {
+      id: `item-${Date.now().toString(36)}`,
+      text,
+      done: false,
+    };
+    setNewTaskText("");
+    await patch({ action_items: [...note.action_items, nextItem] } as Partial<Note>);
+  }
+
+  async function removeTaskItem(itemId: string) {
+    const items = note.action_items.filter((it) => it.id !== itemId);
+    await patch({ action_items: items } as Partial<Note>);
+  }
+
+  async function addTag() {
+    const t = tagInput
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9\u0900-\u097F-]/g, "");
+    if (!t || note.tags.includes(t)) return setTagInput("");
+    await patch({ tags: [...note.tags, t] } as Partial<Note>);
+    setTagInput("");
+  }
+
+  const meta = note.source ?? {};
+  const typeInfo = TYPE_LABEL[note.type] ?? TYPE_LABEL.text;
+  const mdPreview = toMarkdown(note);
+
+  return (
+    <aside className="flex h-full w-[410px] shrink-0 flex-col border-l border-white/[0.07] bg-ink-900/95 shadow-2xl xl:w-[460px]">
+      {/* Docked Inspector Top Bar */}
+      <div className="app-toolbar flex h-11 shrink-0 items-center gap-2 px-3.5">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-[11px] font-medium ${typeInfo.badgeCls}`}
+        >
+          {typeInfo.icon}
+          <span>{typeInfo.label}</span>
+        </span>
+        <span className="font-mono text-[10.5px] tabular-nums text-ink-400">
+          {timeOfDay(note.created_at)} · {relTime(note.created_at)}
+        </span>
+
+        {/* Inspector Sub-Tabs */}
+        <div className="ml-auto flex items-center rounded-lg border border-white/[0.06] bg-ink-950/90 p-0.5 text-[10.5px]">
+          {(
+            [
+              { id: "overview", label: "Inspector" },
+              { id: "raw", label: "Source" },
+              { id: "markdown", label: "MD" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setInspectorTab(t.id)}
+              className={`rounded-md px-2 py-0.5 transition-colors ${
+                inspectorTab === t.id
+                  ? "bg-white/[0.1] font-semibold text-ink-100"
+                  : "text-ink-400 hover:text-ink-200"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-0.5 border-l border-white/[0.07] pl-1.5">
+          <button
+            onClick={() => void patch({ pinned: !note.pinned } as Partial<Note>)}
+            className={`rounded-md p-1.5 transition-colors hover:bg-white/[0.06] ${
+              note.pinned ? "text-ember-400" : "text-ink-400"
+            }`}
+            title={note.pinned ? "Unpin" : "Pin"}
+          >
+            <PinIcon filled={note.pinned} className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => void patch({ archived: true } as Partial<Note>)}
+            className="rounded-md p-1.5 text-ink-400 transition-colors hover:bg-white/[0.06] hover:text-ink-200"
+            title="Archive"
+          >
+            <ArchiveIcon className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-ink-400 transition-colors hover:bg-white/[0.06] hover:text-ink-200"
+            title="Close inspector (Esc)"
+          >
+            <XIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Scrollable Inspector Body */}
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {/* Editable Note Title + Metadata Pills */}
+        <div>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => title !== note.title && void patch({ title } as Partial<Note>)}
+            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            placeholder="Untitled capture"
+            className="w-full bg-transparent text-base font-bold tracking-tight text-ink-100 placeholder-ink-400 outline-none focus:text-ember-200"
+          />
+
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <StatusBadge note={note} />
+            {meta.enrichment && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-ink-300">
+                <BotIcon className="h-3 w-3 text-iris-400" />
+                {meta.enrichment === "heuristic" ? "offline heuristics" : "local LLM"}
+              </span>
+            )}
+            {meta.transcription?.duration && (
+              <span className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-iris-300">
+                {fmtDuration(meta.transcription.duration)}
+                {meta.transcription.language
+                  ? ` · ${String(meta.transcription.language).toUpperCase()}`
+                  : ""}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {note.status === "failed" && note.error && (
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+            <span className="min-w-0 flex-1">{note.error}</span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                onClick={async () => onUpdate(await api.reprocess(note.id))}
+                className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/20"
+              >
+                <RefreshIcon className="h-3 w-3" /> Retry
+              </button>
+              <button
+                onClick={async () => {
+                  await api.deleteNote(note.id);
+                  onDelete?.(note.id);
+                  onClose();
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-400/30 bg-red-500/20 px-2.5 py-1 text-[11px] font-semibold text-red-200 hover:bg-red-500/30"
+              >
+                <TrashIcon className="h-3 w-3" /> Delete
+              </button>
+            </div>
+          </div>
+        )}
+
+        {inspectorTab === "overview" && (
+          <>
+            {/* YouTube metadata card */}
+            {note.type === "youtube" && meta.url && (
+              <a
+                href={meta.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  if (window.fleetingDesktop?.openExternal) {
+                    e.preventDefault();
+                    void window.fleetingDesktop.openExternal(meta.url);
+                  }
+                }}
+                className="glass flex items-center gap-3 overflow-hidden rounded-xl p-2 transition-colors hover:border-cyan-400/40"
+              >
+                {meta.thumbnail && (
+                  <img
+                    src={meta.thumbnail}
+                    alt=""
+                    className="h-14 w-24 shrink-0 rounded-lg object-cover"
+                    onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+                  />
+                )}
+                <div className="min-w-0 flex-1 pr-2">
+                  <p className="truncate text-xs font-semibold text-ink-100">
+                    {meta.title ?? "YouTube video"}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-cyan-300/90">
+                    {meta.channel}
+                    {meta.duration ? ` · ${fmtDuration(meta.duration)}` : ""}
+                    {meta.method === "captions"
+                      ? " · captions"
+                      : meta.method === "whisper"
+                        ? " · whisper"
+                        : ""}
+                  </p>
+                </div>
+              </a>
+            )}
+
+            {/* Editable AI Summary */}
+            <div className="glass rounded-xl p-3.5">
+              <p className="micro-label mb-1.5 !text-[9.5px] !text-ember-300">Executive Summary</p>
+              <textarea
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                onBlur={() =>
+                  summary !== (note.summary || "") && void patch({ summary } as Partial<Note>)
+                }
+                rows={3}
+                placeholder="Add or edit summary…"
+                className="w-full resize-none bg-transparent text-xs leading-relaxed text-ink-200 placeholder-ink-500 outline-none"
+              />
+            </div>
+
+            {/* Interactive Action Items Checklist + Inline Creator */}
+            <div className="glass rounded-xl p-3.5">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="micro-label !text-[9.5px]">
+                  Action Items ({note.action_items.filter((i) => i.done).length}/
+                  {note.action_items.length})
+                </p>
+              </div>
+              {note.action_items.length > 0 && (
+                <ul className="mb-2.5 space-y-1.5">
+                  {note.action_items.map((it) => (
+                    <li
+                      key={it.id}
+                      className="group flex items-start gap-2.5 rounded-lg bg-ink-950/50 px-2.5 py-1.5 transition-colors hover:bg-ink-950"
+                    >
+                      <button
+                        onClick={() => void toggleItem(it.id)}
+                        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                          it.done
+                            ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                            : "border-ink-500 bg-ink-900 hover:border-ember-400"
+                        }`}
+                      >
+                        {it.done && <CheckIcon className="h-2.5 w-2.5" />}
+                      </button>
+                      <span
+                        onClick={() => void toggleItem(it.id)}
+                        className={`selectable flex-1 cursor-pointer text-xs leading-snug ${
+                          it.done ? "text-ink-400 line-through" : "text-ink-100"
+                        }`}
+                      >
+                        {it.text}
+                      </span>
+                      <button
+                        onClick={() => void removeTaskItem(it.id)}
+                        className="text-ink-500 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-300"
+                        title="Remove task"
+                      >
+                        <XIcon className="h-3 w-3" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={newTaskText}
+                  onChange={(e) => setNewTaskText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void addTaskItem()}
+                  placeholder="+ Add action item…"
+                  className="h-7 flex-1 rounded-lg border border-dashed border-white/12 bg-ink-950/60 px-2.5 text-xs text-ink-200 placeholder-ink-500 outline-none focus:border-ember-500/50"
+                />
+                {newTaskText.trim() && (
+                  <button
+                    onClick={() => void addTaskItem()}
+                    className="rounded-lg bg-ember-500/20 px-2.5 py-1 text-xs font-medium text-ember-300 hover:bg-ember-500/30"
+                  >
+                    Add
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Tags Editor */}
+            <div>
+              <p className="micro-label mb-1.5 !text-[9.5px]">Tags</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {note.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="group flex items-center gap-1 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-0.5 font-mono text-[11px] text-ink-200"
+                  >
+                    #{t}
+                    <button
+                      onClick={() =>
+                        void patch({ tags: note.tags.filter((x) => x !== t) } as Partial<Note>)
+                      }
+                      className="text-ink-500 transition-colors hover:text-red-300"
+                    >
+                      <XIcon className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void addTag()}
+                  onBlur={() => void addTag()}
+                  placeholder="+ tag"
+                  className="w-16 rounded-lg border border-dashed border-white/12 bg-transparent px-2 py-0.5 font-mono text-[11px] text-ink-200 placeholder-ink-500 outline-none transition-all focus:w-24 focus:border-ember-500/50"
+                />
+              </div>
+            </div>
+
+            {/* Raw Content / Transcript */}
+            {note.raw_text && (
+              <div>
+                <p className="micro-label mb-1.5 !text-[9.5px]">
+                  {note.type === "voice" || note.type === "youtube" ? "Transcript" : "Raw Content"}
+                </p>
+                <div className="selectable rounded-xl border border-white/[0.06] bg-ink-950/80 p-3.5 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink-200">
+                  {note.raw_text}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {inspectorTab === "raw" && (
+          <div>
+            <p className="micro-label mb-1.5 !text-[9.5px]">Raw Source Text</p>
+            <pre className="selectable overflow-x-auto rounded-xl border border-white/[0.06] bg-ink-950 p-3.5 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink-200">
+              {note.raw_text || "(empty)"}
+            </pre>
+          </div>
+        )}
+
+        {inspectorTab === "markdown" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="micro-label !text-[9.5px]">Vault Markdown Preview</p>
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(mdPreview);
+                  onToast("markdown copied");
+                }}
+                className="flex items-center gap-1 rounded-lg border border-white/10 px-2 py-0.5 text-[10.5px] text-ink-300 hover:text-ink-100"
+              >
+                <CopyIcon className="h-3 w-3" /> Copy MD
+              </button>
+            </div>
+            <div
+              className="md selectable rounded-xl border border-white/[0.06] bg-ink-950/80 p-3.5"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(mdPreview) }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Docked Inspector Footer Actions */}
+      <div className="flex h-10 shrink-0 items-center gap-1 border-t border-white/[0.07] bg-ink-950/80 px-3">
+        <button
+          onClick={async () => onUpdate(await api.reprocess(note.id))}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
+          title="Re-run transcription + enrichment"
+        >
+          <RefreshIcon className="h-3 w-3" /> Reprocess
+        </button>
+        <button
+          onClick={async () => {
+            try {
+              const r = await api.exportNote(note.id);
+              onToast(`exported → ${r.path.replace(/^\/home\/[^/]+/, "~")}`);
+            } catch (e) {
+              onToast(e instanceof Error ? e.message : String(e), "err");
+            }
+          }}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
+          title="Write to markdown vault"
+        >
+          <ExportIcon className="h-3 w-3" /> Export
+        </button>
+        <button
+          onClick={async () => {
+            await navigator.clipboard.writeText(toMarkdown(note));
+            onToast("markdown copied");
+          }}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
+        >
+          <CopyIcon className="h-3 w-3" /> Copy
+        </button>
+        <div className="ml-auto">
+          {confirmDelete ? (
+            <span className="flex items-center gap-1.5 text-[11px]">
+              <span className="text-ink-400">Delete?</span>
+              <button
+                onClick={async () => {
+                  await api.deleteNote(note.id);
+                  onDelete?.(note.id);
+                  onClose();
+                }}
+                className="rounded-md bg-red-500/20 px-2 py-0.5 font-semibold text-red-300 hover:bg-red-500/30"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-md px-1.5 py-0.5 text-ink-400 hover:bg-white/[0.06]"
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-400 transition-colors hover:bg-red-500/12 hover:text-red-300"
+            >
+              <TrashIcon className="h-3 w-3" /> Delete
+            </button>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# fleeting-app — launch Fleeting as a native Electron desktop application.
+# Electron automatically starts the local FastAPI backend if it isn't running yet,
+# opens a frameless native Wayland/X11 window (StartupWMClass=fleeting), and
+# attaches a system tray icon.
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+ELECTRON_APP="$ROOT/electron"
+
+# Locate the installed Electron runtime (Arch Linux packages electron43/electron*, or PATH electron)
+ELECTRON_BIN=""
+for candidate in electron43 electron35 electron34 electron33 electron; do
+  if command -v "$candidate" > /dev/null 2>&1; then
+    ELECTRON_BIN="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$ELECTRON_BIN" ]]; then
+  echo "fleeting-app: no electron binary found on PATH (install 'electron' or 'electron43')" >&2
+  exit 1
+fi
+
+exec "$ELECTRON_BIN" "$ELECTRON_APP" "$@"

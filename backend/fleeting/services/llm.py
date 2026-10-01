@@ -1,0 +1,262 @@
+"""LLM enrichment via a local OpenAI-ish server (Ollama / LM Studio).
+
+The enricher asks the local model to structure raw captures into
+{title, summary, tags, action_items}. If the model is unreachable, times out,
+or returns garbage, callers fall back to `heuristic_enrich` so the app keeps
+working fully offline — capture must never fail because enrichment did.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from collections import Counter
+
+import httpx
+
+from ..config import LLMConfig
+
+log = logging.getLogger("fleeting.llm")
+
+MAX_ENRICH_CHARS = 12_000
+
+STOPWORDS = frozenset(
+    """a an and are as at be but by for from get got has have he her his i if in
+    into is it its just like me my no not of on or our so some than that the
+    their them then there these they this to too up us was we were what when
+    where which who why will with you your about really very much many also do
+    does did doing done can could should would need wants want thing things
+    stuff going gonna okay ok yeah yes""".split()
+)
+
+ENRICH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "action_items": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["title", "summary", "tags", "action_items"],
+}
+
+ENRICH_SYSTEM = (
+    "You organize raw personal notes for a local note-taking app. "
+    "You receive a captured note (possibly a messy voice transcript) and must respond "
+    "with ONLY a JSON object with these keys:\n"
+    '- "title": a short specific title, max 60 characters, no quotes around it\n'
+    '- "summary": 1-3 sentence summary of the key content\n'
+    '- "tags": 2-6 short lowercase topical tags (single words or-hyphenated), no "#" prefix\n'
+    '- "action_items": array of concrete actionable tasks stated in the note, as short '
+    "imperative sentences (e.g. 'Update the resume with ARIA deployment experience'). Phrases "
+    "like 'remember to …', 'need to …', 'have to …', 'todo: …' ARE action items — extract them. "
+    "Empty array only if the note truly contains no task or intent to act. Do NOT invent tasks.\n"
+    "Use the same language as the note."
+)
+
+
+class LLMUnavailable(Exception):
+    """Raised when the local LLM cannot enrich a note."""
+
+
+def normalize_base_url(base_url: str) -> str:
+    return base_url.rstrip("/")
+
+
+async def check_llm(cfg: LLMConfig) -> dict:
+    """Probe the configured LLM server; returns status info for the UI."""
+    base = normalize_base_url(cfg.base_url)
+    if cfg.provider == "none":
+        return {"ok": False, "detail": "LLM disabled in settings"}
+    try:
+        async with httpx.AsyncClient(timeout=4) as client:
+            if cfg.provider == "ollama":
+                r = await client.get(f"{base}/api/tags")
+                r.raise_for_status()
+                models = [m.get("name") for m in r.json().get("models", [])]
+            else:  # lmstudio / openai-compatible
+                r = await client.get(f"{base}/v1/models")
+                r.raise_for_status()
+                models = [m.get("id") for m in r.json().get("data", [])]
+        if not models:
+            return {"ok": False, "detail": f"server reachable but no models installed"}
+        if cfg.model and cfg.model not in models and not any(m and m.startswith(cfg.model) for m in models):
+            return {
+                "ok": False,
+                "detail": f"model '{cfg.model}' not found on server",
+                "models": models,
+            }
+        return {"ok": True, "models": models}
+    except Exception as exc:
+        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}", "models": []}
+
+
+async def request_chat(url: str, payload: dict, timeout_secs: int, *, provider: str = "ollama") -> str:
+    """POST a chat request to an Ollama/OpenAI-compatible server, return content."""
+    try:
+        async with httpx.AsyncClient(timeout=timeout_secs) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        raise LLMUnavailable(f"request failed: {type(exc).__name__}: {exc}") from exc
+    content = _extract_content(data)
+    if not content.strip():
+        raise LLMUnavailable("model returned an empty response")
+    return content
+
+
+async def enrich(text: str, cfg: LLMConfig) -> dict:
+    """Return {title, summary, tags, action_items} from the local LLM.
+
+    Raises LLMUnavailable on any failure — callers must fall back.
+    """
+    if cfg.provider == "none" or not text.strip():
+        raise LLMUnavailable("llm disabled or empty text")
+
+    base = normalize_base_url(cfg.base_url)
+    snippet = text[:MAX_ENRICH_CHARS]
+
+    if cfg.provider == "lmstudio":
+        payload = {
+            "model": cfg.model,
+            "messages": [
+                {"role": "system", "content": ENRICH_SYSTEM},
+                {"role": "user", "content": snippet},
+            ],
+            "temperature": 0.3,
+            "max_tokens": 1024,
+            "response_format": {"type": "json_object"},
+        }
+        url = f"{base}/v1/chat/completions"
+    else:  # ollama
+        payload = {
+            "model": cfg.model,
+            "messages": [
+                {"role": "system", "content": ENRICH_SYSTEM},
+                {"role": "user", "content": snippet},
+            ],
+            "stream": False,
+            "think": False,
+            "format": ENRICH_SCHEMA,
+            "options": {"temperature": 0.3},
+        }
+        url = f"{base}/api/chat"
+
+    content = await request_chat(url, payload, cfg.timeout_secs, provider=cfg.provider)
+    parsed = _parse_json_loose(content)
+    if parsed is None:
+        raise LLMUnavailable("model returned unparseable JSON")
+    return _sanitize(parsed)
+
+
+def _extract_content(data: dict) -> str:
+    raw = ""
+    if "message" in data and isinstance(data["message"], dict):  # ollama chat
+        raw = data["message"].get("content") or ""
+    elif "choices" in data and data["choices"]:  # openai-compatible
+        raw = data["choices"][0].get("message", {}).get("content") or ""
+    elif "response" in data:  # ollama generate
+        raw = data.get("response") or ""
+    # Strip any inline <think>...</think> blocks from reasoning models
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+    return raw
+
+
+def _parse_json_loose(content: str) -> dict | None:
+    content = content.strip()
+    if not content:
+        return None
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+    # strip markdown fences, then grab the outermost {...}
+    fenced = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.MULTILINE)
+    try:
+        return json.loads(fenced)
+    except json.JSONDecodeError:
+        pass
+    start, end = fenced.find("{"), fenced.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(fenced[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _sanitize(parsed: dict) -> dict:
+    title = str(parsed.get("title") or "").strip().strip('"').strip()
+    summary = str(parsed.get("summary") or "").strip()
+    raw_tags = parsed.get("tags") or []
+    if isinstance(raw_tags, str):
+        raw_tags = [t.strip() for t in re.split(r"[,;]", raw_tags) if t.strip()]
+    tags = []
+    for t in raw_tags:
+        t = str(t).strip().lstrip("#").lower().replace(" ", "-")
+        t = re.sub(r"[^a-z0-9\u0900-\u097F-]", "", t)
+        if t and t not in tags:
+            tags.append(t)
+    tags = tags[:6]
+    raw_items = parsed.get("action_items") or []
+    if isinstance(raw_items, str):
+        raw_items = [raw_items]
+    action_items = [str(x).strip() for x in raw_items if str(x).strip()]
+    return {
+        "title": title[:80],
+        "summary": summary[:1200],
+        "tags": tags,
+        "action_items": action_items[:10],
+    }
+
+
+# ---- offline fallback --------------------------------------------------
+
+
+def heuristic_enrich(text: str) -> dict:
+    """Structure a note without any model — decent titles, tags, TODO mining."""
+    text = text.strip()
+    if not text:
+        return {"title": "Empty capture", "summary": "", "tags": [], "action_items": []}
+
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    title = lines[0]
+    # strip list markers / timestamps from title candidate
+    title = re.sub(r"^\s*(?:[-*•\d]+[.)]?\s+|\[\d+:\d+\]\s*)+", "", title)
+    title = title[:60].rstrip(" ,;:.!?-—") or "Untitled capture"
+
+    body = " ".join(lines[1:]) or lines[0]
+    sentences = re.split(r"(?<=[.!?])\s+", body)
+    summary = ""
+    for s in sentences[:4]:
+        if len(summary) + len(s) > 320:
+            break
+        summary += (" " if summary else "") + s
+    if not summary:
+        summary = body[:320]
+
+    words = re.findall(r"[a-zA-Z\u0900-\u097F][a-zA-Z\u0900-\u097F-]{2,}", text.lower())
+    words = [w for w in words if w not in STOPWORDS]
+    tags = [w for w, _ in Counter(words).most_common(5) if _]
+
+    action_items = []
+    todo_re = re.compile(
+        r"^(?:todo|task|fix|remember|call|email|mail|buy|send|ask|review|write|finish|"
+        r"deploy|ship|check|read|watch|book|pay|schedule|prep(?:are)?|follow[ -]up)\b[,: ]+(.{4,})",
+        re.IGNORECASE,
+    )
+    for line in lines:
+        m = todo_re.match(line)
+        if m:
+            action_items.append(m.group(1).strip().rstrip(".")[:140])
+        elif re.match(r"^[-*•]\s*\[ \]", line):
+            action_items.append(re.sub(r"^[-*•]\s*\[ \]\s*", "", line)[:140])
+        elif line.lower().startswith("todo:") or "need to " in line.lower() or "have to " in line.lower():
+            action_items.append(line[:140])
+    # de-dup, cap
+    seen = set()
+    action_items = [a for a in action_items if not (a in seen or seen.add(a))][:10]
+
+    return {"title": title, "summary": summary, "tags": tags[:5], "action_items": action_items}

@@ -1,0 +1,118 @@
+import type {
+  Note,
+  Settings,
+  Stats,
+  TagCount,
+  TaskRef,
+  HealthStatus,
+  ConnectionTest,
+  ActivityDay,
+  ActivitySession,
+  DailyLog,
+  AppRule,
+  FilesActivity,
+} from "./types";
+
+const BASE = "/api";
+
+async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(BASE + path, {
+    headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail ?? JSON.stringify(body);
+    } catch {
+      /* keep statusText */
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  health: () => req<HealthStatus>("/health"),
+
+  notes: (params: Record<string, string> = {}) =>
+    req<Note[]>(`/notes?${new URLSearchParams(params)}`),
+
+  note: (id: string) => req<Note>(`/notes/${id}`),
+
+  updateNote: (id: string, changes: Partial<Note>) =>
+    req<Note>(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
+
+  deleteNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}`, { method: "DELETE" }),
+
+  pinNote: (id: string) => req<Note>(`/notes/${id}/pin`, { method: "POST" }),
+
+  archiveNote: (id: string) => req<Note>(`/notes/${id}/archive`, { method: "POST" }),
+
+  reprocess: (id: string) => req<Note>(`/notes/${id}/reprocess`, { method: "POST" }),
+
+  exportNote: (id: string) =>
+    req<{ ok: boolean; path: string }>(`/notes/${id}/export`, { method: "POST" }),
+
+  captureText: (text: string) =>
+    req<Note>("/capture/text", { method: "POST", body: JSON.stringify({ text }) }),
+
+  captureYouTube: (url: string) =>
+    req<Note>("/capture/youtube", { method: "POST", body: JSON.stringify({ url }) }),
+
+  captureAudio: (blob: Blob, filename = "memo.webm") => {
+    const fd = new FormData();
+    fd.append("file", blob, filename);
+    return req<Note>("/capture/audio", { method: "POST", body: fd });
+  },
+
+  search: (q: string) => req<Note[]>(`/search?q=${encodeURIComponent(q)}`),
+
+  tags: () => req<TagCount[]>("/tags"),
+
+  tasks: (includeDone = false) =>
+    req<TaskRef[]>(`/tasks${includeDone ? "?include_done=true" : ""}`),
+
+  stats: (days = 7) => req<Stats>(`/stats?days=${days}`),
+
+  settings: () => req<Settings>("/settings"),
+
+
+  updateSettings: (changes: Record<string, unknown>) =>
+    req<Settings>("/settings", { method: "PUT", body: JSON.stringify(changes) }),
+
+  testLLM: () => req<ConnectionTest>("/settings/test-llm", { method: "POST" }),
+
+  testWhisper: () => req<ConnectionTest>("/settings/test-whisper", { method: "POST" }),
+
+  activityDay: (day?: string) =>
+    req<ActivityDay>(`/activity/day${day ? `?day=${day}` : ""}`),
+
+  activityWeek: (days = 7) => req<{ day: string; seconds: number }[]>(`/activity/week?days=${days}`),
+
+  liveSession: () => req<{ session: ActivitySession | null; paused: boolean }>("/activity/live"),
+
+  pauseActivity: (paused: boolean) =>
+    req<{ paused: boolean }>("/activity/pause", { method: "POST", body: JSON.stringify({ paused }) }),
+
+  dailyLog: (day?: string) =>
+    req<DailyLog>(`/activity/daily-log${day ? `?day=${day}` : ""}`),
+
+  generateDailyLog: (day: string, rolling = false) =>
+    req<DailyLog>("/activity/daily-log/generate", {
+      method: "POST",
+      body: JSON.stringify({ day, rolling }),
+    }),
+
+  knownApps: () => req<AppRule[]>("/activity/apps"),
+
+  setAppTracked: (app_class: string, tracked: boolean) =>
+    req<{ app_class: string; tracked: boolean }>("/activity/apps/tracked", {
+      method: "POST",
+      body: JSON.stringify({ app_class, tracked }),
+    }),
+
+  filesActivity: (hours = 24) =>
+    req<FilesActivity>(`/activity/files?hours=${hours}`),
+};

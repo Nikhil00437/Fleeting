@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# flee — quick capture from the terminal into Fleeting.
+#
+#   flee "remember to review the PR"     capture a thought
+#   echo "some text" | flee              capture from stdin/pipe
+#   flee --youtube <url>                 send a YouTube link
+#
+# Wire it to a Hyprland keybind (see README):
+#   bind = SUPER, F, exec, kitty --class fleeting-quick flee-edit
+
+set -euo pipefail
+URL="${FLEETING_URL:-http://127.0.0.1:7425}"
+
+json_escape() {
+  python3 - "$1" <<'EOF'
+import json, sys
+print(json.dumps(sys.argv[1]))
+EOF
+}
+
+if [[ "${1:-}" == "--youtube" ]]; then
+  [[ -n "${2:-}" ]] || { echo "usage: flee --youtube <url>" >&2; exit 1; }
+  payload="{\"url\": $(json_escape "$2")}"
+  endpoint="/api/capture/youtube"
+elif [[ $# -gt 0 ]]; then
+  text="$*"
+  payload="{\"text\": $(json_escape "$text")}"
+  endpoint="/api/capture/text"
+else
+  # read from stdin (pipe or interactive; interactive: ^D to send)
+  text="$(cat)"
+  [[ -n "$text" ]] || { echo "nothing to capture" >&2; exit 1; }
+  payload="{\"text\": $(json_escape "$text")}"
+  endpoint="/api/capture/text"
+fi
+
+id=$(curl -sf -X POST "$URL$endpoint" -H 'Content-Type: application/json' -d "$payload" |
+  python3 -c "import json,sys; print(json.load(sys.stdin)['id'])") ||
+  { echo "fleeting server unreachable at $URL" >&2; exit 1; }
+
+echo "captured ($id) — processing in background"
