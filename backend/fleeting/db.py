@@ -231,7 +231,11 @@ class Database:
         # JSON-encode list/dict fields
         for key in ("tags", "action_items", "source"):
             if key in changes_sql and not isinstance(changes_sql[key], str):
-                changes_sql[key] = json.dumps(changes_sql[key], ensure_ascii=False)
+                changes_sql[key] = json.dumps(
+                    changes_sql[key],
+                    ensure_ascii=False,
+                    default=lambda o: o.model_dump() if hasattr(o, "model_dump") else (o.dict() if hasattr(o, "dict") else str(o)),
+                )
         cur = self.execute(f"UPDATE notes SET {sets} WHERE id = :_id", {**changes_sql, "_id": note_id})
         if cur.rowcount == 0:
             return None
@@ -568,7 +572,10 @@ class Database:
             "SELECT id, action_items, created_at, updated_at, source FROM notes WHERE archived = 0"
         ).fetchall()
         for row in rows:
-            items = json.loads(row["action_items"] or "[]")
+            try:
+                items = json.loads(row["action_items"] or "[]")
+            except (json.JSONDecodeError, TypeError):
+                items = []
             for it in items:
                 if isinstance(it, str):
                     it = {"text": it}
@@ -798,9 +805,12 @@ class Database:
             if key in changes:
                 clean_changes[key] = changes[key]
 
-        if "priority" in clean_changes and clean_changes["priority"] is not None:
-            p = str(clean_changes["priority"]).strip().upper()
-            clean_changes["priority"] = p if p in ("P1", "P2", "P3") else "P2"
+        if "priority" in clean_changes:
+            if clean_changes["priority"] is not None:
+                p = str(clean_changes["priority"]).strip().upper()
+                clean_changes["priority"] = p if p in ("P1", "P2", "P3") else "P2"
+            else:
+                clean_changes["priority"] = "P2"
 
         if "repo" in clean_changes:
             val = clean_changes["repo"]
@@ -1005,7 +1015,11 @@ def _note_to_sql(note: dict) -> dict:
         if val is None or (isinstance(val, str) and not val.strip()):
             val = defaults[key]
         if not isinstance(val, str):
-            out[key] = json.dumps(val, ensure_ascii=False)
+            out[key] = json.dumps(
+                val,
+                ensure_ascii=False,
+                default=lambda o: o.model_dump() if hasattr(o, "model_dump") else (o.dict() if hasattr(o, "dict") else str(o)),
+            )
         elif key == "source" and val.strip() in ("", "null"):
             out[key] = "{}"
     out.setdefault("title", "")

@@ -540,3 +540,68 @@ def test_pydantic_task_models():
     # Invalid due date throws validation error
     with pytest.raises(Exception):
         TaskCreateIn(text="Bad date", due_date="tomorrow")
+
+
+def test_update_note_with_action_item_models_and_priority_none(db):
+    """Verify update_note works with ActionItem Pydantic models and update_task handles priority=None."""
+    note = db.insert_note({"title": "Model Serialization Note"})
+
+    # 1. update_note with ActionItem model instances
+    items = [
+        ActionItem(id="t1", text="Task via model", priority="P1", repo="core"),
+        ActionItem(id="t2", text="Second model task", priority="P3"),
+    ]
+    updated = db.update_note(note["id"], {"action_items": items})
+    assert updated is not None
+    assert len(updated["action_items"]) == 2
+    assert updated["action_items"][0]["text"] == "Task via model"
+    assert updated["action_items"][0]["priority"] == "P1"
+
+    # Verify tasks table synced properly
+    tasks = db.list_tasks(status="all")
+    assert len(tasks) == 2
+
+    # 2. update_task with explicit priority=None -> must fallback to P2
+    task1_id = tasks[0]["id"]
+    t1_updated = db.update_task(task1_id, {"priority": None})
+    assert t1_updated is not None
+    assert t1_updated["priority"] == "P2"
+
+
+def test_migration_malformed_json_resilience(tmp_path):
+    """Verify _migrate_action_items does not crash on corrupted JSON in action_items column."""
+    db_path = tmp_path / "corrupt_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE notes (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL DEFAULT 'text',
+            title TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            raw_text TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '[]',
+            action_items TEXT NOT NULL DEFAULT '[]',
+            source TEXT NOT NULL DEFAULT '{}',
+            audio_path TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error TEXT,
+            pinned INTEGER NOT NULL DEFAULT 0,
+            archived INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            processed_at TEXT
+        );
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version (version) VALUES (4);
+        INSERT INTO notes (id, title, action_items, created_at, updated_at, archived)
+        VALUES ('bad_n1', 'Corrupt Note', '{invalid json', '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z', 0);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    database = Database(db_path)
+    database.migrate()
+    assert database.list_tasks(status="all") == []
