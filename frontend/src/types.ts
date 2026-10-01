@@ -173,6 +173,10 @@ export interface FleetingDesktopBridge {
   openExternal: (url: string) => Promise<void>;
   onMaximizeChange: (cb: (maximized: boolean) => void) => () => void;
   onNavigate: (cb: (target: string) => void) => () => void;
+  hideHud?: () => Promise<void>;
+  resizeHud?: (height: number) => Promise<void>;
+  typeText?: (text: string) => Promise<boolean>;
+  onHudTrigger?: (cb: () => void) => () => void;
 }
 
 declare global {

@@ -521,3 +521,67 @@ button, input, select, textarea {
   .settings-tabs [role="tab"] > span:not(:first-child) { display: none; }
   .settings-tabs [role="tab"] { width: 38px; justify-content: center; padding-inline: 0; }
 }
+
+/* Handy Floating Dictation HUD Overlay */
+body:has(.hud-pill, .hud-card),
+body.hud-body,
+body.hud-body #root {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+.hud-pill {
+  height: 52px;
+  background: #23382e;
+  border: 1px solid #3c5446;
+  border-radius: 9999px;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(16px);
+  color: #f4f0e7;
+}
+
+.hud-card {
+  background: #23382e;
+  border: 1px solid #3c5446;
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(16px);
+  color: #f4f0e7;
+}
+
+.swave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+}
+.swave i {
+  display: block;
+  width: 3px;
+  min-height: 3px;
+  border-radius: 9999px;
+  background: #d8784c;
+  transition: height 60ms ease;
+}
+
+.sdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  animation: pulse-ring 1.4s infinite;
+}
+
+.sspinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgb(255 255 255 / 0.2);
+  border-top-color: #d8784c;
+  border-radius: 9999px;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+

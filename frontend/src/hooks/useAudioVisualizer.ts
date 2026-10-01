@@ -71,6 +71,9 @@ export function useAudioVisualizer(): AudioVisualizerState {
         throw new Error("Web Audio API not supported in this browser");
       }
       const ctx = new AudioCtx();
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
       audioContextRef.current = ctx;
 
       const source = ctx.createMediaStreamSource(stream);
