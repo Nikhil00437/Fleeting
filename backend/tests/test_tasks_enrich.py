@@ -141,7 +141,7 @@ def test_heuristic_repo_extraction():
     res1 = heuristic_enrich("todo: refactor auth module in fleeting repo")
     assert res1["action_items"][0]["repo"] == "fleeting"
 
-    res2 = heuristic_enrich("fix: memory leak for backend")
+    res2 = heuristic_enrich("fix: memory leak for backend repo")
     assert res2["action_items"][0]["repo"] == "backend"
 
     res3 = heuristic_enrich("task: add dark mode repo: frontend")
@@ -149,6 +149,13 @@ def test_heuristic_repo_extraction():
 
     res4 = heuristic_enrich("deploy: migration script #infra")
     assert res4["action_items"][0]["repo"] == "infra"
+
+    # Ordinary English phrases should not trigger false positive repo extraction
+    res5 = heuristic_enrich("todo: buy milk for dinner")
+    assert res5["action_items"][0]["repo"] is None
+
+    res6 = heuristic_enrich("todo: pay in cash")
+    assert res6["action_items"][0]["repo"] is None
 
 
 def test_heuristic_enrich_combined():
@@ -158,7 +165,7 @@ def test_heuristic_enrich_combined():
         "Project status meeting notes\n"
         "Discussed upcoming release blockers.\n"
         "todo: patch security vulnerability urgent by tomorrow in fleeting repo\n"
-        "task: update styling low-priority for frontend"
+        "task: update styling low-priority for frontend repo"
     )
     res = heuristic_enrich(note_text)
     items = res["action_items"]
@@ -327,3 +334,51 @@ async def test_processor_inherits_repo_from_source(tmp_path):
     tasks = db.list_tasks(status="all")
     assert len(tasks) == 1
     assert tasks[0]["repo"] == "my-project"
+
+
+@pytest.mark.anyio
+async def test_processor_reprocessing_clears_old_tasks(tmp_path):
+    db_path = tmp_path / "processor_reprocess.db"
+    db = Database(db_path)
+    db.migrate()
+
+    cfg = Config()
+    cfg.paths.data_dir = tmp_path
+    cfg.llm.provider = "none"
+    cfg.notifications.desktop = False
+
+    bus = EventBus()
+    transcriber = MagicMock()
+
+    processor = Processor(db=db, cfg=cfg, bus=bus, transcriber=transcriber)
+
+    note = db.insert_note({
+        "title": "Capture to reprocess",
+        "raw_text": "todo: initial task item",
+        "type": "text",
+        "status": "pending",
+    })
+
+    # First processing run
+    await processor._process(note["id"])
+    tasks_run1 = db.list_tasks(status="all")
+    assert len(tasks_run1) == 1
+    assert "initial task item" in tasks_run1[0]["text"]
+
+    # Update raw_text and reprocess the same note
+    db.update_note(note["id"], {
+        "raw_text": "todo: replaced new task item",
+        "status": "pending",
+    })
+    await processor._process(note["id"])
+
+    # Verify existing tasks for note_id were cleared and not duplicated
+    tasks_run2 = db.list_tasks(status="all")
+    assert len(tasks_run2) == 1
+    assert "replaced new task item" in tasks_run2[0]["text"]
+    assert tasks_run2[0]["note_id"] == note["id"]
+
+    updated_note = db.get_note(note["id"])
+    assert len(updated_note["action_items"]) == 1
+    assert "replaced new task item" in updated_note["action_items"][0]["text"]
+

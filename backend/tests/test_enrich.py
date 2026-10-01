@@ -15,7 +15,7 @@ def test_heuristic_title_and_tasks():
     out = heuristic_enrich(text)
     assert out["title"].startswith("Docker networking fix")
     assert len(out["action_items"]) == 2
-    assert any("bridge network" in t for t in out["action_items"])
+    assert any("bridge network" in t["text"] for t in out["action_items"])
 
 
 def test_heuristic_empty_input():

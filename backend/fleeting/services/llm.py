@@ -12,7 +12,7 @@ import json
 import logging
 import re
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -79,17 +79,12 @@ ENRICH_SYSTEM = ENRICH_SYSTEM_TEMPLATE.format(
 
 
 class ActionItemDict(dict):
-    """Dictionary representing an action item with backward compatibility for string operations."""
+    """Dictionary representing an action item with backward compatibility for string equality."""
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, str):
             return self.get("text") == other
         return super().__eq__(other)
-
-    def __contains__(self, key: object) -> bool:
-        if super().__contains__(key):
-            return True
-        return isinstance(key, str) and key in self.get("text", "")
 
 
 class LLMUnavailable(Exception):
@@ -235,7 +230,7 @@ DUE_DATE_RE = re.compile(
 )
 
 REPO_RE = re.compile(
-    r"\b(?:in|for|repo:)\s+([a-zA-Z0-9_-]+)(?:\s+repo)?\b|#([a-zA-Z0-9_-]+)",
+    r"\b(?:in|for)\s+([a-zA-Z0-9_-]+)\s+repo\b|\brepo:\s*([a-zA-Z0-9_-]+)\b|#([a-zA-Z0-9_-]+)\b",
     re.IGNORECASE,
 )
 
@@ -265,7 +260,7 @@ def _extract_priority(line: str) -> str:
     return "P2"
 
 
-def _resolve_due_date(match_str: str, today: datetime.date) -> str | None:
+def _resolve_due_date(match_str: str, today: date) -> str | None:
     token = match_str.lower()
     if token == "today":
         return today.isoformat()
@@ -287,21 +282,8 @@ def _resolve_due_date(match_str: str, today: datetime.date) -> str | None:
 
 
 def _extract_repo(line: str) -> str | None:
-    # 1. Check #tag
-    hash_match = re.search(r"#([a-zA-Z0-9_-]+)", line)
-    if hash_match:
-        tag = hash_match.group(1).lower()
-        if tag not in REPO_STOPWORDS:
-            return tag
-
-    # 2. Check repo: <name>
-    prefix_match = re.search(r"\brepo:\s*([a-zA-Z0-9_-]+)", line, re.IGNORECASE)
-    if prefix_match:
-        return prefix_match.group(1).lower()
-
-    # 3. Check in/for <name> repo or in/for <name>
     for m in REPO_RE.finditer(line):
-        name = (m.group(1) or m.group(2) or "").strip().lower()
+        name = (m.group(1) or m.group(2) or m.group(3) or "").strip().lower()
         if not name or name in REPO_STOPWORDS:
             continue
         return name
@@ -411,7 +393,7 @@ def heuristic_enrich(text: str) -> dict:
     tags = [w for w, _ in Counter(words).most_common(5) if _]
 
     action_items = []
-    today = datetime.now(timezone.utc).date()
+    today: date = datetime.now(timezone.utc).date()
     todo_re = re.compile(
         r"^(?:todo|task|fix|remember|call|email|mail|buy|send|ask|review|write|finish|"
         r"deploy|ship|check|read|watch|book|pay|schedule|prep(?:are)?|follow[ -]up)\b[,: ]+(.{4,})",

@@ -139,6 +139,10 @@ class Processor:
             }
             note = self.db.update_note(note_id, changes)
 
+            # Clear existing tasks for this note to prevent duplication on reprocessing
+            self.db.execute("DELETE FROM tasks WHERE note_id = :nid", {"nid": note_id})
+            self.db.commit()
+
             default_repo = source.get("repo")
             for item in enriched.get("action_items") or []:
                 if isinstance(item, str):
@@ -150,6 +154,7 @@ class Processor:
                     "due_date": item.get("due_date"),
                     "repo": item.get("repo") or default_repo,
                 })
+            self.db._sync_note_action_items(note_id)
             note = self.db.get_note(note_id)
 
             # 4) vault mirror + notify
