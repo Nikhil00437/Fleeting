@@ -132,10 +132,11 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             response.headers["Cache-Control"] = "no-store"
         return response
 
-    from .routers import activity, capture, notes, search, settings, system
+    from .routers import activity, capture, notes, search, settings, system, tasks
 
     app.include_router(notes.router)
     app.include_router(capture.router)
+    app.include_router(tasks.router)
     app.include_router(search.router)
     app.include_router(settings.router)
     app.include_router(system.router)
