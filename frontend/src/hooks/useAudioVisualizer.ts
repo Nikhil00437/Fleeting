@@ -30,6 +30,7 @@ export function useAudioVisualizer(): AudioVisualizerState {
   const chunksRef = useRef<Blob[]>([]);
   const smoothedRef = useRef<number[]>(Array(WAVE_BARS).fill(0));
   const timerRef = useRef<number | null>(null);
+  const isStartingRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (animFrameRef.current !== null) {
@@ -55,80 +56,88 @@ export function useAudioVisualizer(): AudioVisualizerState {
   }, []);
 
   const start = useCallback(async () => {
-    cleanup();
-    setError(null);
-    setElapsed(0);
-    chunksRef.current = [];
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-      mediaStreamRef.current = stream;
-
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) {
-        throw new Error("Web Audio API not supported in this browser");
-      }
-      const ctx = new AudioCtx();
-      if (ctx.state === "suspended") {
-        await ctx.resume();
-      }
-      audioContextRef.current = ctx;
-
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 64;
-      analyser.smoothingTimeConstant = 0.4;
-      source.connect(analyser);
-      analyserRef.current = analyser;
-
-      let options: MediaRecorderOptions | undefined = undefined;
-      if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
-        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-          options = { mimeType: "audio/webm;codecs=opus" };
-        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-          options = { mimeType: "audio/webm" };
-        }
-      }
-
-      const recorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.start(100);
-      mediaRecorderRef.current = recorder;
-
-      setIsRecording(true);
-
-      timerRef.current = window.setInterval(() => {
-        setElapsed((e) => e + 1);
-      }, 1000);
-
-      const buffer = new Uint8Array(analyser.frequencyBinCount);
-      let lastTick = performance.now();
-
-      const loop = (now: number) => {
-        if (now - lastTick >= 33) {
-          lastTick = now;
-          analyser.getByteFrequencyData(buffer);
-          const raw = Array.from({ length: WAVE_BARS }, (_, i) => {
-            const idx = Math.min(i + 1, buffer.length - 1);
-            return (buffer[idx] || 0) / 255;
-          });
-          const smoothed = smoothLevels(smoothedRef.current, raw);
-          smoothedRef.current = smoothed;
-          setLevels([...smoothed]);
-        }
-        animFrameRef.current = requestAnimationFrame(loop);
-      };
-      animFrameRef.current = requestAnimationFrame(loop);
-    } catch (err) {
-      cleanup();
-      setIsRecording(false);
-      setError(err instanceof Error ? err.message : "Microphone access denied");
+    if (isStartingRef.current || isRecording) {
+      return;
     }
-  }, [cleanup]);
+    isStartingRef.current = true;
+    try {
+      cleanup();
+      setError(null);
+      setElapsed(0);
+      chunksRef.current = [];
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+        });
+        mediaStreamRef.current = stream;
+
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) {
+          throw new Error("Web Audio API not supported in this browser");
+        }
+        const ctx = new AudioCtx();
+        if (ctx.state === "suspended") {
+          await ctx.resume();
+        }
+        audioContextRef.current = ctx;
+
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.4;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+
+        let options: MediaRecorderOptions | undefined = undefined;
+        if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
+          if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+            options = { mimeType: "audio/webm;codecs=opus" };
+          } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+            options = { mimeType: "audio/webm" };
+          }
+        }
+
+        const recorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+        };
+        recorder.start(100);
+        mediaRecorderRef.current = recorder;
+
+        setIsRecording(true);
+
+        timerRef.current = window.setInterval(() => {
+          setElapsed((e) => e + 1);
+        }, 1000);
+
+        const buffer = new Uint8Array(analyser.frequencyBinCount);
+        let lastTick = performance.now();
+
+        const loop = (now: number) => {
+          if (now - lastTick >= 33) {
+            lastTick = now;
+            analyser.getByteFrequencyData(buffer);
+            const raw = Array.from({ length: WAVE_BARS }, (_, i) => {
+              const idx = Math.min(i + 1, buffer.length - 1);
+              return (buffer[idx] || 0) / 255;
+            });
+            const smoothed = smoothLevels(smoothedRef.current, raw);
+            smoothedRef.current = smoothed;
+            setLevels([...smoothed]);
+          }
+          animFrameRef.current = requestAnimationFrame(loop);
+        };
+        animFrameRef.current = requestAnimationFrame(loop);
+      } catch (err) {
+        cleanup();
+        setIsRecording(false);
+        setError(err instanceof Error ? err.message : "Microphone access denied");
+      }
+    } finally {
+      isStartingRef.current = false;
+    }
+  }, [cleanup, isRecording]);
 
   const stop = useCallback((): Promise<Blob | null> => {
     return new Promise((resolve) => {

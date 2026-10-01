@@ -3,7 +3,7 @@ Type=Application
 Name=Fleeting
 GenericName=Local-first memory & activity workbench
 Comment=Capture thoughts, voice memos, YouTube transcripts & Hyprland activity — 100% local
-Exec=/home/nikhil/Projects/fleeting/bin/fleeting-app
+Exec=@APP_ROOT@/bin/fleeting-app
 Icon=fleeting
 Terminal=false
 Categories=Office;Utility;
@@ -13,4 +13,4 @@ Actions=Hud;
 
 [Desktop Action Hud]
 Name=Dictation & Quick Capture HUD
-Exec=/home/nikhil/Projects/fleeting/bin/fleeting-app --hud
+Exec=@APP_ROOT@/bin/fleeting-app --hud

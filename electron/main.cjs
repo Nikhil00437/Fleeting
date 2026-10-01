@@ -269,7 +269,7 @@ async function createHudWindow() {
   });
 
   hudWindow.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
-  hudWindow.setAlwaysOnTop(true, "screen-saver");
+  hudWindow.setAlwaysOnTop(true, "pop-up-menu");
 
   hudWindow.on("close", (event) => {
     if (!isQuitting) {
@@ -348,8 +348,8 @@ async function handleTypeText(text) {
   }
   if (!text || typeof text !== "string") return false;
 
-  // Wait ~60ms for previous application focus restoration
-  await new Promise((resolve) => setTimeout(resolve, 60));
+  // Wait ~100ms for previous application focus restoration
+  await new Promise((resolve) => setTimeout(resolve, 100));
 
   return new Promise((resolve) => {
     let settled = false;

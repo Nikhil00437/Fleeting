@@ -28,7 +28,8 @@ EOF
 fi
 
 if [[ "${1:-}" == "--hud" ]]; then
-  exec "$(dirname "$0")/fleeting-app" --hud
+  SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+  exec "$SCRIPT_DIR/fleeting-app" --hud
 fi
 
 json_escape() {
