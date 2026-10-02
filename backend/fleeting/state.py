@@ -20,6 +20,7 @@ class AppState:
     processor: Processor
     started_at: float = field(default_factory=lambda: 0.0)
     activity: object = None  # ActivityCollector, set in create_app
+    vault_watcher: object = None  # VaultWatcher, set in create_app
 
     def cfg_audio_dir(self):
         from .config import AUDIO_DIR, ensure_dirs

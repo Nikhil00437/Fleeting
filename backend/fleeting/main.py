@@ -103,6 +103,40 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             activity_task = asyncio.get_running_loop().create_task(st.activity.run())
             asyncio.get_running_loop().create_task(backfill_yesterday())
 
+        st.vault_watcher = None
+        if cfg.paths.vault_sync:
+            from .config import expand_path
+            from .services.vault_watcher import VaultWatcher, sync_file_change
+
+            vault_dir = expand_path(cfg.paths.vault_dir)
+            try:
+                vault_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+            if vault_dir.exists():
+                loop = asyncio.get_running_loop()
+
+                def on_vault_change(p: Path) -> None:
+                    try:
+                        if loop.is_running():
+                            loop.call_soon_threadsafe(sync_file_change, p, st.db, st.bus, st.cfg)
+                            return
+                    except Exception:
+                        pass
+                    try:
+                        sync_file_change(p, st.db, st.bus, st.cfg)
+                    except Exception:
+                        log.exception("Error syncing vault file %s", p)
+
+                st.vault_watcher = VaultWatcher(
+                    vault_dir,
+                    on_change=on_vault_change,
+                    db=st.db,
+                    bus=st.bus,
+                    cfg=st.cfg,
+                )
+                st.vault_watcher.start()
+
         recovered = await processor.recover_unfinished()
         if recovered:
             log.info("re-queued %d unfinished capture(s)", recovered)
@@ -110,6 +144,8 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         yield
         if activity_task:
             activity_task.cancel()
+        if st.vault_watcher:
+            st.vault_watcher.stop()
         processor.stop()
 
     app = FastAPI(title="Fleeting", version=__version__, lifespan=lifespan)

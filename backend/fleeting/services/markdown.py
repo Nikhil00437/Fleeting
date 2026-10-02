@@ -279,6 +279,12 @@ def parse_note_md(content: str) -> dict[str, Any]:
             action_items.extend(_parse_checklist_items(sec_lines))
         elif sec_lower in ("content", "transcript"):
             raw_text_parts.append("\n".join(sec_lines).strip())
+        else:
+            sec_body = "\n".join(sec_lines).strip()
+            if sec_body:
+                raw_text_parts.append(f"## {sec_title}\n\n{sec_body}")
+            else:
+                raw_text_parts.append(f"## {sec_title}")
 
     # Fallback: if no ## Action items heading was present, check pre_section_lines for checklist items
     if not action_items:

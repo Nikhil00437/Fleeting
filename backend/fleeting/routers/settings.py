@@ -150,3 +150,15 @@ async def test_whisper(request: Request) -> dict:
         "model": st.transcriber.loaded_model_size or st.cfg.transcribe.model,
     }
 
+
+@router.post("/vault/resync")
+def resync_vault(request: Request) -> dict:
+    st = request.app.state.st
+    if st.vault_watcher is not None and hasattr(st.vault_watcher, "resync_all"):
+        return st.vault_watcher.resync_all()
+    from ..services.vault_watcher import resync_all
+
+    vault_dir = expand_path(st.cfg.paths.vault_dir)
+    return resync_all(vault_dir, st.db, st.bus, st.cfg)
+
+
