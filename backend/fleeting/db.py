@@ -138,6 +138,17 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
     CREATE INDEX IF NOT EXISTS idx_tasks_repo ON tasks(repo);
     """,
+    # v6 — note embeddings for semantic search & recall
+    """
+    CREATE TABLE IF NOT EXISTS note_embeddings (
+        note_id TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+        embedding BLOB NOT NULL,
+        dimensions INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_note_embeddings_updated ON note_embeddings(updated_at);
+    """,
 ]
 
 
@@ -959,6 +970,61 @@ class Database:
             {"name": r["repo"], "repo": r["repo"], "count": int(r["count"])}
             for r in rows
         ]
+
+    # ---- note embeddings ------------------------------------------------
+
+    def upsert_note_embedding(
+        self, note_id: str, blob: bytes, dimensions: int, model: str
+    ) -> None:
+        self.execute(
+            """
+            INSERT OR REPLACE INTO note_embeddings (note_id, embedding, dimensions, model, updated_at)
+            VALUES (:nid, :blob, :dim, :model, :updated_at)
+            """,
+            {
+                "nid": note_id,
+                "blob": blob,
+                "dim": dimensions,
+                "model": model,
+                "updated_at": now_iso(),
+            },
+        )
+        self.commit()
+
+    def get_note_embedding(self, note_id: str) -> dict | None:
+        row = self.execute(
+            "SELECT note_id, embedding, dimensions, model, updated_at FROM note_embeddings WHERE note_id = ?",
+            (note_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "note_id": row["note_id"],
+            "embedding": bytes(row["embedding"]),
+            "dimensions": int(row["dimensions"]),
+            "model": row["model"],
+            "updated_at": row["updated_at"],
+        }
+
+    def get_all_embeddings(self) -> list[dict]:
+        rows = self.execute(
+            "SELECT note_id, embedding, dimensions, model, updated_at FROM note_embeddings"
+        ).fetchall()
+        return [
+            {
+                "note_id": r["note_id"],
+                "embedding": bytes(r["embedding"]),
+                "dimensions": int(r["dimensions"]),
+                "model": r["model"],
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
+
+    def delete_note_embedding(self, note_id: str) -> None:
+        self.execute("DELETE FROM note_embeddings WHERE note_id = ?", (note_id,))
+        self.commit()
+
 
 
 
