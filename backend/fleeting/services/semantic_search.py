@@ -69,10 +69,11 @@ def _note_matches_repo(note: dict, repo: str, db: Database | None = None) -> boo
     # 2. Check note source metadata
     source = note.get("source") or {}
     if isinstance(source, dict):
-        src_repo = str(source.get("repo") or "").strip().lower().lstrip("#")
+        src_repo = str(source.get("repo") or source.get("repository") or "").strip().lower().lstrip("#")
         if src_repo == target or target in src_repo:
             return True
-        if target in str(source).lower():
+        src_url = str(source.get("url") or "").lower()
+        if f"/{target}" in src_url or f"/{target}.git" in src_url:
             return True
 
     # 3. Check note tags
@@ -116,7 +117,7 @@ def hybrid_search(
 
     clamped_limit = min(max(1, int(limit)), 200)
     clamped_alpha = max(0.0, min(1.0, float(alpha)))
-    fetch_limit = clamped_limit * 2
+    fetch_limit = max(100, clamped_limit * 3) if (filter_type or repo) else clamped_limit * 2
     search_mode = (mode or "hybrid").strip().lower()
 
     if search_mode == "keyword":
@@ -127,17 +128,12 @@ def hybrid_search(
             kw_results = []
 
         candidates: list[dict] = []
-        for r in kw_results:
+        for idx, r in enumerate(kw_results):
             note = dict(r)
             if note.get("archived"):
                 continue
             note["match_type"] = "keyword"
-            raw_rank = note.get("rank", 0.0)
-            try:
-                rank_val = float(raw_rank) if raw_rank is not None else 0.0
-            except (ValueError, TypeError):
-                rank_val = 0.0
-            note["score"] = float(round(1.0 / (1.0 + max(0.0, rank_val)), 4))
+            note["score"] = float(round(1.0 / (1.0 + idx * 0.1), 4))
             candidates.append(note)
 
         filtered: list[dict] = []
