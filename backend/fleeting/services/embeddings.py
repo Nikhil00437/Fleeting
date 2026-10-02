@@ -68,7 +68,7 @@ class LocalHashVectorizer:
         self.dimensions = dimensions
 
     def tokenize(self, text: str) -> list[str]:
-        words = re.findall(r"[a-z0-9]+", text.lower())
+        words = re.findall(r"[\w\u0900-\u097F]+", text.lower())
         tokens: list[str] = list(words)
         for w in words:
             if len(w) >= 3:
@@ -84,7 +84,7 @@ class LocalHashVectorizer:
         counts = Counter(tokens)
         vec = [0.0] * self.dimensions
         for tok, count in counts.items():
-            digest = hashlib.md5(tok.encode("utf-8")).digest()
+            digest = hashlib.md5(tok.encode("utf-8"), usedforsecurity=False).digest()
             bucket = int.from_bytes(digest, "big") % self.dimensions
             # Sign determined by highest bit of hash: +1.0 if bit is 1, -1.0 if 0
             sign = 1.0 if (digest[0] & 0x80) else -1.0
