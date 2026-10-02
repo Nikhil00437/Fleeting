@@ -283,9 +283,6 @@ def sync_file_change(
         if parsed.get("raw_text") is not None and parsed["raw_text"] != (existing_note.get("raw_text") or ""):
             changes["raw_text"] = parsed["raw_text"]
 
-        if changes:
-            db.update_note(note_id, changes)
-
         # Reconcile tasks
         raw_tasks = db.execute("SELECT * FROM tasks WHERE note_id = ?", (note_id,)).fetchall()
         existing_tasks = [_row_to_task(r) for r in raw_tasks]
@@ -361,7 +358,17 @@ def sync_file_change(
             bus.publish("task.created", inserted)
             tasks_modified_count += 1
 
-        db._sync_note_action_items(note_id)
+        tasks_changed = tasks_modified_count > 0
+
+        if not changes and not tasks_changed:
+            sync_registry.register(path, content)
+            return {"action": "unchanged", "note_id": note_id, "tasks_updated": 0}
+
+        if changes:
+            db.update_note(note_id, changes)
+        if tasks_changed:
+            db._sync_note_action_items(note_id)
+
         refreshed_note = db.get_note(note_id)
         sync_registry.register(path, content)
         bus.publish("note.updated", refreshed_note or existing_note)
@@ -435,6 +442,7 @@ def resync_all(
     synced_notes = 0
     imported_notes = 0
     tasks_updated = 0
+    seen_note_ids: set[str] = set()
 
     # 1. Traverse vault_dir recursively for .md files
     md_files = sorted(v_dir.rglob("*.md"))
@@ -449,20 +457,43 @@ def resync_all(
         except ValueError:
             continue
 
-        res = sync_file_change(file_path, db, bus, cfg)
-        if res:
-            action = res.get("action")
-            if action == "created":
-                imported_notes += 1
-            elif action == "updated":
-                synced_notes += 1
-            tasks_updated += res.get("tasks_updated", 0)
+        # Extract frontmatter id if already present or from filename
+        try:
+            content_preview = file_path.read_text(encoding="utf-8", errors="ignore")[:4096]
+            fm_id = re.search(r"^id:\s*['\"]?([a-zA-Z0-9_-]+)['\"]?", content_preview, re.MULTILINE)
+            if fm_id:
+                seen_note_ids.add(fm_id.group(1).strip())
+        except Exception:
+            pass
+
+        m = re.search(r"fleeting-([a-zA-Z0-9_-]+)\.md$", name)
+        if m:
+            seen_note_ids.add(m.group(1))
+
+        try:
+            res = sync_file_change(file_path, db, bus, cfg)
+            if res:
+                nid = res.get("note_id")
+                if nid:
+                    seen_note_ids.add(str(nid))
+                action = res.get("action")
+                if action == "created":
+                    imported_notes += 1
+                elif action == "updated":
+                    synced_notes += 1
+                tasks_updated += res.get("tasks_updated", 0)
+        except Exception as exc:
+            log.exception("Error syncing file %s: %s", file_path, exc)
+            continue
 
     # 2. Export active DB notes not currently on disk
     active_notes = db.list_notes(archived=False, limit=10000)
     for note in active_notes:
+        note_id = str(note.get("id") or "")
+        if note_id in seen_note_ids:
+            continue
         expected_path = vault_path_for(cfg.paths, note)
-        if not expected_path.exists():
+        if not expected_path.exists() and note_id not in seen_note_ids:
             out_path = sync_note(cfg.paths, note)
             if out_path:
                 synced_notes += 1

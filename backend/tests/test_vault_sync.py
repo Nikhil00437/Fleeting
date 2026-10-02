@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -334,3 +335,97 @@ Architecture details here.
     assert "Some notes that should not be dropped." in parsed["raw_text"]
     assert "## Reference Architecture" in parsed["raw_text"]
     assert "Architecture details here." in parsed["raw_text"]
+
+
+def test_resync_all_untracked_does_not_create_duplicate(test_env):
+    db, bus, cfg, vault_dir = test_env
+
+    # 1. Untracked file in vault
+    untracked = vault_dir / "untracked.md"
+    untracked.write_text("# Untracked Custom Note\n\nBody content\n", encoding="utf-8")
+
+    res = resync_all(vault_dir, db, bus, cfg)
+    assert res["ok"] is True
+    assert res["imported_notes"] == 1
+    assert res["synced_notes"] == 0
+
+    # Verify untracked.md was updated with frontmatter id
+    content = untracked.read_text(encoding="utf-8")
+    m = re.search(r"^id:\s*([a-zA-Z0-9_-]+)", content, re.MULTILINE)
+    assert m is not None
+    note_id = m.group(1).strip()
+
+    # Verify expected standard path does NOT exist
+    note = db.get_note(note_id)
+    assert note is not None
+    expected_path = vault_path_for(cfg.paths, note)
+    assert not expected_path.exists()
+
+    # Verify untracked.md is the only .md file in the vault
+    all_md_files = list(vault_dir.rglob("*.md"))
+    assert len(all_md_files) == 1
+    assert all_md_files[0].resolve() == untracked.resolve()
+
+    # Resyncing again should also not create any duplicates
+    res2 = resync_all(vault_dir, db, bus, cfg)
+    assert res2["ok"] is True
+    assert res2["imported_notes"] == 0
+    assert res2["synced_notes"] == 0
+    assert not expected_path.exists()
+    all_md_files_after = list(vault_dir.rglob("*.md"))
+    assert len(all_md_files_after) == 1
+
+
+def test_sync_file_change_unmodified_returns_unchanged_and_no_sse(test_env):
+    db, bus, cfg, vault_dir = test_env
+    note = db.insert_note({
+        "title": "Unchanged Note",
+        "type": "text",
+        "summary": "Existing summary",
+        "action_items": [{"text": "Task A", "done": False}],
+    })
+    path = sync_note(cfg.paths, note)
+    assert path is not None
+    sync_registry.clear()  # Clear echo so sync_file_change actually inspects the content
+
+    q = bus.subscribe()
+    result = sync_file_change(path, db, bus, cfg)
+    assert result is not None
+    assert result["action"] == "unchanged"
+    assert result["note_id"] == note["id"]
+    assert result["tasks_updated"] == 0
+
+    # Verify no SSE events were published
+    events = []
+    while not q.empty():
+        events.append(q.get_nowait())
+    bus.unsubscribe(q)
+    assert len(events) == 0
+
+    # In resync_all, unchanged notes must not increment synced_notes
+    sync_registry.clear()
+    res = resync_all(vault_dir, db, bus, cfg)
+    assert res["ok"] is True
+    assert res["synced_notes"] == 0
+    assert res["imported_notes"] == 0
+
+
+def test_resync_all_per_file_exception_handling(test_env, monkeypatch):
+    db, bus, cfg, vault_dir = test_env
+    p1 = vault_dir / "note1.md"
+    p1.write_text("# Note 1\n", encoding="utf-8")
+    p2 = vault_dir / "note2.md"
+    p2.write_text("# Note 2\n", encoding="utf-8")
+
+    original_sync = sync_file_change
+
+    def mock_sync(path, d, b, c):
+        if Path(path).name == "note1.md":
+            raise RuntimeError("Disk read error on note1")
+        return original_sync(path, d, b, c)
+
+    monkeypatch.setattr("fleeting.services.vault_watcher.sync_file_change", mock_sync)
+    res = resync_all(vault_dir, db, bus, cfg)
+    assert res["ok"] is True
+    # note2 should still have been imported despite note1 raising an exception
+    assert res["imported_notes"] == 1
