@@ -140,6 +140,27 @@ export default function NoteCard({
 
           {note.status !== "done" && <StatusBadge note={note} />}
 
+          {(note.score !== undefined || note.match_type) && (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-300"
+              title={
+                note.score !== undefined
+                  ? `Match score: ${(note.score * 100).toFixed(1)}%`
+                  : undefined
+              }
+            >
+              <SparkIcon className="h-2.5 w-2.5 text-amber-400" />
+              {note.score !== undefined ? (
+                <span>{Math.round(note.score <= 1 ? note.score * 100 : note.score)}% match</span>
+              ) : null}
+              {note.match_type && (
+                <span className="text-[9px] text-amber-400/80 capitalize">
+                  {note.score !== undefined ? `· ${note.match_type}` : `${note.match_type} match`}
+                </span>
+              )}
+            </span>
+          )}
+
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <span
               className="font-mono text-[10.5px] tabular-nums text-ink-400"

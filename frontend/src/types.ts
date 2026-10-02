@@ -22,6 +22,8 @@ export interface Note {
   updated_at: string;
   processed_at: string | null;
   snippet?: string | null;
+  score?: number;
+  match_type?: SearchMode | "hybrid" | "keyword" | "semantic";
 }
 
 export interface Stats {
@@ -221,3 +223,39 @@ declare global {
     fleetingDesktop?: FleetingDesktopBridge;
   }
 }
+
+export type SearchMode = "hybrid" | "keyword" | "semantic";
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export interface SourceRef {
+  id: string;
+  title: string;
+  type: string;
+  kind: "note" | "task" | "log";
+  snippet?: string;
+}
+
+export interface AssistantChatIn {
+  messages: ChatMessage[];
+  repo?: string | null;
+  type?: string | null;
+}
+
+export interface AssistantChatOut {
+  message: ChatMessage;
+  sources: SourceRef[];
+  context_used: {
+    notes_count: number;
+    tasks_count: number;
+    logs_count: number;
+  };
+}
+
+export interface AssistantSuggestionsOut {
+  suggestions: string[];
+}
+

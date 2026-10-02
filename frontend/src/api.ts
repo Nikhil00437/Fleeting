@@ -15,6 +15,10 @@ import type {
   AppRule,
   FilesActivity,
   VaultSyncResult,
+  SearchMode,
+  AssistantChatIn,
+  AssistantChatOut,
+  AssistantSuggestionsOut,
 } from "./types";
 
 const BASE = "/api";
@@ -71,7 +75,17 @@ export const api = {
     return req<Note>("/capture/audio", { method: "POST", body: fd });
   },
 
-  search: (q: string) => req<Note[]>(`/search?q=${encodeURIComponent(q)}`),
+  search: (
+    q: string,
+    params?: { mode?: SearchMode; type?: string; repo?: string; limit?: number }
+  ) => {
+    const searchParams = new URLSearchParams({ q });
+    if (params?.mode) searchParams.set("mode", params.mode);
+    if (params?.type && params.type !== "all") searchParams.set("type", params.type);
+    if (params?.repo && params.repo !== "all") searchParams.set("repo", params.repo);
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    return req<Note[]>(`/search?${searchParams.toString()}`);
+  },
 
   tags: () => req<TagCount[]>("/tags"),
 
@@ -167,4 +181,13 @@ export const api = {
 
   filesActivity: (hours = 24) =>
     req<FilesActivity>(`/activity/files?hours=${hours}`),
+
+  assistantChat: (body: AssistantChatIn) =>
+    req<AssistantChatOut>("/assistant/chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  assistantSuggestions: () =>
+    req<AssistantSuggestionsOut>("/assistant/suggestions"),
 };

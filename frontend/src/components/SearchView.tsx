@@ -3,7 +3,7 @@ import { api } from "../api";
 import { appColor } from "../apps";
 import NoteCard from "./NoteCard";
 import { LinkIcon, MicIcon, SearchIcon, SparkIcon, TextIcon, XIcon } from "./Icons";
-import type { Note, TagCount } from "../types";
+import type { Note, SearchMode, TagCount } from "../types";
 
 interface Props {
   notes?: Note[];
@@ -34,6 +34,7 @@ export default function SearchView({
   onNoteDeleted,
 }: Props) {
   const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<SearchMode>("hybrid");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [results, setResults] = useState<Note[] | null>(null);
   const [tags, setTags] = useState<TagCount[]>([]);
@@ -55,7 +56,7 @@ export default function SearchView({
     setSearching(true);
     debounceRef.current = window.setTimeout(async () => {
       try {
-        setResults(await api.search(q));
+        setResults(await api.search(q, { mode }));
       } catch {
         setResults([]);
       } finally {
@@ -63,7 +64,7 @@ export default function SearchView({
       }
     }, 180);
     return () => window.clearTimeout(debounceRef.current);
-  }, [query]);
+  }, [query, mode]);
 
   const browseNotes = useMemo(
     () => notes.filter((n) => !isEmptyFailedVoice(n)),
@@ -148,8 +149,30 @@ export default function SearchView({
           ))}
         </div>
 
+        {/* Search Mode Toggles: Hybrid | Keyword | Semantic */}
+        <div className="flex items-center gap-1 rounded-xl border border-ink-800/90 bg-ink-950/85 p-0.5 text-xs">
+          {(["hybrid", "keyword", "semantic"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs capitalize transition-all ${
+                mode === m
+                  ? "bg-ink-800 font-semibold text-ember-300 shadow-xs ring-1 ring-ember-400/25"
+                  : "text-ink-400 hover:text-ink-200"
+              }`}
+            >
+              {m === "hybrid" && <SparkIcon className="h-3 w-3 text-ember-400" />}
+              <span>{m}</span>
+            </button>
+          ))}
+        </div>
+
         <span className="ml-auto hidden rounded-lg border border-ink-800/80 bg-ink-950/60 px-2.5 py-1 font-mono text-[10.5px] text-ink-400 md:inline">
-          SQLite FTS5 · BM25 Ranking
+          {mode === "hybrid"
+            ? "Hybrid RRF (FTS5 + Vector Cosine)"
+            : mode === "semantic"
+              ? "Dense Vector Cosine Similarity"
+              : "SQLite FTS5 · BM25 Ranking"}
         </span>
       </div>
 
@@ -220,8 +243,8 @@ export default function SearchView({
               <span className="micro-label">
                 {query.trim()
                   ? searching
-                    ? "Searching FTS5 index…"
-                    : `Search Results for "${query}"`
+                    ? `Searching ${mode} index…`
+                    : `Search Results for "${query}" (${mode})`
                   : "Indexed Knowledge Base"}
               </span>
               <span className="rounded-md border border-ink-800 bg-ink-900/80 px-2 py-0.5 font-mono text-[10.5px] text-ink-300">

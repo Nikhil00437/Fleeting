@@ -10,6 +10,7 @@ import SettingsView from "./components/SettingsView";
 import TasksView from "./components/TasksView";
 import TimelineView from "./components/TimelineView";
 import CaptureHud from "./components/CaptureHud";
+import AssistantView from "./components/AssistantView";
 import {
   ActivityIcon,
   BotIcon,
@@ -26,7 +27,7 @@ import {
 } from "./components/Icons";
 import type { Note, Stats, WhisperProgress } from "./types";
 
-type View = "inbox" | "timeline" | "tasks" | "search" | "settings";
+type View = "inbox" | "timeline" | "tasks" | "search" | "settings" | "assistant";
 
 interface Toast {
   id: number;
@@ -126,7 +127,8 @@ export default function App() {
         target === "timeline" ||
         target === "tasks" ||
         target === "search" ||
-        target === "settings"
+        target === "settings" ||
+        target === "assistant"
       ) {
         setView(target);
       }
@@ -217,7 +219,8 @@ export default function App() {
         setTimeout(() => searchRef.current?.focus(), 30);
       } else if (e.key === "i") setView("inbox");
       else if (e.key === "t") setView("tasks");
-      else if (e.key === "a") setView("timeline");
+      else if (e.key === "a") setView("assistant");
+      else if (e.key === "l") setView("timeline");
       else if (e.key === "s") setView("settings");
     }
     window.addEventListener("keydown", onKey);
@@ -262,7 +265,13 @@ export default function App() {
       badge: nonEmptyNotesCount || undefined,
       hint: "i",
     },
-    { id: "timeline", label: "Timeline", icon: <ActivityIcon className="h-4 w-4" />, hint: "a" },
+    {
+      id: "assistant",
+      label: "Ask Fleeting",
+      hint: "A",
+      icon: <BotIcon className="h-4 w-4 text-[#f09d73]" />,
+    },
+    { id: "timeline", label: "Timeline", icon: <ActivityIcon className="h-4 w-4" />, hint: "l" },
     {
       id: "tasks",
       label: "Tasks",
@@ -301,11 +310,19 @@ export default function App() {
         run: () => setView("inbox"),
       },
       {
+        id: "act:assistant",
+        title: "Ask Fleeting Assistant",
+        sub: "Query personal notes, tasks, and daily logs",
+        icon: <BotIcon className="h-4 w-4 text-[#f09d73]" />,
+        shortcut: "A",
+        run: () => setView("assistant"),
+      },
+      {
         id: "nav:timeline",
         title: "Go to Activity & Timeline Studio",
         sub: `${fmtSecs(trackedToday)} tracked today`,
         icon: <ActivityIcon className="h-4 w-4 text-iris-400" />,
-        shortcut: "A",
+        shortcut: "L",
         run: () => setView("timeline"),
       },
       {
@@ -799,6 +816,13 @@ export default function App() {
           )}
           {view === "settings" && (
             <SettingsView onToast={toast} whisperProgress={whisperProgress} />
+          )}
+          {view === "assistant" && (
+            <AssistantView
+              onOpenNote={setSelectedId}
+              onOpenTasks={() => setView("tasks")}
+              onToast={toast}
+            />
           )}
         </main>
 
