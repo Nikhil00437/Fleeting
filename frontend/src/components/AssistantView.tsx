@@ -81,7 +81,7 @@ export function renderFormattedContent(
   const tokens = parseCitations(text);
 
   return (
-    <div className="space-y-2 leading-relaxed text-ink-100 text-[13.5px]">
+    <div className="leading-relaxed text-ink-100 text-[13.5px]">
       {tokens.map((token, idx) => {
         if (token.type === "note-citation" && token.id) {
           return (
