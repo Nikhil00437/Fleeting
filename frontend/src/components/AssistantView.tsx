@@ -25,6 +25,7 @@ export interface AssistantDisplayMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  isError?: boolean;
   sources?: SourceRef[];
   context_used?: {
     notes_count: number;
@@ -185,10 +186,12 @@ export async function sendAssistantPromptAction(
   setLoading(true);
 
   try {
-    const payloadMessages = nextList.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const payloadMessages = nextList
+      .filter((m) => !m.isError)
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
 
     const res = await api.assistantChat({
       messages: payloadMessages,
@@ -212,6 +215,7 @@ export async function sendAssistantPromptAction(
     const errorMsg: AssistantDisplayMessage = {
       id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: "assistant",
+      isError: true,
       content: `⚠️ Error fetching assistant response: ${errorText}. Please verify that your local LLM service is active or inspect settings.`,
       timestamp: new Date().toISOString(),
     };

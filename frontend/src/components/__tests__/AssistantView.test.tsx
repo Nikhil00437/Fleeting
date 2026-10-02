@@ -269,7 +269,47 @@ describe("AssistantView Component & Logic", () => {
       );
       expect(messages.length).toBe(2);
       expect(messages[1].role).toBe("assistant");
+      expect(messages[1].isError).toBe(true);
       expect(messages[1].content).toContain("Error fetching assistant response");
+    });
+
+    it("filters out prior error messages from subsequent assistantChat payloads", async () => {
+      vi.mocked(api.assistantChat).mockResolvedValueOnce({
+        message: { role: "assistant", content: "Recovered answer" },
+        sources: [],
+        context_used: { notes_count: 0, tasks_count: 0, logs_count: 0 },
+      });
+
+      const priorMessages: AssistantDisplayMessage[] = [
+        { id: "1", role: "user", content: "Query 1" },
+        { id: "2", role: "assistant", content: "⚠️ Error fetching response", isError: true },
+      ];
+
+      let messages = [...priorMessages];
+      const setMessages = (action: any) => {
+        if (typeof action === "function") {
+          messages = action(messages);
+        } else {
+          messages = action;
+        }
+      };
+
+      await sendAssistantPromptAction(
+        "Query 2",
+        priorMessages,
+        setMessages,
+        vi.fn(),
+        vi.fn()
+      );
+
+      expect(api.assistantChat).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [
+            { role: "user", content: "Query 1" },
+            { role: "user", content: "Query 2" },
+          ],
+        })
+      );
     });
   });
 
