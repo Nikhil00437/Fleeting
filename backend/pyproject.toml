@@ -9,6 +9,8 @@ dependencies = [
     "httpx>=0.27",
     "python-multipart>=0.0.9",
     "faster-whisper>=1.1",
+    "watchdog>=4.0",
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]

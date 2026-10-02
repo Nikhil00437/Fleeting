@@ -16,6 +16,7 @@ from typing import Any
 import yaml
 
 from ..config import PathsConfig, expand_path
+from .vault_watcher import sync_registry
 
 log = logging.getLogger("fleeting.markdown")
 
@@ -311,7 +312,7 @@ def parse_note_md(content: str) -> dict[str, Any]:
 
 def vault_path_for(cfg: PathsConfig, note: dict) -> Path:
     vault = expand_path(cfg.vault_dir)
-    date = (note.get("created_at") or "")[:10] or "undated"
+    date = (note.get("created_at") or note.get("created") or "")[:10] or "undated"
     return vault / date[:4] / note_filename(note)
 
 
@@ -322,7 +323,9 @@ def sync_note(cfg: PathsConfig, note: dict) -> Path | None:
     path = vault_path_for(cfg, note)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(render_note_md(note), encoding="utf-8")
+        rendered = render_note_md(note)
+        path.write_text(rendered, encoding="utf-8")
+        sync_registry.register(path, rendered)
     except OSError as exc:
         log.error("vault sync failed for note %s: %s", note.get("id"), exc)
         return None
