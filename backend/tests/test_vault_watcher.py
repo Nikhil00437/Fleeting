@@ -2,13 +2,19 @@
 
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from watchdog.events import FileMovedEvent
 
 from fleeting.config import PathsConfig
 from fleeting.services.markdown import render_note_md, sync_note, vault_path_for
-from fleeting.services.vault_watcher import VaultSyncRegistry, VaultWatcher, sync_registry
+from fleeting.services.vault_watcher import (
+    VaultSyncRegistry,
+    VaultWatcher,
+    _VaultEventHandler,
+    sync_registry,
+)
 
 
 def test_registry_register_and_is_echo(tmp_path: Path):
@@ -142,6 +148,8 @@ def test_watcher_ignores_non_markdown_and_temp(tmp_path: Path):
         (tmp_path / "note.md.tmp").write_text("temp", encoding="utf-8")
         (tmp_path / "note.md.swp").write_text("swap", encoding="utf-8")
         (tmp_path / "note.md~").write_text("backup", encoding="utf-8")
+        (tmp_path / "foo.tmp.md").write_text("temp md", encoding="utf-8")
+        (tmp_path / "#draft.md#").write_text("emacs auto-save", encoding="utf-8")
 
         time.sleep(0.25)
         assert len(events) == 0
@@ -155,6 +163,72 @@ def test_watcher_ignores_non_markdown_and_temp(tmp_path: Path):
         assert events[0].resolve() == valid_md.resolve()
     finally:
         watcher.stop()
+
+
+def test_watcher_filters_outside_vault(tmp_path: Path):
+    vault_dir = tmp_path / "my_vault"
+    vault_dir.mkdir()
+    outside_file = tmp_path / "outside.md"
+    outside_file.write_text("# Outside", encoding="utf-8")
+
+    watcher = VaultWatcher(vault_dir)
+    assert watcher._should_ignore(outside_file) is True
+
+    inside_file = vault_dir / "inside.md"
+    inside_file.write_text("# Inside", encoding="utf-8")
+    assert watcher._should_ignore(inside_file) is False
+
+
+def test_watcher_tilde_expansion():
+    watcher = VaultWatcher("~/test_vault")
+    assert "~" not in str(watcher.vault_dir)
+    assert str(watcher.vault_dir).startswith(str(Path.home()))
+
+
+def test_watcher_on_moved_dispatches_src_and_dest(tmp_path: Path):
+    events: list[Path] = []
+
+    def on_change(p: Path):
+        events.append(p)
+
+    watcher = VaultWatcher(tmp_path, on_change=on_change, debounce_secs=0.05)
+    handler = _VaultEventHandler(watcher)
+
+    src_path = str(tmp_path / "original.md")
+    dest_path = str(tmp_path / "renamed.md")
+
+    event = FileMovedEvent(src_path, dest_path)
+    handler.on_moved(event)
+
+    time.sleep(0.15)
+
+    dispatched = {p.resolve() for p in events}
+    assert Path(src_path).resolve() in dispatched
+    assert Path(dest_path).resolve() in dispatched
+
+
+def test_watcher_on_moved_to_trash_only_dispatches_src(tmp_path: Path):
+    events: list[Path] = []
+
+    def on_change(p: Path):
+        events.append(p)
+
+    watcher = VaultWatcher(tmp_path, on_change=on_change, debounce_secs=0.05)
+    handler = _VaultEventHandler(watcher)
+
+    src_path = str(tmp_path / "note.md")
+    trash_dir = tmp_path / ".trash"
+    trash_dir.mkdir(exist_ok=True)
+    dest_path = str(trash_dir / "note.md")
+
+    event = FileMovedEvent(src_path, dest_path)
+    handler.on_moved(event)
+
+    time.sleep(0.15)
+
+    dispatched = {p.resolve() for p in events}
+    assert Path(src_path).resolve() in dispatched
+    assert Path(dest_path).resolve() not in dispatched
 
 
 def test_sync_note_registers_in_sync_registry(tmp_path: Path):

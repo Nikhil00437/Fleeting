@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -80,6 +81,9 @@ class _VaultEventHandler(FileSystemEventHandler):
 
     def on_moved(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
+            src = getattr(event, "src_path", None)
+            if src:
+                self.watcher._handle_raw_event(src)
             dest = getattr(event, "dest_path", None)
             if dest:
                 self.watcher._handle_raw_event(dest)
@@ -98,28 +102,29 @@ class VaultWatcher:
         on_change: Callable[[Path], Any] | None = None,
         debounce_secs: float = 0.4,
     ) -> None:
-        self.vault_dir = Path(vault_dir)
+        self.vault_dir = Path(os.path.expanduser(str(vault_dir)))
         self.on_change = on_change
         self.debounce_secs = debounce_secs
         self._observer: Observer | None = None
         self._timers: dict[str, threading.Timer] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def _should_ignore(self, path: Path) -> bool:
-        """Ignore directory events, dotfiles, non-markdown files, and temp files."""
+        """Ignore directory events, dotfiles, non-markdown files, temp files, and external paths."""
         name = path.name
-        if name.startswith("."):
+        if name.startswith(".") or name.startswith("#"):
             return True
         if not name.endswith(".md"):
             return True
-        if name.endswith(".tmp") or name.endswith(".swp") or name.endswith("~"):
+        if name.endswith(".tmp.md") or ".tmp." in name:
             return True
         try:
             rel = path.resolve().relative_to(self.vault_dir.resolve())
             if any(part.startswith(".") for part in rel.parts):
                 return True
         except ValueError:
-            pass
+            # Path is outside vault_dir
+            return True
         return False
 
     def _handle_raw_event(self, path_str: str) -> None:
@@ -151,19 +156,20 @@ class VaultWatcher:
 
     def start(self) -> None:
         """Start observer if vault directory exists."""
-        if self.is_running():
-            return
-        if not self.vault_dir.exists() or not self.vault_dir.is_dir():
-            log.warning("Vault directory does not exist or is not a directory: %s", self.vault_dir)
-            return
+        with self._lock:
+            if self.is_running():
+                return
+            if not self.vault_dir.exists() or not self.vault_dir.is_dir():
+                log.warning("Vault directory does not exist or is not a directory: %s", self.vault_dir)
+                return
 
-        handler = _VaultEventHandler(self)
-        obs = Observer()
-        obs.schedule(handler, str(self.vault_dir.resolve()), recursive=True)
-        obs.daemon = True
-        obs.start()
-        self._observer = obs
-        log.info("Vault watcher started for %s", self.vault_dir)
+            handler = _VaultEventHandler(self)
+            obs = Observer()
+            obs.schedule(handler, str(self.vault_dir.resolve()), recursive=True)
+            obs.daemon = True
+            obs.start()
+            self._observer = obs
+            log.info("Vault watcher started for %s", self.vault_dir)
 
     def stop(self) -> None:
         """Stop observer and cancel pending debounce timers."""
@@ -172,13 +178,14 @@ class VaultWatcher:
                 timer.cancel()
             self._timers.clear()
 
-        if self._observer is not None:
-            if self._observer.is_alive():
-                self._observer.stop()
-                self._observer.join(timeout=2.0)
-            self._observer = None
-            log.info("Vault watcher stopped for %s", self.vault_dir)
+            if self._observer is not None:
+                if self._observer.is_alive():
+                    self._observer.stop()
+                    self._observer.join(timeout=2.0)
+                self._observer = None
+                log.info("Vault watcher stopped for %s", self.vault_dir)
 
     def is_running(self) -> bool:
         """Return True if observer is active and running."""
-        return self._observer is not None and self._observer.is_alive()
+        with self._lock:
+            return self._observer is not None and self._observer.is_alive()
