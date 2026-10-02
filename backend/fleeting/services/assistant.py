@@ -125,8 +125,8 @@ def build_assistant_context(
 
     # 3. Daily logs if query mentions time/activity/summary
     logs: list[dict] = []
-    q_lower = clean_query.lower()
-    if any(kw in q_lower for kw in LOG_KEYWORDS):
+    query_tokens = set(re.findall(r"\b[a-zA-Z0-9_\-#]+\b", clean_query.lower()))
+    if any(kw in query_tokens for kw in LOG_KEYWORDS):
         try:
             cursor = db.execute("SELECT day, summary_md FROM daily_logs ORDER BY day DESC LIMIT 2")
             logs = [dict(row) for row in cursor.fetchall()]
@@ -320,9 +320,10 @@ async def ask_assistant(
             f"Context:\n{context_text}"
         )
         base = normalize_base_url(cfg.llm.base_url)
+        dialogue = [m for m in messages if m.get("role") != "system"]
         full_messages = [
             {"role": "system", "content": system_prompt},
-            *messages,
+            *dialogue,
         ]
         if cfg.llm.provider == "lmstudio":
             payload = {
