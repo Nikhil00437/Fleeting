@@ -138,6 +138,13 @@ export interface Settings {
   config_path: string;
 }
 
+export interface VaultSyncResult {
+  ok: boolean;
+  synced_notes: number;
+  imported_notes: number;
+  tasks_updated: number;
+}
+
 export interface ConnectionTest {
   ok: boolean;
   detail?: string;

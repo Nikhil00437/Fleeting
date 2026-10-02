@@ -14,6 +14,7 @@ import type {
   DailyLog,
   AppRule,
   FilesActivity,
+  VaultSyncResult,
 } from "./types";
 
 const BASE = "/api";
@@ -128,6 +129,7 @@ export const api = {
 
   settings: () => req<Settings>("/settings"),
 
+  resyncVault: () => req<VaultSyncResult>("/settings/vault/resync", { method: "POST" }),
 
   updateSettings: (changes: Record<string, unknown>) =>
     req<Settings>("/settings", { method: "PUT", body: JSON.stringify(changes) }),

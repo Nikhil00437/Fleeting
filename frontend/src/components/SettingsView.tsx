@@ -20,11 +20,14 @@ import {
   TerminalIcon,
   XIcon,
 } from "./Icons";
-import type { AppRule, HealthStatus, Settings, WhisperProgress } from "../types";
+import type { AppRule, HealthStatus, Settings, WhisperProgress, VaultSyncResult } from "../types";
 
-interface Props {
+export interface Props {
   onToast: (message: string, kind?: "ok" | "err") => void;
   whisperProgress?: WhisperProgress | null;
+  initialSettings?: Settings | null;
+  defaultTab?: SettingsTab;
+  initialResyncResult?: string | null;
 }
 
 type SettingsTab = "ai" | "activity" | "apps" | "vault" | "system";
@@ -41,11 +44,44 @@ function fmtMB(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function SettingsView({ onToast, whisperProgress }: Props) {
-  const [tab, setTab] = useState<SettingsTab>("ai");
-  const [s, setS] = useState<Settings | null>(null);
+export async function forceVaultResyncAction(
+  setResyncing: (val: boolean) => void,
+  setResyncResult: (msg: string | null) => void,
+  onToast: (message: string, kind?: "ok" | "err") => void,
+): Promise<VaultSyncResult | null> {
+  setResyncing(true);
+  try {
+    const res = await api.resyncVault();
+    const msg = `Re-synced ${res.synced_notes} notes, imported ${res.imported_notes} notes, updated ${res.tasks_updated} tasks.`;
+    setResyncResult(msg);
+    onToast(msg, "ok");
+    return res;
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    onToast(errMsg, "err");
+    return null;
+  } finally {
+    setResyncing(false);
+  }
+}
+
+export default function SettingsView({
+  onToast,
+  whisperProgress,
+  initialSettings,
+  defaultTab = "ai",
+  initialResyncResult = null,
+}: Props) {
+  const [tab, setTab] = useState<SettingsTab>(defaultTab);
+  const [s, setS] = useState<Settings | null>(initialSettings ?? null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [saving, setSaving] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncResult, setResyncResult] = useState<string | null>(initialResyncResult);
+
+  async function handleForceResync() {
+    await forceVaultResyncAction(setResyncing, setResyncResult, onToast);
+  }
 
   // AI testers
   const [llmTest, setLlmTest] = useState<{ ok?: boolean; text: string; models?: string[] } | null>(
@@ -1366,6 +1402,42 @@ export default function SettingsView({ onToast, whisperProgress }: Props) {
                     {s.vault_writable ? "✓ writable" : "✗ not writable"}
                   </span>
                 </div>
+
+                {/* Watcher Status & Force Re-sync Action */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      data-testid="vault-status-pill"
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs ${
+                        s.vault_sync
+                          ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          : "border border-ink-700 bg-ink-900 text-ink-400"
+                      }`}
+                    >
+                      {s.vault_sync
+                        ? `🟢 Watching Vault (${s.vault_dir || "configured directory"})`
+                        : "⚪ Sync Disabled"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleForceResync}
+                    disabled={resyncing}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-ink-700 bg-ink-900 px-3 py-1.5 text-xs font-semibold text-ink-200 transition-colors hover:border-ember-400/40 hover:text-ink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshIcon className={`h-3.5 w-3.5 ${resyncing ? "animate-spin" : ""}`} />
+                    <span>{resyncing ? "Re-syncing..." : "Force Vault Re-sync"}</span>
+                  </button>
+                </div>
+
+                {resyncResult && (
+                  <div
+                    data-testid="vault-resync-summary"
+                    className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-3.5 py-2.5 font-mono text-xs text-emerald-300"
+                  >
+                    {resyncResult}
+                  </div>
+                )}
 
                 <div>
                   <label className={labelCls}>Vault Directory Path</label>
