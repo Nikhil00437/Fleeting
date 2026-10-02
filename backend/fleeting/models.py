@@ -192,3 +192,33 @@ class SettingsIn(BaseModel):
     activity_auto_daily_log: bool | None = None
     activity_watch_dirs: str | None = Field(default=None, max_length=1000)
     activity_mirror_daily_log: bool | None = None
+
+
+class ChatMessage(BaseModel):
+    role: str  # 'user' | 'assistant' | 'system'
+    content: str
+
+
+class SourceRef(BaseModel):
+    id: str
+    title: str
+    type: str
+    kind: str = "note"  # 'note' | 'task' | 'log'
+    snippet: str = ""
+
+
+class AssistantChatIn(BaseModel):
+    messages: list[ChatMessage]
+    repo: str | None = None
+    type: str | None = None
+
+
+class AssistantChatOut(BaseModel):
+    message: ChatMessage
+    sources: list[SourceRef]
+    context_used: dict[str, int]
+
+
+class AssistantSuggestionsOut(BaseModel):
+    suggestions: list[str]
+
