@@ -5,16 +5,32 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from ..models import NoteOut
+from ..services.semantic_search import hybrid_search
 
 router = APIRouter(prefix="/api", tags=["search"])
 
 
 @router.get("/search")
-def search(request: Request, q: str, limit: int = 50) -> list[NoteOut]:
+def search(
+    request: Request,
+    q: str,
+    limit: int = 50,
+    mode: str = "hybrid",
+    type: str | None = None,
+    repo: str | None = None,
+) -> list[NoteOut]:
     st = request.app.state.st
     if not q.strip():
         return []
-    results = st.db.search(q, limit=min(limit, 200))
+    results = hybrid_search(
+        st.db,
+        q,
+        st.cfg,
+        mode=mode,
+        limit=min(limit, 200),
+        filter_type=type,
+        repo=repo,
+    )
     return [NoteOut(**r) for r in results]
 
 

@@ -18,6 +18,7 @@ from .config import Config
 from .db import Database, now_iso
 from .events import EventBus
 from .services import llm, markdown
+from .services.embeddings import embed_note
 from .services.transcribe import Transcriber, TranscriptionError
 from .services.youtube import YouTubeError, ingest as yt_ingest
 
@@ -206,8 +207,12 @@ class Processor:
             self.db._sync_note_action_items(note_id)
             note = self.db.get_note(note_id)
 
-            # 4) vault mirror + notify
+            # 4) embedding + vault mirror + notify
             if note:
+                try:
+                    embed_note(note, self.db, self.cfg)
+                except Exception as exc:
+                    log.warning("failed to embed note %s: %s", note_id, exc)
                 markdown.sync_note(self.cfg.paths, note)
                 self._maybe_notify(note)
             log.info("note %s processed in %.1fs", note_id, time.monotonic() - started)

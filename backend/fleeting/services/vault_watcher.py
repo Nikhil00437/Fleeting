@@ -15,6 +15,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from ..db import _row_to_task, now_iso
+from .embeddings import embed_note
 
 if TYPE_CHECKING:
     from ..config import Config
@@ -370,8 +371,14 @@ def sync_file_change(
             db._sync_note_action_items(note_id)
 
         refreshed_note = db.get_note(note_id)
+        target_note = refreshed_note or existing_note
+        if target_note:
+            try:
+                embed_note(target_note, db, cfg)
+            except Exception as exc:
+                log.warning("Failed to embed updated note %s: %s", note_id, exc)
         sync_registry.register(path, content)
-        bus.publish("note.updated", refreshed_note or existing_note)
+        bus.publish("note.updated", target_note)
 
         return {"action": "updated", "note_id": note_id, "tasks_updated": tasks_modified_count}
 
@@ -407,6 +414,10 @@ def sync_file_change(
         db._sync_note_action_items(created_note_id)
 
     refreshed_new_note = db.get_note(created_note_id) or new_note
+    try:
+        embed_note(refreshed_new_note, db, cfg)
+    except Exception as exc:
+        log.warning("Failed to embed created note %s: %s", created_note_id, exc)
     rendered = render_note_md(refreshed_new_note)
 
     # Register hash first, then write updated content with id frontmatter back to disk

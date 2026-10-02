@@ -148,6 +148,8 @@ class NoteOut(BaseModel):
     updated_at: str
     processed_at: str | None = None
     snippet: str | None = None  # only present on search results
+    score: float | None = None
+    match_type: str | None = None
 
 
 class CaptureTextIn(BaseModel):
