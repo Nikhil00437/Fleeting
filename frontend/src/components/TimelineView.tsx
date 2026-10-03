@@ -689,7 +689,8 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                   <ActivityIcon className="h-6 w-6 text-ink-600" />
                   <p className="mt-2 max-w-xs text-xs leading-relaxed text-ink-400">
                     Synthesizes window sessions, modified files, and git commits into a daily
-                    briefing at midnight — or click Generate anytime.
+                    briefing automatically every 1h of screentime and at midnight — or click
+                    Generate anytime.
                   </p>
                 </div>
               )}
