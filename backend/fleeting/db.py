@@ -152,6 +152,13 @@ MIGRATIONS: list[str] = [
 ]
 
 
+NOTE_COLUMNS = frozenset({
+    "type", "title", "summary", "raw_text", "tags", "action_items", "source",
+    "audio_path", "status", "error", "pinned", "archived",
+    "created_at", "updated_at", "processed_at",
+})
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -234,6 +241,11 @@ class Database:
         return self.get_note(note["id"])  # type: ignore[return-value]
 
     def update_note(self, note_id: str, changes: dict) -> dict | None:
+        if not changes:
+            return self.get_note(note_id)
+        # Column names cannot be bound as SQL parameters, so drop anything
+        # off-schema rather than splicing it into the SET clause.
+        changes = {k: v for k, v in changes.items() if k in NOTE_COLUMNS}
         if not changes:
             return self.get_note(note_id)
         changes = {**changes, "updated_at": changes.get("updated_at") or now_iso()}
