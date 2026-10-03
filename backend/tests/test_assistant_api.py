@@ -16,6 +16,7 @@ from fleeting.services.assistant import (
     ask_assistant,
     build_assistant_context,
     get_assistant_suggestions,
+    match_fast_intent,
 )
 from fleeting.services.embeddings import embed_note
 from fleeting.services.llm import LLMUnavailable
@@ -369,3 +370,157 @@ def test_api_suggestions_endpoint(client: TestClient) -> None:
     out = AssistantSuggestionsOut(**data)
     assert 3 <= len(out.suggestions) <= 5
     assert all(isinstance(s, str) for s in out.suggestions)
+
+
+# ============================================================================
+# 6. Fast Intent Matching & Action Execution Tests
+# ============================================================================
+
+
+def test_match_fast_intent_patterns() -> None:
+    # Delete all tasks patterns
+    assert match_fast_intent("delete all the tasks") == ("delete_tasks", {"all": True})
+    assert match_fast_intent("delete all tasks") == ("delete_tasks", {"all": True})
+    assert match_fast_intent("clear all tasks") == ("delete_tasks", {"all": True})
+    assert match_fast_intent("clear all the tasks") == ("delete_tasks", {"all": True})
+    assert match_fast_intent("delete all active tasks") == ("delete_tasks", {"all": True})
+
+    # Delete specific task
+    assert match_fast_intent("delete task 123") == ("delete_tasks", {"ids": ["123"]})
+    assert match_fast_intent("delete task [[task:abc-456|Refactor]]") == ("delete_tasks", {"ids": ["abc-456"]})
+    assert match_fast_intent("remove task 789") == ("delete_tasks", {"ids": ["789"]})
+    assert match_fast_intent("remove task [[task:xyz-999|Fix bug]]") == ("delete_tasks", {"ids": ["xyz-999"]})
+
+    # Toggle task
+    assert match_fast_intent("mark task 123 as done") == ("toggle_task", {"task_id": "123"})
+    assert match_fast_intent("mark task [[task:abc-456|Test]] as done") == ("toggle_task", {"task_id": "abc-456"})
+    assert match_fast_intent("complete task 123") == ("toggle_task", {"task_id": "123"})
+    assert match_fast_intent("toggle task 123") == ("toggle_task", {"task_id": "123"})
+
+    # Daily digest
+    assert match_fast_intent("generate today's digest") == ("generate_daily_digest", {"rolling": True})
+    assert match_fast_intent("generate todays digest") == ("generate_daily_digest", {"rolling": True})
+    assert match_fast_intent("generate digest") == ("generate_daily_digest", {"rolling": True})
+    assert match_fast_intent("create daily digest") == ("generate_daily_digest", {"rolling": True})
+
+    # Pause / resume activity
+    assert match_fast_intent("pause activity tracking") == ("pause_activity", {"paused": True})
+    assert match_fast_intent("pause activity") == ("pause_activity", {"paused": True})
+    assert match_fast_intent("resume activity tracking") == ("pause_activity", {"paused": False})
+    assert match_fast_intent("resume activity") == ("pause_activity", {"paused": False})
+
+    # Non-intents should return None
+    assert match_fast_intent("what are my tasks for today?") is None
+    assert match_fast_intent("tell me about the project") is None
+    assert match_fast_intent("delete the files") is None
+
+
+@pytest.mark.anyio
+async def test_assistant_fast_intent_delete_all_tasks(db: Database, cfg: Config) -> None:
+    # 1. Create notes and tasks in DB
+    note = db.insert_note({"title": "Tasks Note", "raw_text": "Work items"})
+    db.insert_task({"note_id": note["id"], "text": "Task Alpha", "priority": "P1"})
+    db.insert_task({"note_id": note["id"], "text": "Task Beta", "priority": "P2"})
+
+    assert len(db.list_tasks(status="all")) == 2
+
+    # 2. Ask assistant to delete all tasks
+    messages = [{"role": "user", "content": "delete all the tasks"}]
+    res = await ask_assistant(messages, db, cfg)
+
+    # 3. Verify tasks are deleted from DB
+    assert len(db.list_tasks(status="all")) == 0
+
+    # 4. Result message confirms deletion and sources are provided
+    assert "Deleted 2 active tasks" in res["message"]["content"]
+    assert len(res["sources"]) >= 2
+    assert any(s["title"] == "Task Alpha" for s in res["sources"])
+    assert any(s["title"] == "Task Beta" for s in res["sources"])
+
+
+@pytest.mark.anyio
+async def test_assistant_fast_intent_generate_digest(db: Database, cfg: Config) -> None:
+    messages = [{"role": "user", "content": "generate today's digest"}]
+
+    mock_row = {"day": "2026-10-03", "summary_md": "Daily work summary generated."}
+    with patch("fleeting.services.actions.dailylog.generate_daily_log", new=AsyncMock(return_value=mock_row)) as mock_gen:
+        res = await ask_assistant(messages, db, cfg)
+        assert mock_gen.called
+
+    assert "Generated daily digest" in res["message"]["content"]
+    assert res["message"]["role"] == "assistant"
+    assert any(s["kind"] == "log" for s in res["sources"])
+
+
+@pytest.mark.anyio
+async def test_assistant_model_action_block_execution(db: Database, cfg: Config) -> None:
+    cfg.llm.provider = "ollama"
+    cfg.llm.base_url = "http://localhost:11434"
+    cfg.llm.model = "llama3"
+
+    note = db.insert_note({"title": "Test Note", "raw_text": "Content"})
+    db.insert_task({"note_id": note["id"], "text": "Do cleanup", "priority": "P1"})
+    assert len(db.list_tasks(status="all")) == 1
+
+    messages = [{"role": "user", "content": "Clean up my tasks please."}]
+    model_response = (
+        "```action\n"
+        '{"tool": "delete_tasks", "parameters": {"all": true}}\n'
+        "```\n"
+        "I have deleted all your active tasks."
+    )
+
+    with patch("fleeting.services.assistant.request_chat", new=AsyncMock(return_value=model_response)):
+        res = await ask_assistant(messages, db, cfg)
+
+    assert len(db.list_tasks(status="all")) == 0
+    assert "```action" not in res["message"]["content"]
+    assert res["message"]["content"] == "I have deleted all your active tasks."
+
+
+@pytest.mark.anyio
+async def test_assistant_fast_intent_toggle_task(db: Database, cfg: Config) -> None:
+    note = db.insert_note({"title": "Action List", "raw_text": "items"})
+    task = db.insert_task({"note_id": note["id"], "text": "Deploy staging", "priority": "P1"})
+    assert task["done"] == 0
+
+    messages = [{"role": "user", "content": f"mark task {task['id']} as done"}]
+    res = await ask_assistant(messages, db, cfg)
+
+    updated = db.get_task(task["id"])
+    assert updated["done"] == 1
+    assert "completed" in res["message"]["content"].lower()
+
+
+@pytest.mark.anyio
+async def test_assistant_fast_intent_pause_activity(db: Database, cfg: Config) -> None:
+    # 1. Pause
+    messages = [{"role": "user", "content": "pause activity tracking"}]
+    res_pause = await ask_assistant(messages, db, cfg)
+    assert db.kv_get("activity_paused") == "1"
+    assert "paused" in res_pause["message"]["content"].lower()
+
+    # 2. Resume
+    messages = [{"role": "user", "content": "resume activity"}]
+    res_resume = await ask_assistant(messages, db, cfg)
+    assert db.kv_get("activity_paused") == "0"
+    assert "resumed" in res_resume["message"]["content"].lower()
+
+
+def test_api_chat_endpoint_fast_intent(client: TestClient) -> None:
+    # 1. Create a task directly in DB
+    client.app.state.st.db.insert_task({"text": "Urgent review task", "priority": "P1"})
+
+    # 2. Chat with fast intent to delete all tasks
+    payload = {
+        "messages": [
+            {"role": "user", "content": "delete all tasks"}
+        ]
+    }
+    r = client.post("/api/assistant/chat", json=payload)
+    assert r.status_code == 200
+    data = r.json()
+    assert "Deleted" in data["message"]["content"]
+    assert "task" in data["message"]["content"].lower()
+    assert len(client.app.state.st.db.list_tasks(status="all")) == 0
+

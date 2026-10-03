@@ -18,6 +18,7 @@ async def chat(request: Request, body: AssistantChatIn) -> AssistantChatOut:
         [m.model_dump() for m in body.messages],
         st.db,
         st.cfg,
+        bus=getattr(st, "bus", None),
         repo=body.repo,
         filter_type=body.type,
     )

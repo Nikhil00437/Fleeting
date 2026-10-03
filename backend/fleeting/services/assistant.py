@@ -6,10 +6,13 @@ to answer user questions with citations, supporting both local LLMs and offline 
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from ..events import EventBus
+from .actions import AVAILABLE_ACTIONS, execute_action
 from .llm import LLMUnavailable, normalize_base_url, request_chat
 from .semantic_search import hybrid_search
 
@@ -280,15 +283,190 @@ def _extractive_heuristic_answer(query: str, context_text: str, sources: list[di
     return "\n".join(sections)
 
 
+def _extract_task_id(text: str) -> str | None:
+    """Extract a task ID from either a link [[task:id|...]] or raw text."""
+    text = text.strip()
+    m = re.search(r"\[\[task:([^|\]]+)(?:\|[^\]]*)?\]\]", text)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"['\"]?#?([a-zA-Z0-9_-]+)['\"]?", text)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def match_fast_intent(query: str) -> tuple[str, dict] | None:
+    """Detect obvious single-turn user intents that can be executed directly as app actions."""
+    if not query or not isinstance(query, str):
+        return None
+
+    q = query.strip()
+    q_norm = q.lower().rstrip(".!? \t\n")
+
+    # 1. Delete all tasks
+    if re.match(r"^(?:delete|clear)\s+all(?:\s+(?:the|of\s+the|active|my))?\s+tasks$", q_norm):
+        return ("delete_tasks", {"all": True})
+
+    # 2. Delete / remove specific task
+    # e.g., "delete task 123", "delete task [[task:123|...]]", "remove task 123"
+    m_del = re.match(r"^(?:delete|remove)\s+task\s+(.+)$", q_norm)
+    if m_del:
+        target = m_del.group(1).strip()
+        tid = _extract_task_id(target)
+        if tid:
+            return ("delete_tasks", {"ids": [tid]})
+
+    # 3. Mark task as done / complete task / toggle task
+    # e.g., "mark task 123 as done", "mark task 123 done", "mark task 123 as complete"
+    m_mark = re.match(r"^mark\s+task\s+(.+?)(?:\s+as)?\s+(?:done|complete|finished)$", q_norm)
+    if m_mark:
+        target = m_mark.group(1).strip()
+        tid = _extract_task_id(target)
+        if tid:
+            return ("toggle_task", {"task_id": tid})
+
+    m_toggle = re.match(r"^(?:complete|toggle)\s+task\s+(.+)$", q_norm)
+    if m_toggle:
+        target = m_toggle.group(1).strip()
+        tid = _extract_task_id(target)
+        if tid:
+            return ("toggle_task", {"task_id": tid})
+
+    # 4. Generate daily digest
+    # e.g. "generate today's digest", "generate todays digest", "generate digest", "create daily digest"
+    if re.match(r"^(?:generate|create|make)\s+(?:(?:today['’]?s|daily)\s+)?digest$", q_norm):
+        return ("generate_daily_digest", {"rolling": True})
+
+    # 5. Pause / resume activity tracking
+    if re.match(r"^pause\s+(?:activity\s+tracking|activity|tracking)$", q_norm):
+        return ("pause_activity", {"paused": True})
+
+    if re.match(r"^resume\s+(?:activity\s+tracking|activity|tracking)$", q_norm):
+        return ("pause_activity", {"paused": False})
+
+    return None
+
+
+def _format_action_result(tool: str, params: dict, res: dict) -> str:
+    """Format human-friendly confirmation message for executed actions."""
+    if not res.get("ok"):
+        error_msg = res.get("error") or "action failed"
+        return f"Could not perform action '{tool}': {error_msg}."
+
+    if tool == "delete_tasks":
+        count = res.get("count", 0)
+        noun = "active task" if params.get("all") else "task"
+        if count == 1:
+            return f"Deleted 1 {noun}."
+        return f"Deleted {count} {noun}s."
+
+    if tool == "create_task":
+        task = res.get("task") or {}
+        tid = task.get("id", "")
+        text = task.get("text", "")
+        return f"Created task [[task:{tid}|{text}]]."
+
+    if tool == "toggle_task":
+        task = res.get("task") or {}
+        tid = task.get("id", "")
+        text = task.get("text", "")
+        status = "completed" if task.get("done") else "marked as open"
+        return f"Task [[task:{tid}|{text}]] is now {status}."
+
+    if tool == "update_task":
+        task = res.get("task") or {}
+        tid = task.get("id", "")
+        text = task.get("text", "")
+        return f"Updated task [[task:{tid}|{text}]]."
+
+    if tool == "create_note":
+        note = res.get("note") or {}
+        nid = note.get("id", "")
+        title = note.get("title", "Untitled")
+        return f"Created note [[note:{nid}|{title}]]."
+
+    if tool == "delete_note":
+        nid = res.get("id", "")
+        return f"Deleted note {nid}."
+
+    if tool == "pin_note":
+        note = res.get("note") or {}
+        nid = note.get("id", "")
+        title = note.get("title", "Untitled")
+        action = "Pinned" if note.get("pinned") else "Unpinned"
+        return f"{action} note [[note:{nid}|{title}]]."
+
+    if tool == "generate_daily_digest":
+        day = res.get("day", "today")
+        return f"Generated daily digest for {day}."
+
+    if tool == "pause_activity":
+        paused = res.get("paused", True)
+        state = "paused" if paused else "resumed"
+        return f"Activity tracking has been {state}."
+
+    return "Action completed successfully."
+
+
+ACTION_BLOCK_RE = re.compile(r"```+(?:action|tool)\s*\n(.*?)```+", re.DOTALL | re.IGNORECASE)
+
+
+def _parse_and_execute_action_blocks(
+    content: str,
+    db: Database,
+    cfg: Config,
+    bus: EventBus,
+    sources: list[dict],
+) -> tuple[str, list[dict]]:
+    """Find and execute ```action blocks in LLM output, stripping them from the response."""
+    blocks = ACTION_BLOCK_RE.findall(content)
+    if not blocks:
+        return content, sources
+
+    action_messages = []
+    for raw in blocks:
+        try:
+            payload = json.loads(raw.strip())
+            tool = payload.get("tool") or payload.get("name") or payload.get("action")
+            params = payload.get("parameters") or payload.get("params") or payload.get("args") or {}
+            if tool:
+                res = execute_action(tool, params, db, cfg, bus)
+                action_messages.append(_format_action_result(tool, params, res))
+                if tool == "generate_daily_digest" and res.get("ok"):
+                    day = res.get("day")
+                    if day and not any(s.get("id") == day for s in sources):
+                        row = res.get("row") or {}
+                        summary = (row.get("summary_md") or "")[:160]
+                        sources.append({
+                            "id": day,
+                            "title": f"Daily Log ({day})",
+                            "type": "log",
+                            "kind": "log",
+                            "snippet": summary,
+                        })
+        except Exception as exc:
+            log.warning("Failed to parse/execute model action block: %s", exc)
+
+    cleaned = ACTION_BLOCK_RE.sub("", content).strip()
+    if not cleaned and action_messages:
+        cleaned = "\n\n".join(action_messages)
+
+    return cleaned, sources
+
+
 async def ask_assistant(
     messages: list[dict],
     db: Database,
     cfg: Config,
+    bus: EventBus | None = None,
     *,
     repo: str | None = None,
     filter_type: str | None = None,
 ) -> dict:
     """Orchestrate grounded RAG assistant response with source citations."""
+    if bus is None:
+        bus = EventBus()
+
     user_query = ""
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -306,7 +484,32 @@ async def ask_assistant(
         user_query, db, cfg, repo=repo, filter_type=filter_type
     )
 
+    # Fast intent matching for direct app actions
+    fast_intent = match_fast_intent(user_query)
+    if fast_intent is not None:
+        tool, params = fast_intent
+        action_res = execute_action(tool, params, db, cfg, bus)
+        content = _format_action_result(tool, params, action_res)
+        if tool == "generate_daily_digest" and action_res.get("ok"):
+            day = action_res.get("day")
+            if day and not any(s.get("id") == day for s in sources):
+                row = action_res.get("row") or {}
+                summary = (row.get("summary_md") or "")[:160]
+                sources.append({
+                    "id": day,
+                    "title": f"Daily Log ({day})",
+                    "type": "log",
+                    "kind": "log",
+                    "snippet": summary,
+                })
+        return {
+            "message": {"role": "assistant", "content": content},
+            "sources": sources,
+            "context_used": context_used,
+        }
+
     if cfg.llm.provider != "none":
+        tools_desc = json.dumps(AVAILABLE_ACTIONS, indent=2)
         system_prompt = (
             "You are 'Ask Fleeting', a personal knowledge assistant built into Fleeting.\n"
             "You answer user questions using only their personal captured notes, tasks, and activity logs provided in the context below.\n\n"
@@ -316,7 +519,14 @@ async def ask_assistant(
             "3. Cite your sources using exact double-bracket links:\n"
             "   - For notes: [[note:NOTE_ID|Title]]\n"
             "   - For tasks: [[task:TASK_ID|Task text]]\n"
-            "4. If the context does not contain enough information to answer the question, state that clearly and suggest what the user might search for.\n\n"
+            "4. If the context does not contain enough information to answer the question, state that clearly and suggest what the user might search for.\n"
+            "5. When the user asks you to perform an action (such as creating/deleting/toggling tasks, creating/deleting notes, generating daily digests, or pausing/resuming tracking), use the tools catalog below.\n"
+            "   To call a tool, output an ```action JSON block like:\n"
+            "   ```action\n"
+            '   {"tool": "<tool_name>", "parameters": { ... }}\n'
+            "   ```\n"
+            "   Follow the action block with a friendly, brief conversational explanation of what you did.\n\n"
+            f"Tools Catalog:\n{tools_desc}\n\n"
             f"Context:\n{context_text}"
         )
         base = normalize_base_url(cfg.llm.base_url)
@@ -345,6 +555,7 @@ async def ask_assistant(
 
         try:
             content = await request_chat(url, payload, cfg.llm.timeout_secs, provider=cfg.llm.provider)
+            content, sources = _parse_and_execute_action_blocks(content, db, cfg, bus, sources)
         except (LLMUnavailable, Exception) as exc:
             log.warning("Assistant LLM request failed, falling back to extractive answer: %s", exc)
             content = _extractive_heuristic_answer(user_query, context_text, sources)
