@@ -56,22 +56,32 @@ telemetry.
   with an individual on/off toggle; a blocklist (zen browser by default) keeps
   chosen apps out entirely.
 - **Everything is searchable** — SQLite FTS5 over titles, transcripts and tags
-  with highlighted snippets.
+  with highlighted snippets, optionally reranked against note embeddings.
+- **Process view** — active windows and a sortable process list with CPU and
+  memory, per-process runtime details, and terminate. Hyprland is the supported
+  compositor; Sway and X11/wmctrl are attempted as fallbacks.
 - **Your data stays yours** — one SQLite file plus plain Markdown in your vault.
   Pause tracking any time from the Timeline view; exclude apps by name in
   settings. Nothing ever leaves the machine.
 
 ## It's a desktop app
 
-`scripts/install-app.sh` installs a launcher entry ("Fleeting" in wofi/rofi)
-with an icon. Launching it starts the backend if needed and opens the UI in a
-chrome **app window** — no tabs, no URL bar — using a dedicated profile, so it
-behaves like a native desktop app.
+The real shell is **Electron** (`electron/main.cjs`, launched by `bin/fleeting-app`).
+It gives you:
 
-> Window note: Chrome derives the Wayland app-id from the app URL
-> (`chrome-127.0.0.1__-Default`); the .desktop entry matches that so pinning
-> works. To keep it on top or assign a workspace, add a Hyprland rule:
-> `windowrulev2 = pin, class:^(chrome-127\.0\.0\.1__-Default)$`
+- **Auto-backend** — probes `127.0.0.1:7425` and starts the FastAPI server itself
+  if nothing answers, so there is no second thing to launch.
+- **System tray icon** with a tooltip, plus window position/size persistence.
+- **A dictation HUD** — a separate always-on-top, all-workspaces window
+  (`?mode=hud`) toggled by <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>, so the
+  mic is always one keypress away without covering your work.
+
+`scripts/install-app.sh` installs a launcher entry ("Fleeting" in wofi/rofi)
+with an icon that runs `fleeting-app`, which locates your `electron` binary.
+
+> Window note: the shell sets `StartupWMClass=fleeting`, so Hyprland rules match
+> on `class:^(fleeting)$` — for example
+> `windowrulev2 = pin, class:^(fleeting)$`.
 
 ## Stack
 
@@ -79,10 +89,10 @@ behaves like a native desktop app.
 | --------- | ----------------------------------------------------------- |
 | Backend   | Python 3.13, FastAPI, SQLite (WAL + FTS5), asyncio workers   |
 | AI        | faster-whisper (local STT), Ollama / LM Studio (local LLM)  |
-| Ingestion | yt-dlp, ffmpeg, hyprctl (activity)                          |
+| Ingestion | yt-dlp, ffmpeg, hyprctl (activity), psutil (process view)   |
 | Frontend  | React 19, Vite 7, Tailwind 4, TypeScript                    |
 | Realtime  | Server-Sent Events                                          |
-| Shell     | chrome `--app` desktop window, systemd user service         |
+| Shell     | Electron (tray, HUD, auto-backend), systemd user service     |
 
 ## Setup (Arch / Omarchy)
 
@@ -98,7 +108,8 @@ First boot auto-detects your Ollama model and creates
 `~/.config/fleeting/config.toml`.
 
 Requirements: `uv`, `bun` (or npm), `ffmpeg`, `yt-dlp`, and Hyprland's
-`hyprctl` for activity tracking. The whisper model downloads once on first
+`hyprctl` for activity tracking. `electron` (or `electron43`) is needed for the
+desktop shell. The whisper model downloads once on first
 voice capture (`base` is ~75 MB and usually already in your HuggingFace cache).
 
 ### Run as a service (survives reboots)
@@ -155,6 +166,13 @@ desktop = true
 Data lives in `~/.local/share/fleeting/` (`fleeting.db` + audio). The server
 binds to `127.0.0.1` only — it is a single-user local app.
 
+Because a browser will happily fire a cross-origin `POST` at a loopback port
+without any user intent, every mutating `/api` request must carry an `Origin`
+header belonging to the app itself (or the Vite dev server). Requests with no
+`Origin` — `curl`, the `flee` CLI, scripts — are unaffected. A future browser
+extension will therefore need to declare itself allowed here rather than assume
+it can post freely.
+
 ## Layout
 
 ```
@@ -167,9 +185,10 @@ backend/
     activity.py        Hyprland window tracker (idle-aware session state machine)
     events.py          SSE event bus
     services/          llm, transcribe, youtube, markdown, dailylog
-    routers/           notes, capture, search, settings, system, activity
+    routers/           notes, capture, search, settings, system, activity, processes
   tests/               pytest (API E2E, collector, daily log, markdown, subtitles)
 frontend/              React 19 + Tailwind 4 SPA (Inbox, Timeline, Tasks, Search, Settings)
+electron/              desktop shell: tray, HUD window, backend supervision
 scripts/               install.sh, install-app.sh, dev-restart.sh
 deploy/                systemd user unit, .desktop entry, app icon
 bin/                   flee (CLI capture), fleeting-app (desktop launcher)
@@ -178,12 +197,16 @@ bin/                   flee (CLI capture), fleeting-app (desktop launcher)
 ## Tests
 
 ```bash
-cd backend && uv run pytest      # 45 tests
+cd backend && uv run pytest                  # 235 tests
+cd frontend && npx vitest run                # 70 tests
 ```
 
 ## Ideas for v2
 
 - Weekly digest note (auto-generated Sunday summary of the daily logs)
-- Embedding-based semantic search alongside FTS
+- Real local embeddings instead of the offline n-gram fallback (see
+  `services/embeddings.py` — `LocalHashVectorizer` is character-3-gram hashing,
+  so it catches typos and short queries but not paraphrase; pointing
+  `[llm]` at Ollama's `nomic-embed-text` gets true semantic recall)
 - Browser extension: capture selected text with one click
 - AFK detection via real wayland idle protocol instead of cursor heuristic
