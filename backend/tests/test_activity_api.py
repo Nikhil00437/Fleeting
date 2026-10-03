@@ -79,3 +79,26 @@ def test_daily_log_rolling_syncs_screentime_milestone(client):
     assert st.db.kv_get(f"digest_screentime_hours_{today}") == "1"
 
 
+def test_daily_log_generate_acquires_digest_lock(client):
+    from unittest.mock import AsyncMock, patch
+
+    st = client.app.state.st
+    assert st.digest_lock is not None
+
+    lock_acquired = False
+    orig_acquire = st.digest_lock.acquire
+
+    async def tracking_acquire():
+        nonlocal lock_acquired
+        lock_acquired = True
+        return await orig_acquire()
+
+    st.digest_lock.acquire = tracking_acquire
+
+    with patch("fleeting.services.dailylog.generate_daily_log", new=AsyncMock(return_value={"day": "2026-10-01", "summary_md": "log"})):
+        r = client.post("/api/activity/daily-log/generate", json={"day": "2026-10-01"})
+        assert r.status_code == 200
+        assert lock_acquired is True
+
+
+

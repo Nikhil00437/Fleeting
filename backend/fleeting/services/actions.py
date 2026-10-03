@@ -66,13 +66,16 @@ def delete_tasks(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict
         return {"ok": False, "error": "either 'all': true or 'ids' must be provided"}
 
     deleted_ids = []
+    affected_note_ids = {t["note_id"] for t in tasks_to_delete if t.get("note_id")}
     for task in tasks_to_delete:
         tid = task["id"]
         note_id = task["note_id"]
         db.delete_task(tid)
         deleted_ids.append(tid)
         bus.publish("task.deleted", {"id": tid, "note_id": note_id})
-        _sync_vault_and_notify_note(note_id, db, cfg, bus)
+
+    for nid in affected_note_ids:
+        _sync_vault_and_notify_note(nid, db, cfg, bus)
 
     return {"ok": True, "count": len(deleted_ids), "deleted_ids": deleted_ids}
 
@@ -140,6 +143,11 @@ def create_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     raw_text = params.get("content") or params.get("raw_text") or params.get("text") or ""
     title = str(params.get("title") or "").strip()
     tags = params.get("tags") or []
+    if isinstance(tags, str):
+        tags = [t.strip().lstrip("#") for t in tags.split(",") if t.strip().lstrip("#")]
+    elif not isinstance(tags, list):
+        tags = list(tags)
+    tags = [str(t).strip().lstrip("#") for t in tags if str(t).strip().lstrip("#")]
     status = params.get("status") or "done"
     note_type = params.get("type") or "text"
 
@@ -199,7 +207,7 @@ def pin_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     if not note:
         return {"ok": False, "error": f"note {str_note_id} not found"}
 
-    pinned = bool(params["pinned"]) if "pinned" in params else not note.get("pinned", False)
+    pinned = bool(params["pinned"]) if ("pinned" in params and params["pinned"] is not None) else not note.get("pinned", False)
     updated = db.update_note(str_note_id, {"pinned": pinned})
     bus.publish("note.updated", updated)
     return {"ok": True, "note": updated}
@@ -227,6 +235,16 @@ def generate_daily_digest(params: dict, db: Database, cfg: Config, bus: EventBus
     except Exception as exc:
         log.exception("daily digest generation failed: %s", exc)
         return {"ok": False, "error": str(exc), "day": day}
+
+    today_str = datetime.now().astimezone().strftime("%Y-%m-%d")
+    if rolling and day == today_str:
+        from ..activity import app_blocked
+        sessions = [
+            s for s in db.activity_sessions(day)
+            if not app_blocked(cfg.activity, db, s["app_class"])
+        ]
+        today_seconds = sum(int(s.get("seconds", 0)) for s in sessions)
+        db.kv_set(f"digest_screentime_hours_{day}", str(today_seconds // 3600))
 
     bus.publish("dailylog.updated", {"day": day, "kind": "daily-report" if rolling else "day-log"})
     return {"ok": True, "day": day, "row": row}

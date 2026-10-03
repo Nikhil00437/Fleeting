@@ -93,6 +93,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
                 log.exception("daily report backfill for %s failed", yesterday)
 
         digest_lock = asyncio.Lock()
+        st.digest_lock = digest_lock
 
         async def generate_milestone_digest(day: str, hours: int) -> None:
             if digest_lock.locked():

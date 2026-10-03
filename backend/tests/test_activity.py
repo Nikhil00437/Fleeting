@@ -316,3 +316,25 @@ def test_screentime_milestone_disabled_if_auto_daily_log_false():
     assert calls == []
 
 
+def test_today_screentime_freshness_across_midnight():
+    from fleeting.activity import _local_now
+    c = make_collector()
+    # Simulate collector started yesterday / stale _today
+    c._today = "2020-01-01"
+    actual_today = _local_now().strftime("%Y-%m-%d")
+
+    # Add session for actual today
+    c.db.rows.append({
+        "id": 1,
+        "app_class": "code",
+        "title": "work",
+        "first_seen": f"{actual_today}T10:00:00",
+        "last_seen": f"{actual_today}T11:00:00",
+        "seconds": 3600,
+        "day": actual_today,
+    })
+    # today_screentime_seconds should evaluate for actual today, not the stale c._today
+    assert c.today_screentime_seconds() == 3600
+
+
+

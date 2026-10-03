@@ -142,8 +142,13 @@ async def generate_log(request: Request, body: dict) -> dict:
         day = _local_today()
     elif day > _local_today():
         raise HTTPException(422, "cannot generate a log for a future day")
+    lock = getattr(st, "digest_lock", None)
     try:
-        row = await dailylog.generate_daily_log(st.db, st.cfg, day, rolling=rolling)
+        if lock:
+            async with lock:
+                row = await dailylog.generate_daily_log(st.db, st.cfg, day, rolling=rolling)
+        else:
+            row = await dailylog.generate_daily_log(st.db, st.cfg, day, rolling=rolling)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     if rolling and day == _local_today():

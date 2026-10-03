@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 from .config import Config
@@ -21,6 +22,7 @@ class AppState:
     started_at: float = field(default_factory=lambda: 0.0)
     activity: object = None  # ActivityCollector, set in create_app
     vault_watcher: object = None  # VaultWatcher, set in create_app
+    digest_lock: asyncio.Lock | None = None
 
     def cfg_audio_dir(self):
         from .config import AUDIO_DIR, ensure_dirs

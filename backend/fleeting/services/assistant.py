@@ -286,12 +286,22 @@ def _extractive_heuristic_answer(query: str, context_text: str, sources: list[di
 def _extract_task_id(text: str) -> str | None:
     """Extract a task ID from either a link [[task:id|...]] or raw text."""
     text = text.strip()
+    if not text:
+        return None
     m = re.search(r"\[\[task:([^|\]]+)(?:\|[^\]]*)?\]\]", text)
     if m:
         return m.group(1).strip()
-    m = re.search(r"['\"]?#?([a-zA-Z0-9_-]+)['\"]?", text)
-    if m:
-        return m.group(1).strip()
+    # Reject strings with internal whitespace
+    if any(ch.isspace() for ch in text):
+        return None
+    # Match #ID (e.g. #123, '#123')
+    m_hash = re.fullmatch(r"['\"]?#([a-zA-Z0-9_-]+)['\"]?", text)
+    if m_hash:
+        return m_hash.group(1).strip()
+    # Match single token without spaces: ['\"]?[a-zA-Z0-9_-]+['\"]?
+    m_token = re.fullmatch(r"['\"]?([a-zA-Z0-9_-]+)['\"]?", text)
+    if m_token:
+        return m_token.group(1).strip()
     return None
 
 
@@ -424,6 +434,7 @@ def _parse_and_execute_action_blocks(
         return content, sources
 
     action_messages = []
+    failed_messages = []
     for raw in blocks:
         try:
             payload = json.loads(raw.strip())
@@ -431,7 +442,10 @@ def _parse_and_execute_action_blocks(
             params = payload.get("parameters") or payload.get("params") or payload.get("args") or {}
             if tool:
                 res = execute_action(tool, params, db, cfg, bus)
-                action_messages.append(_format_action_result(tool, params, res))
+                msg = _format_action_result(tool, params, res)
+                action_messages.append(msg)
+                if not res.get("ok") or msg.startswith("Could not perform action"):
+                    failed_messages.append(msg)
                 if tool == "generate_daily_digest" and res.get("ok"):
                     day = res.get("day")
                     if day and not any(s.get("id") == day for s in sources):
@@ -444,12 +458,21 @@ def _parse_and_execute_action_blocks(
                             "kind": "log",
                             "snippet": summary,
                         })
+            else:
+                msg = "Could not perform action: missing tool name."
+                action_messages.append(msg)
+                failed_messages.append(msg)
         except Exception as exc:
             log.warning("Failed to parse/execute model action block: %s", exc)
+            msg = f"Could not perform action: {exc}."
+            action_messages.append(msg)
+            failed_messages.append(msg)
 
     cleaned = ACTION_BLOCK_RE.sub("", content).strip()
     if not cleaned and action_messages:
         cleaned = "\n\n".join(action_messages)
+    elif cleaned and failed_messages:
+        cleaned = f"{cleaned}\n\n" + "\n\n".join(failed_messages)
 
     return cleaned, sources
 

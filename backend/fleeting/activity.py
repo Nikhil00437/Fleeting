@@ -115,14 +115,15 @@ class ActivityCollector:
         return dict(self.current) if self.current else None
 
     def today_screentime_seconds(self) -> int:
+        today = _local_now().strftime("%Y-%m-%d")
         sessions = [
-            s for s in self.db.activity_sessions(self._today)
+            s for s in self.db.activity_sessions(today)
             if not app_blocked(self.cfg, self.db, s["app_class"])
         ]
         total = sum(int(s.get("seconds", 0)) for s in sessions)
         if self.current and not app_blocked(self.cfg, self.db, self.current["app_class"]):
-            current_day = self.current.get("day") or (self.current["first_seen"][:10] if "first_seen" in self.current else self._today)
-            if current_day == self._today:
+            current_day = self.current.get("day") or (self.current["first_seen"][:10] if "first_seen" in self.current else today)
+            if current_day == today:
                 persisted_ids = {s.get("id"): int(s.get("seconds", 0)) for s in sessions if s.get("id") is not None}
                 row_id = self.current.get("row_id")
                 curr_secs = int(self.current.get("seconds", 0))
@@ -139,14 +140,15 @@ class ActivityCollector:
         hours = total // 3600
         if hours < 1:
             return
+        today = _local_now().strftime("%Y-%m-%d")
         try:
-            last = int(self.db.kv_get(f"digest_screentime_hours_{self._today}", "0") or "0")
+            last = int(self.db.kv_get(f"digest_screentime_hours_{today}", "0") or "0")
         except (ValueError, TypeError):
             last = 0
         if hours > last:
-            self.db.kv_set(f"digest_screentime_hours_{self._today}", str(hours))
+            self.db.kv_set(f"digest_screentime_hours_{today}", str(hours))
             if loop is not None:
-                asyncio.run_coroutine_threadsafe(self._safe_milestone(self._today, hours), loop)
+                asyncio.run_coroutine_threadsafe(self._safe_milestone(today, hours), loop)
             else:
                 try:
                     cur_loop = asyncio.get_running_loop()

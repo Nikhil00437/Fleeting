@@ -524,3 +524,69 @@ def test_api_chat_endpoint_fast_intent(client: TestClient) -> None:
     assert "task" in data["message"]["content"].lower()
     assert len(client.app.state.st.db.list_tasks(status="all")) == 0
 
+
+def test_extract_task_id_cases():
+    from fleeting.services.assistant import _extract_task_id
+
+    # 1. [[task:ID|...]] link
+    assert _extract_task_id("[[task:123|Do work]]") == "123"
+    assert _extract_task_id("[[task:task-abc]]") == "task-abc"
+
+    # 2. #ID
+    assert _extract_task_id("#456") == "456"
+    assert _extract_task_id("'#456'") == "456"
+    assert _extract_task_id('"#my-task"') == "my-task"
+
+    # 3. Single token without spaces
+    assert _extract_task_id("task_xyz") == "task_xyz"
+    assert _extract_task_id("'task-123'") == "task-123"
+    assert _extract_task_id('"task-123"') == "task-123"
+
+    # 4. Multi-word / conversational / whitespace -> returns None
+    assert _extract_task_id("buy groceries") is None
+    assert _extract_task_id("about the project") is None
+    assert _extract_task_id("clean the kitchen please") is None
+    assert _extract_task_id("") is None
+    assert _extract_task_id("   ") is None
+
+
+def test_match_fast_intent_conversational_task_falls_through():
+    # Conversational descriptions should not match fast intent task deletion/completion
+    assert match_fast_intent("delete task about buying groceries") is None
+    assert match_fast_intent("mark task clean the room as done") is None
+    assert match_fast_intent("complete task write more tests") is None
+    assert match_fast_intent("remove task fix bug in parser") is None
+
+    # Single-token IDs or #ID should match fast intent
+    assert match_fast_intent("delete task 123") == ("delete_tasks", {"ids": ["123"]})
+    assert match_fast_intent("delete task #456") == ("delete_tasks", {"ids": ["456"]})
+    assert match_fast_intent("mark task 123 as done") == ("toggle_task", {"task_id": "123"})
+    assert match_fast_intent("complete task #789") == ("toggle_task", {"task_id": "789"})
+
+
+@pytest.mark.anyio
+async def test_assistant_action_block_failure_feedback_in_mixed_output(db: Database, cfg: Config) -> None:
+    cfg.llm.provider = "ollama"
+    cfg.llm.base_url = "http://localhost:11434"
+    cfg.llm.model = "llama3"
+
+    messages = [{"role": "user", "content": "Please delete note non-existent"}]
+    model_response = (
+        "I will attempt to remove that note for you.\n\n"
+        "```action\n"
+        '{"tool": "delete_note", "parameters": {"note_id": "nonexistent_999"}}\n'
+        "```\n\n"
+        "Please let me know if you need anything else."
+    )
+
+    with patch("fleeting.services.assistant.request_chat", new=AsyncMock(return_value=model_response)):
+        res = await ask_assistant(messages, db, cfg)
+
+    content = res["message"]["content"]
+    assert "I will attempt to remove that note for you." in content
+    assert "Please let me know if you need anything else." in content
+    # Ensure the failure feedback is appended and visible in mixed output
+    assert "Could not perform action 'delete_note'" in content
+    assert "note nonexistent_999 not found" in content
+
+

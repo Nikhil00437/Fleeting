@@ -204,3 +204,102 @@ def test_available_actions_structure():
         assert "name" in action
         assert "description" in action
         assert "parameters" in action
+
+
+def test_create_note_tag_normalization(env):
+    db, cfg, bus = env
+    # 1. Comma-separated string with hashtags and spaces
+    r1 = execute_action("create_note", {"title": "Note 1", "content": "Text", "tags": "work, #urgent,  project "}, db, cfg, bus)
+    assert r1["ok"] is True
+    assert r1["note"]["tags"] == ["work", "urgent", "project"]
+
+    # 2. Single string
+    r2 = execute_action("create_note", {"title": "Note 2", "content": "Text", "tags": "#solo"}, db, cfg, bus)
+    assert r2["ok"] is True
+    assert r2["note"]["tags"] == ["solo"]
+
+    # 3. Tuple / non-list iterable
+    r3 = execute_action("create_note", {"title": "Note 3", "content": "Text", "tags": ("#t1", " t2 ")}, db, cfg, bus)
+    assert r3["ok"] is True
+    assert r3["note"]["tags"] == ["t1", "t2"]
+
+    # 4. List with hashtags and spaces
+    r4 = execute_action("create_note", {"title": "Note 4", "content": "Text", "tags": ["#backend", " api "]}, db, cfg, bus)
+    assert r4["ok"] is True
+    assert r4["note"]["tags"] == ["backend", "api"]
+
+
+def test_pin_note_pinned_none(env):
+    db, cfg, bus = env
+    note = db.insert_note({"title": "Test Pin", "pinned": False})
+
+    # Passing pinned=None should toggle (from False to True)
+    res1 = execute_action("pin_note", {"note_id": note["id"], "pinned": None}, db, cfg, bus)
+    assert res1["ok"] is True
+    assert res1["note"]["pinned"] is True
+
+    # Passing pinned=None again should toggle (from True to False)
+    res2 = execute_action("pin_note", {"note_id": note["id"], "pinned": None}, db, cfg, bus)
+    assert res2["ok"] is True
+    assert res2["note"]["pinned"] is False
+
+
+def test_delete_tasks_batch_note_sync_deduplication(env):
+    db, cfg, bus = env
+    note = db.insert_note({"title": "Parent Note", "raw_text": "Content", "status": "done"})
+    t1 = db.insert_task({"text": "T1", "note_id": note["id"]})
+    t2 = db.insert_task({"text": "T2", "note_id": note["id"]})
+    t3 = db.insert_task({"text": "T3", "note_id": note["id"]})
+
+    with patch("fleeting.services.actions._sync_vault_and_notify_note") as mock_sync:
+        res = execute_action("delete_tasks", {"ids": [t1["id"], t2["id"], t3["id"]]}, db, cfg, bus)
+        assert res["ok"] is True
+        assert res["count"] == 3
+        # Should be called once for note["id"], not 3 times
+        assert mock_sync.call_count == 1
+        assert mock_sync.call_args[0][0] == note["id"]
+
+
+def test_generate_daily_digest_screentime_milestone_sync(env):
+    from datetime import datetime
+    db, cfg, bus = env
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+
+    # Add 4500 seconds (1.25 hours) of tracked activity today
+    db.upsert_activity({
+        "app_class": "code",
+        "title": "work",
+        "first_seen": f"{today}T09:00:00",
+        "last_seen": f"{today}T10:15:00",
+        "seconds": 4500,
+        "day": today,
+    })
+    db.commit()
+
+    with patch("fleeting.services.dailylog.generate_daily_log") as mock_gen:
+        async def fake_gen(db, cfg, day, *, rolling=False):
+            return {"day": day, "summary_md": "Digest", "model": "mock"}
+        mock_gen.side_effect = fake_gen
+
+        res = execute_action("generate_daily_digest", {"day": today, "rolling": True}, db, cfg, bus)
+        assert res["ok"] is True
+        # Check that screentime milestone KV was updated to 1 (4500 // 3600)
+        assert db.kv_get(f"digest_screentime_hours_{today}") == "1"
+
+
+def test_event_bus_publish_mutation_safe():
+    bus = EventBus()
+    events = []
+
+    def mutating_handler(data):
+        events.append(data)
+        # Unsubscribe during publish loop
+        bus.unsubscribe(mutating_handler, "test.event")
+        # Add another handler during publish loop
+        bus.subscribe("test.event", lambda d: events.append("added"))
+
+    bus.subscribe("test.event", mutating_handler)
+    # Publishing should not raise RuntimeError: dictionary/list modified during iteration
+    bus.publish("test.event", "payload-1")
+    assert len(events) == 1
+

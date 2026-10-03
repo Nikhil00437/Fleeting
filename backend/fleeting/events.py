@@ -47,7 +47,7 @@ class EventBus:
                 q.put_nowait(payload)
             except asyncio.QueueFull:
                 log.warning("event subscriber queue full — dropping event")
-        for handler in self._handlers.get(event_type, []):
+        for handler in list(self._handlers.get(event_type, [])):
             try:
                 handler(data)
             except Exception:
