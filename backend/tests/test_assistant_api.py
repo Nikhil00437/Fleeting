@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -590,3 +591,32 @@ async def test_assistant_action_block_failure_feedback_in_mixed_output(db: Datab
     assert "note nonexistent_999 not found" in content
 
 
+# ============================================================================
+# 6. Event Loop Responsiveness
+# ============================================================================
+
+
+@pytest.mark.anyio
+async def test_slow_digest_does_not_block_the_event_loop(db: Database, cfg: Config) -> None:
+    """A slow digest must not stall the loop: SSE delivery and every other
+    request share it, and llm.timeout_secs defaults to 120."""
+    ticks = 0
+
+    async def slow_digest(*args, **kwargs):
+        for _ in range(30):
+            await asyncio.sleep(0.01)
+        return {"day": "2026-10-03", "summary_md": "x", "model": "test"}
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    with patch("fleeting.services.dailylog.generate_daily_log", slow_digest):
+        t = asyncio.create_task(ticker())
+        res = await ask_assistant([{"role": "user", "content": "generate digest"}], db, cfg)
+        t.cancel()
+
+    assert res["message"]["role"] == "assistant"
+    assert ticks > 5, f"event loop was blocked during digest (only {ticks} ticks)"

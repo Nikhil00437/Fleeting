@@ -7,8 +7,7 @@ to the frontend via EventBus.
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
+import inspect
 from datetime import datetime
 import logging
 from typing import Any, Callable
@@ -213,25 +212,13 @@ def pin_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     return {"ok": True, "note": updated}
 
 
-def generate_daily_digest(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
+async def generate_daily_digest(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     """Generate or regenerate daily activity digest."""
     day = params.get("day") or datetime.now().astimezone().strftime("%Y-%m-%d")
     rolling = bool(params.get("rolling", True))
 
-    coro = dailylog.generate_daily_log(db, cfg, day, rolling=rolling)
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    try:
-        if loop and loop.is_running():
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                row = pool.submit(asyncio.run, coro).result()
-        else:
-            row = asyncio.run(coro)
-    except ValueError as exc:
-        return {"ok": False, "error": str(exc), "day": day}
+        row = await dailylog.generate_daily_log(db, cfg, day, rolling=rolling)
     except Exception as exc:
         log.exception("daily digest generation failed: %s", exc)
         return {"ok": False, "error": str(exc), "day": day}
@@ -258,7 +245,7 @@ def pause_activity(params: dict, db: Database, cfg: Config, bus: EventBus) -> di
     return {"ok": True, "paused": paused}
 
 
-ACTIONS: dict[str, Callable[[dict, Database, Config, EventBus], dict]] = {
+ACTIONS: dict[str, Callable[[dict, Database, Config, EventBus], Any]] = {
     "delete_tasks": delete_tasks,
     "create_task": create_task,
     "toggle_task": toggle_task,
@@ -387,19 +374,28 @@ AVAILABLE_ACTIONS: list[dict] = [
 ]
 
 
-def execute_action(
+async def execute_action(
     tool: str,
     params: dict,
     db: Database,
     cfg: Config,
     bus: EventBus,
 ) -> dict:
-    """Execute in-app action by name, modifying DB and publishing SSE events."""
+    """Execute in-app action by name, modifying DB and publishing SSE events.
+
+    Async so an action that awaits (currently only generate_daily_digest) runs on
+    the caller's event loop. Running it in a worker thread and blocking on the
+    result froze SSE delivery and every other request for the length of the LLM
+    call, which llm.timeout_secs allows up to 120s.
+    """
     fn = ACTIONS.get(tool)
     if not fn:
         return {"ok": False, "error": f"Unknown tool: {tool}"}
     try:
-        return fn(params or {}, db, cfg, bus)
+        result = fn(params or {}, db, cfg, bus)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
     except Exception as exc:
         log.exception("Action %s execution failed: %s", tool, exc)
         return {"ok": False, "error": str(exc)}

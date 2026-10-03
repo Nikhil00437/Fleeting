@@ -16,7 +16,8 @@ def env(tmp_path):
     return db, cfg, bus
 
 
-def test_delete_all_tasks(env):
+@pytest.mark.anyio
+async def test_delete_all_tasks(env):
     db, cfg, bus = env
     t1 = db.insert_task({"text": "Task 1", "priority": "P1"})
     t2 = db.insert_task({"text": "Task 2", "priority": "P2"})
@@ -25,37 +26,39 @@ def test_delete_all_tasks(env):
     events = []
     bus.subscribe("task.deleted", lambda data: events.append(data))
 
-    res = execute_action("delete_tasks", {"all": True}, db, cfg, bus)
+    res = await execute_action("delete_tasks", {"all": True}, db, cfg, bus)
     assert res["ok"] is True
     assert res["count"] == 2
     assert len(db.list_tasks(status="all")) == 0
     assert len(events) == 2
 
 
-def test_create_and_toggle_task(env):
+@pytest.mark.anyio
+async def test_create_and_toggle_task(env):
     db, cfg, bus = env
     events = []
     bus.subscribe("task.created", lambda data: events.append(("created", data)))
     bus.subscribe("task.updated", lambda data: events.append(("updated", data)))
 
-    res = execute_action("create_task", {"text": "Buy groceries", "priority": "P1"}, db, cfg, bus)
+    res = await execute_action("create_task", {"text": "Buy groceries", "priority": "P1"}, db, cfg, bus)
     assert res["ok"] is True
     task_id = res["task"]["id"]
     assert res["task"]["text"] == "Buy groceries"
     assert res["task"]["priority"] == "P1"
 
-    toggle_res = execute_action("toggle_task", {"task_id": task_id}, db, cfg, bus)
+    toggle_res = await execute_action("toggle_task", {"task_id": task_id}, db, cfg, bus)
     assert toggle_res["ok"] is True
     assert toggle_res["task"]["done"] == 1
 
 
-def test_update_task(env):
+@pytest.mark.anyio
+async def test_update_task(env):
     db, cfg, bus = env
     t = db.insert_task({"text": "Initial task", "priority": "P3"})
     events = []
     bus.subscribe("task.updated", lambda data: events.append(data))
 
-    res = execute_action(
+    res = await execute_action(
         "update_task",
         {"task_id": t["id"], "text": "Updated task", "priority": "P1", "repo": "fleeting"},
         db,
@@ -69,7 +72,8 @@ def test_update_task(env):
     assert len(events) == 1
 
 
-def test_delete_tasks_by_ids(env):
+@pytest.mark.anyio
+async def test_delete_tasks_by_ids(env):
     db, cfg, bus = env
     t1 = db.insert_task({"text": "Task 1"})
     t2 = db.insert_task({"text": "Task 2"})
@@ -79,7 +83,7 @@ def test_delete_tasks_by_ids(env):
     events = []
     bus.subscribe("task.deleted", lambda data: events.append(data))
 
-    res = execute_action("delete_tasks", {"ids": [t1["id"], t3["id"]]}, db, cfg, bus)
+    res = await execute_action("delete_tasks", {"ids": [t1["id"], t3["id"]]}, db, cfg, bus)
     assert res["ok"] is True
     assert res["count"] == 2
     remaining = db.list_tasks(status="all")
@@ -88,12 +92,13 @@ def test_delete_tasks_by_ids(env):
     assert len(events) == 2
 
 
-def test_create_note_and_sync(env):
+@pytest.mark.anyio
+async def test_create_note_and_sync(env):
     db, cfg, bus = env
     events = []
     bus.subscribe("note.created", lambda data: events.append(data))
 
-    res = execute_action(
+    res = await execute_action(
         "create_note",
         {"title": "Meeting Notes", "content": "Discuss Q4 objectives", "tags": ["work", "q4"]},
         db,
@@ -108,7 +113,8 @@ def test_create_note_and_sync(env):
     assert len(events) == 1
 
 
-def test_delete_note_and_cascade(env):
+@pytest.mark.anyio
+async def test_delete_note_and_cascade(env):
     db, cfg, bus = env
     note = db.insert_note({"title": "Project plan", "raw_text": "Plan", "status": "done"})
     t1 = db.insert_task({"text": "Task under note", "note_id": note["id"]})
@@ -118,7 +124,7 @@ def test_delete_note_and_cascade(env):
     bus.subscribe("note.deleted", lambda data: events_note.append(data))
     bus.subscribe("task.deleted", lambda data: events_task.append(data))
 
-    res = execute_action("delete_note", {"note_id": note["id"]}, db, cfg, bus)
+    res = await execute_action("delete_note", {"note_id": note["id"]}, db, cfg, bus)
     assert res["ok"] is True
     assert db.get_note(note["id"]) is None
     assert db.get_task(t1["id"]) is None
@@ -126,41 +132,44 @@ def test_delete_note_and_cascade(env):
     assert len(events_task) == 1
 
 
-def test_pin_note(env):
+@pytest.mark.anyio
+async def test_pin_note(env):
     db, cfg, bus = env
     note = db.insert_note({"title": "Quick ideas", "pinned": False})
     events = []
     bus.subscribe("note.updated", lambda data: events.append(data))
 
-    res = execute_action("pin_note", {"note_id": note["id"], "pinned": True}, db, cfg, bus)
+    res = await execute_action("pin_note", {"note_id": note["id"], "pinned": True}, db, cfg, bus)
     assert res["ok"] is True
     assert res["note"]["pinned"] is True
 
     # Toggle pin without explicit bool
-    res2 = execute_action("pin_note", {"note_id": note["id"]}, db, cfg, bus)
+    res2 = await execute_action("pin_note", {"note_id": note["id"]}, db, cfg, bus)
     assert res2["ok"] is True
     assert res2["note"]["pinned"] is False
     assert len(events) == 2
 
 
-def test_pause_and_resume_activity(env):
+@pytest.mark.anyio
+async def test_pause_and_resume_activity(env):
     db, cfg, bus = env
     events = []
     bus.subscribe("activity.live", lambda data: events.append(data))
 
-    res = execute_action("pause_activity", {"paused": True}, db, cfg, bus)
+    res = await execute_action("pause_activity", {"paused": True}, db, cfg, bus)
     assert res["ok"] is True
     assert res["paused"] is True
     assert db.kv_get("activity_paused") == "1"
 
-    res_resume = execute_action("pause_activity", {"paused": False}, db, cfg, bus)
+    res_resume = await execute_action("pause_activity", {"paused": False}, db, cfg, bus)
     assert res_resume["ok"] is True
     assert res_resume["paused"] is False
     assert db.kv_get("activity_paused") == "0"
     assert len(events) == 2
 
 
-def test_generate_daily_digest(env):
+@pytest.mark.anyio
+async def test_generate_daily_digest(env):
     db, cfg, bus = env
     events = []
     bus.subscribe("dailylog.updated", lambda data: events.append(data))
@@ -170,21 +179,23 @@ def test_generate_daily_digest(env):
             return {"day": day, "summary_md": "Today's summary", "model": "mock"}
         mock_gen.side_effect = fake_gen
 
-        res = execute_action("generate_daily_digest", {"day": "2026-10-03", "rolling": True}, db, cfg, bus)
+        res = await execute_action("generate_daily_digest", {"day": "2026-10-03", "rolling": True}, db, cfg, bus)
         assert res["ok"] is True
         assert res["day"] == "2026-10-03"
         assert len(events) == 1
         assert events[0]["day"] == "2026-10-03"
 
 
-def test_execute_action_unknown_tool(env):
+@pytest.mark.anyio
+async def test_execute_action_unknown_tool(env):
     db, cfg, bus = env
-    res = execute_action("nonexistent_tool", {}, db, cfg, bus)
+    res = await execute_action("nonexistent_tool", {}, db, cfg, bus)
     assert res["ok"] is False
     assert "unknown" in res["error"].lower()
 
 
-def test_available_actions_structure():
+@pytest.mark.anyio
+async def test_available_actions_structure():
     assert isinstance(AVAILABLE_ACTIONS, list)
     assert len(AVAILABLE_ACTIONS) == 9
     names = {a["name"] for a in AVAILABLE_ACTIONS}
@@ -206,45 +217,48 @@ def test_available_actions_structure():
         assert "parameters" in action
 
 
-def test_create_note_tag_normalization(env):
+@pytest.mark.anyio
+async def test_create_note_tag_normalization(env):
     db, cfg, bus = env
     # 1. Comma-separated string with hashtags and spaces
-    r1 = execute_action("create_note", {"title": "Note 1", "content": "Text", "tags": "work, #urgent,  project "}, db, cfg, bus)
+    r1 = await execute_action("create_note", {"title": "Note 1", "content": "Text", "tags": "work, #urgent,  project "}, db, cfg, bus)
     assert r1["ok"] is True
     assert r1["note"]["tags"] == ["work", "urgent", "project"]
 
     # 2. Single string
-    r2 = execute_action("create_note", {"title": "Note 2", "content": "Text", "tags": "#solo"}, db, cfg, bus)
+    r2 = await execute_action("create_note", {"title": "Note 2", "content": "Text", "tags": "#solo"}, db, cfg, bus)
     assert r2["ok"] is True
     assert r2["note"]["tags"] == ["solo"]
 
     # 3. Tuple / non-list iterable
-    r3 = execute_action("create_note", {"title": "Note 3", "content": "Text", "tags": ("#t1", " t2 ")}, db, cfg, bus)
+    r3 = await execute_action("create_note", {"title": "Note 3", "content": "Text", "tags": ("#t1", " t2 ")}, db, cfg, bus)
     assert r3["ok"] is True
     assert r3["note"]["tags"] == ["t1", "t2"]
 
     # 4. List with hashtags and spaces
-    r4 = execute_action("create_note", {"title": "Note 4", "content": "Text", "tags": ["#backend", " api "]}, db, cfg, bus)
+    r4 = await execute_action("create_note", {"title": "Note 4", "content": "Text", "tags": ["#backend", " api "]}, db, cfg, bus)
     assert r4["ok"] is True
     assert r4["note"]["tags"] == ["backend", "api"]
 
 
-def test_pin_note_pinned_none(env):
+@pytest.mark.anyio
+async def test_pin_note_pinned_none(env):
     db, cfg, bus = env
     note = db.insert_note({"title": "Test Pin", "pinned": False})
 
     # Passing pinned=None should toggle (from False to True)
-    res1 = execute_action("pin_note", {"note_id": note["id"], "pinned": None}, db, cfg, bus)
+    res1 = await execute_action("pin_note", {"note_id": note["id"], "pinned": None}, db, cfg, bus)
     assert res1["ok"] is True
     assert res1["note"]["pinned"] is True
 
     # Passing pinned=None again should toggle (from True to False)
-    res2 = execute_action("pin_note", {"note_id": note["id"], "pinned": None}, db, cfg, bus)
+    res2 = await execute_action("pin_note", {"note_id": note["id"], "pinned": None}, db, cfg, bus)
     assert res2["ok"] is True
     assert res2["note"]["pinned"] is False
 
 
-def test_delete_tasks_batch_note_sync_deduplication(env):
+@pytest.mark.anyio
+async def test_delete_tasks_batch_note_sync_deduplication(env):
     db, cfg, bus = env
     note = db.insert_note({"title": "Parent Note", "raw_text": "Content", "status": "done"})
     t1 = db.insert_task({"text": "T1", "note_id": note["id"]})
@@ -252,7 +266,7 @@ def test_delete_tasks_batch_note_sync_deduplication(env):
     t3 = db.insert_task({"text": "T3", "note_id": note["id"]})
 
     with patch("fleeting.services.actions._sync_vault_and_notify_note") as mock_sync:
-        res = execute_action("delete_tasks", {"ids": [t1["id"], t2["id"], t3["id"]]}, db, cfg, bus)
+        res = await execute_action("delete_tasks", {"ids": [t1["id"], t2["id"], t3["id"]]}, db, cfg, bus)
         assert res["ok"] is True
         assert res["count"] == 3
         # Should be called once for note["id"], not 3 times
@@ -260,7 +274,8 @@ def test_delete_tasks_batch_note_sync_deduplication(env):
         assert mock_sync.call_args[0][0] == note["id"]
 
 
-def test_generate_daily_digest_screentime_milestone_sync(env):
+@pytest.mark.anyio
+async def test_generate_daily_digest_screentime_milestone_sync(env):
     from datetime import datetime
     db, cfg, bus = env
     today = datetime.now().astimezone().strftime("%Y-%m-%d")
@@ -281,13 +296,14 @@ def test_generate_daily_digest_screentime_milestone_sync(env):
             return {"day": day, "summary_md": "Digest", "model": "mock"}
         mock_gen.side_effect = fake_gen
 
-        res = execute_action("generate_daily_digest", {"day": today, "rolling": True}, db, cfg, bus)
+        res = await execute_action("generate_daily_digest", {"day": today, "rolling": True}, db, cfg, bus)
         assert res["ok"] is True
         # Check that screentime milestone KV was updated to 1 (4500 // 3600)
         assert db.kv_get(f"digest_screentime_hours_{today}") == "1"
 
 
-def test_event_bus_publish_mutation_safe():
+@pytest.mark.anyio
+async def test_event_bus_publish_mutation_safe():
     bus = EventBus()
     events = []
 

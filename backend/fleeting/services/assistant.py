@@ -421,7 +421,7 @@ def _format_action_result(tool: str, params: dict, res: dict) -> str:
 ACTION_BLOCK_RE = re.compile(r"```+(?:action|tool)\s*\n(.*?)```+", re.DOTALL | re.IGNORECASE)
 
 
-def _parse_and_execute_action_blocks(
+async def _parse_and_execute_action_blocks(
     content: str,
     db: Database,
     cfg: Config,
@@ -441,7 +441,7 @@ def _parse_and_execute_action_blocks(
             tool = payload.get("tool") or payload.get("name") or payload.get("action")
             params = payload.get("parameters") or payload.get("params") or payload.get("args") or {}
             if tool:
-                res = execute_action(tool, params, db, cfg, bus)
+                res = await execute_action(tool, params, db, cfg, bus)
                 msg = _format_action_result(tool, params, res)
                 action_messages.append(msg)
                 if not res.get("ok") or msg.startswith("Could not perform action"):
@@ -511,7 +511,7 @@ async def ask_assistant(
     fast_intent = match_fast_intent(user_query)
     if fast_intent is not None:
         tool, params = fast_intent
-        action_res = execute_action(tool, params, db, cfg, bus)
+        action_res = await execute_action(tool, params, db, cfg, bus)
         content = _format_action_result(tool, params, action_res)
         if tool == "generate_daily_digest" and action_res.get("ok"):
             day = action_res.get("day")
@@ -578,7 +578,7 @@ async def ask_assistant(
 
         try:
             content = await request_chat(url, payload, cfg.llm.timeout_secs, provider=cfg.llm.provider)
-            content, sources = _parse_and_execute_action_blocks(content, db, cfg, bus, sources)
+            content, sources = await _parse_and_execute_action_blocks(content, db, cfg, bus, sources)
         except (LLMUnavailable, Exception) as exc:
             log.warning("Assistant LLM request failed, falling back to extractive answer: %s", exc)
             content = _extractive_heuristic_answer(user_query, context_text, sources)
