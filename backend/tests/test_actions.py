@@ -26,7 +26,7 @@ async def test_delete_all_tasks(env):
     events = []
     bus.subscribe("task.deleted", lambda data: events.append(data))
 
-    res = await execute_action("delete_tasks", {"all": True}, db, cfg, bus)
+    res = await execute_action("delete_tasks", {"all": True, "confirm": True}, db, cfg, bus)
     assert res["ok"] is True
     assert res["count"] == 2
     assert len(db.list_tasks(status="all")) == 0
@@ -83,7 +83,7 @@ async def test_delete_tasks_by_ids(env):
     events = []
     bus.subscribe("task.deleted", lambda data: events.append(data))
 
-    res = await execute_action("delete_tasks", {"ids": [t1["id"], t3["id"]]}, db, cfg, bus)
+    res = await execute_action("delete_tasks", {"ids": [t1["id"], t3["id"]], "confirm": True}, db, cfg, bus)
     assert res["ok"] is True
     assert res["count"] == 2
     remaining = db.list_tasks(status="all")
@@ -124,7 +124,7 @@ async def test_delete_note_and_cascade(env):
     bus.subscribe("note.deleted", lambda data: events_note.append(data))
     bus.subscribe("task.deleted", lambda data: events_task.append(data))
 
-    res = await execute_action("delete_note", {"note_id": note["id"]}, db, cfg, bus)
+    res = await execute_action("delete_note", {"note_id": note["id"], "confirm": True}, db, cfg, bus)
     assert res["ok"] is True
     assert db.get_note(note["id"]) is None
     assert db.get_task(t1["id"]) is None
@@ -266,7 +266,7 @@ async def test_delete_tasks_batch_note_sync_deduplication(env):
     t3 = db.insert_task({"text": "T3", "note_id": note["id"]})
 
     with patch("fleeting.services.actions._sync_vault_and_notify_note") as mock_sync:
-        res = await execute_action("delete_tasks", {"ids": [t1["id"], t2["id"], t3["id"]]}, db, cfg, bus)
+        res = await execute_action("delete_tasks", {"ids": [t1["id"], t2["id"], t3["id"]], "confirm": True}, db, cfg, bus)
         assert res["ok"] is True
         assert res["count"] == 3
         # Should be called once for note["id"], not 3 times
@@ -319,3 +319,107 @@ async def test_event_bus_publish_mutation_safe():
     bus.publish("test.event", "payload-1")
     assert len(events) == 1
 
+
+
+# ============================================================================
+# 7. Destructive Action Confirmation
+# ============================================================================
+
+
+@pytest.mark.anyio
+async def test_delete_all_tasks_requires_confirmation(env):
+    db, cfg, bus = env
+    db.insert_task({"text": "a", "note_id": None})
+    db.insert_task({"text": "b", "note_id": None})
+
+    res = await execute_action("delete_tasks", {"all": True}, db, cfg, bus)
+
+    assert res["ok"] is False
+    pend = res["needs_confirmation"]
+    assert pend["tool"] == "delete_tasks"
+    assert pend["params"] == {"all": True}
+    assert isinstance(pend["summary"], str) and pend["summary"]
+    assert db.list_tasks(limit=100) != [], "tasks were deleted without confirmation"
+
+
+@pytest.mark.anyio
+async def test_delete_tasks_by_ids_requires_confirmation(env):
+    db, cfg, bus = env
+    t = db.insert_task({"text": "keep me", "note_id": None})
+
+    res = await execute_action("delete_tasks", {"ids": [t["id"]]}, db, cfg, bus)
+
+    assert res["ok"] is False
+    assert res["needs_confirmation"]["params"] == {"ids": [t["id"]]}
+    assert db.get_task(t["id"]) is not None
+
+
+@pytest.mark.anyio
+async def test_delete_note_requires_confirmation(env):
+    db, cfg, bus = env
+    note = db.insert_note({"title": "Precious", "raw_text": "x"})
+
+    res = await execute_action("delete_note", {"note_id": note["id"]}, db, cfg, bus)
+
+    assert res["ok"] is False
+    assert res["needs_confirmation"]["tool"] == "delete_note"
+    assert db.get_note(note["id"]) is not None
+
+
+@pytest.mark.anyio
+async def test_confirmed_delete_note_executes(env):
+    db, cfg, bus = env
+    note = db.insert_note({"title": "Precious", "raw_text": "x"})
+
+    res = await execute_action(
+        "delete_note", {"note_id": note["id"], "confirm": True}, db, cfg, bus
+    )
+
+    assert res["ok"] is True
+    assert db.get_note(note["id"]) is None
+
+
+@pytest.mark.anyio
+async def test_confirmed_delete_all_tasks_executes(env):
+    db, cfg, bus = env
+    db.insert_task({"text": "a", "note_id": None})
+    db.insert_task({"text": "b", "note_id": None})
+
+    res = await execute_action("delete_tasks", {"all": True, "confirm": True}, db, cfg, bus)
+
+    assert res["ok"] is True
+    assert res["count"] == 2
+
+
+@pytest.mark.anyio
+async def test_non_destructive_action_needs_no_confirmation(env):
+    db, cfg, bus = env
+    res = await execute_action("create_task", {"text": "buy milk"}, db, cfg, bus)
+    assert res["ok"] is True
+    assert "needs_confirmation" not in res
+
+
+@pytest.mark.anyio
+async def test_pin_and_toggle_need_no_confirmation(env):
+    db, cfg, bus = env
+    t = db.insert_task({"text": "x", "note_id": None})
+    assert (await execute_action("toggle_task", {"task_id": t["id"]}, db, cfg, bus))["ok"]
+    note = db.insert_note({"title": "n", "raw_text": "x"})
+    assert (await execute_action("pin_note", {"note_id": note["id"]}, db, cfg, bus))["ok"]
+
+
+@pytest.mark.anyio
+async def test_confirmation_summary_names_the_note(env):
+    db, cfg, bus = env
+    note = db.insert_note({"title": "Quarterly notes", "raw_text": "x"})
+    res = await execute_action("delete_note", {"note_id": note["id"]}, db, cfg, bus)
+    assert "Quarterly notes" in res["needs_confirmation"]["summary"]
+
+
+@pytest.mark.anyio
+async def test_confirm_is_not_echoed_back_in_params(env):
+    """The confirm flag is transport, not action input; it must not persist."""
+    db, cfg, bus = env
+    res = await execute_action("delete_tasks", {"all": True, "confirm": True}, db, cfg, bus)
+    assert res["ok"] is True
+    assert "confirm" not in res.get("params", {})

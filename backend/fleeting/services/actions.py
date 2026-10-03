@@ -374,6 +374,30 @@ AVAILABLE_ACTIONS: list[dict] = [
 ]
 
 
+# Tools that destroy user data. The model may request them, but they never run
+# on the model's say-so alone: note content can carry injected instructions, so
+# the caller must echo confirm=true after the user agrees.
+DESTRUCTIVE_ACTIONS = frozenset({"delete_tasks", "delete_note"})
+
+
+def _describe_destructive(tool: str, params: dict, db: Database) -> str:
+    """One-line human summary of what a pending destructive action would do."""
+    if tool == "delete_tasks":
+        if params.get("all"):
+            status = params.get("status") or "all"
+            return "Delete every task" if status == "all" else f"Delete all {status} tasks"
+        ids = params.get("ids") or []
+        if isinstance(ids, str):
+            ids = [ids]
+        return f"Delete {len(ids)} task(s)" if ids else "Delete tasks"
+    if tool == "delete_note":
+        note_id = params.get("note_id") or params.get("id")
+        note = db.get_note(str(note_id)) if note_id else None
+        title = (note or {}).get("title") or ""
+        return f"Delete note '{title}'" if title else f"Delete note {note_id}"
+    return tool
+
+
 async def execute_action(
     tool: str,
     params: dict,
@@ -391,8 +415,21 @@ async def execute_action(
     fn = ACTIONS.get(tool)
     if not fn:
         return {"ok": False, "error": f"Unknown tool: {tool}"}
+    params = params or {}
+
+    if tool in DESTRUCTIVE_ACTIONS and not params.get("confirm"):
+        return {
+            "ok": False,
+            "error": f"'{tool}' requires confirmation",
+            "needs_confirmation": {
+                "tool": tool,
+                "params": {k: v for k, v in params.items() if k != "confirm"},
+                "summary": _describe_destructive(tool, params, db),
+            },
+        }
+
     try:
-        result = fn(params or {}, db, cfg, bus)
+        result = fn(params, db, cfg, bus)
         if inspect.isawaitable(result):
             result = await result
         return result

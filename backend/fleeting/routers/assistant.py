@@ -21,6 +21,7 @@ async def chat(request: Request, body: AssistantChatIn) -> AssistantChatOut:
         bus=getattr(st, "bus", None),
         repo=body.repo,
         filter_type=body.type,
+        confirm=body.confirm,
     )
     return AssistantChatOut(**result)
 

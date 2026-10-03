@@ -9,6 +9,7 @@ import {
 } from "./Icons";
 import type {
   ChatMessage,
+  PendingAction,
   RepoInfo,
   SourceRef,
 } from "../types";
@@ -32,6 +33,7 @@ export interface AssistantDisplayMessage {
     tasks_count: number;
     logs_count: number;
   };
+  pending_action?: PendingAction | null;
   timestamp?: string;
 }
 
@@ -140,7 +142,7 @@ export function renderFormattedContent(
               const formattedParts = parts.map((part, pIdx) => {
                 if (part.startsWith("**") && part.endsWith("**")) {
                   return (
-                    <strong key={`b-${pIdx}`} className="font-semibold text-white">
+                    <strong key={`b-${pIdx}`} className="font-semibold text-ink-100">
                       {part.slice(2, -2)}
                     </strong>
                   );
@@ -169,7 +171,7 @@ export async function sendAssistantPromptAction(
   setMessages: React.Dispatch<React.SetStateAction<AssistantDisplayMessage[]>>,
   setLoading: React.Dispatch<React.SetStateAction<boolean>>,
   onToast: (msg: string, kind?: "ok" | "err") => void,
-  options?: { repo?: string | null; type?: string | null }
+  options?: { repo?: string | null; type?: string | null; confirm?: boolean }
 ) {
   const trimmed = prompt.trim();
   if (!trimmed) return;
@@ -197,6 +199,7 @@ export async function sendAssistantPromptAction(
       messages: payloadMessages,
       repo: options?.repo && options.repo !== "all" ? options.repo : undefined,
       type: options?.type && options.type !== "all" ? options.type : undefined,
+      ...(options?.confirm ? { confirm: true } : {}),
     });
 
     const assistantMsg: AssistantDisplayMessage = {
@@ -205,6 +208,7 @@ export async function sendAssistantPromptAction(
       content: res.message.content,
       sources: res.sources,
       context_used: res.context_used,
+      pending_action: res.pending_action ?? null,
       timestamp: new Date().toISOString(),
     };
 
@@ -235,9 +239,8 @@ export default function AssistantView({
   const [messages, setMessages] = useState<AssistantDisplayMessage[]>(() =>
     initialMessages
       ? initialMessages.map((m, idx) => ({
+          ...m,
           id: `init-${idx}`,
-          role: m.role,
-          content: m.content,
           timestamp: new Date().toISOString(),
         }))
       : []
@@ -295,6 +298,34 @@ export default function AssistantView({
     );
   };
 
+  const handleConfirmAction = (msg: AssistantDisplayMessage) => {
+    if (loading || !msg.pending_action) return;
+    // Re-send the prompt that produced the pending action, this time approved.
+    const priorUserMsg = [...messages]
+      .reverse()
+      .find((m) => m.role === "user" && !m.isError);
+    const prompt = priorUserMsg?.content ?? msg.pending_action.summary;
+    sendAssistantPromptAction(prompt, messages, setMessages, setLoading, onToast, {
+      repo: selectedRepo,
+      confirm: true,
+    });
+  };
+
+  const handleCancelAction = (msgId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId
+          ? {
+              ...m,
+              pending_action: null,
+              content: `${m.content}\n\n(cancelled)`,
+            }
+          : m
+      )
+    );
+    onToast("Action cancelled");
+  };
+
   const handleClearChat = () => {
     setMessages([]);
     onToast("Chat conversation cleared");
@@ -309,15 +340,15 @@ export default function AssistantView({
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#1a2c22]">
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Workbench Header Toolbar */}
-      <div className="app-toolbar flex h-12 shrink-0 items-center justify-between gap-3 px-5 border-b border-[#354b3f] bg-[#23382e]">
+      <div className="app-toolbar flex h-12 shrink-0 items-center justify-between gap-3 px-5 border-b">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-ember-500/25 via-[#2a4034] to-ink-950 text-ember-300 ring-1 ring-ember-400/30 shadow-xs">
+          <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-ember-500/20 to-ember-600/20 bg-ember-500/10 text-ember-300 ring-1 ring-ember-400/30 shadow-xs">
             <BotIcon className="h-4 w-4 text-ember-400" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xs font-bold tracking-tight text-[#f4f0e7] flex items-center gap-1.5">
+            <h1 className="text-xs font-bold tracking-tight text-ink-100 flex items-center gap-1.5">
               <span>Ask Fleeting</span>
               <span className="rounded-md border border-ember-500/30 bg-ember-500/10 px-1.5 py-0.2 font-mono text-[9px] font-medium text-ember-300">
                 Assistant
@@ -373,7 +404,7 @@ export default function AssistantView({
       >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full max-w-xl mx-auto py-12 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-ember-500/20 via-[#2a4034] to-ink-950 ring-1 ring-ember-400/30 text-ember-300 shadow-lg">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-ember-500/20 to-ember-600/20 bg-ember-500/10 ring-1 ring-ember-400/30 text-ember-300 shadow-lg">
               <BotIcon className="h-7 w-7 text-ember-400" />
             </div>
             <h2 className="mt-4 text-base font-bold tracking-tight text-ink-100">
@@ -418,8 +449,8 @@ export default function AssistantView({
                   <div
                     className={`rounded-2xl p-4 transition-all shadow-sm ${
                       isUser
-                        ? "max-w-[85%] border border-ember-500/30 bg-[#2a4034] text-ink-100 rounded-tr-xs"
-                        : "w-full border border-[#354b3f] bg-[#23382e] text-ink-100 rounded-tl-xs"
+                        ? "max-w-[85%] border border-ember-500/30 bg-ember-500/8 text-ink-100 rounded-tr-xs"
+                        : "w-full border border-ink-800 bg-white glass text-ink-100 rounded-tl-xs"
                     }`}
                   >
                     {/* Header Label inside message */}
@@ -441,6 +472,37 @@ export default function AssistantView({
                       </p>
                     ) : (
                       renderFormattedContent(msg.content, onOpenNote, onOpenTasks)
+                    )}
+
+                    {/* Pending destructive action — requires explicit approval */}
+                    {!isUser && msg.pending_action && (
+                      <div
+                        data-testid="pending-action"
+                        className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-ember-400/30 bg-ember-500/[0.07] px-3 py-2.5"
+                      >
+                        <span className="text-[12px] text-ember-200">
+                          {msg.pending_action.summary}
+                        </span>
+                        <span className="flex-1" />
+                        <button
+                          type="button"
+                          data-testid="cancel-action"
+                          onClick={() => handleCancelAction(msg.id)}
+                          disabled={loading}
+                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-ink-300 transition-colors hover:bg-white/5 disabled:opacity-40 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="confirm-action"
+                          onClick={() => handleConfirmAction(msg)}
+                          disabled={loading}
+                          className="rounded-lg bg-ember-500/90 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-ember-500 disabled:opacity-40 cursor-pointer"
+                        >
+                          Confirm
+                        </button>
+                      </div>
                     )}
 
                     {/* Grounded Sources Tray */}
@@ -519,7 +581,7 @@ export default function AssistantView({
                 className="flex items-start"
                 data-testid="assistant-loading"
               >
-                <div className="w-full max-w-xl rounded-2xl border border-[#354b3f] bg-[#23382e] p-4 text-ink-100 rounded-tl-xs space-y-2">
+                <div className="w-full max-w-xl rounded-2xl border border-ink-800 bg-white glass p-4 text-ink-100 rounded-tl-xs space-y-2">
                   <div className="flex items-center gap-2 text-[11px] font-semibold text-ember-300">
                     <BotIcon className="h-3.5 w-3.5 text-ember-400 animate-pulse" />
                     <span>Ask Fleeting Assistant</span>
@@ -540,7 +602,7 @@ export default function AssistantView({
       </div>
 
       {/* Docked Query Input Bar */}
-      <div className="shrink-0 border-t border-[#354b3f] bg-[#23382e] p-4">
+      <div className="app-toolbar shrink-0 border-t p-4">
         <form
           onSubmit={(e) => {
             e.preventDefault();

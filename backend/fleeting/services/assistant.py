@@ -12,7 +12,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from ..events import EventBus
-from .actions import AVAILABLE_ACTIONS, execute_action
+from .actions import AVAILABLE_ACTIONS, DESTRUCTIVE_ACTIONS, execute_action
 from .llm import LLMUnavailable, normalize_base_url, request_chat
 from .semantic_search import hybrid_search
 
@@ -421,31 +421,47 @@ def _format_action_result(tool: str, params: dict, res: dict) -> str:
 ACTION_BLOCK_RE = re.compile(r"```+(?:action|tool)\s*\n(.*?)```+", re.DOTALL | re.IGNORECASE)
 
 
+def _with_confirm(tool: str, params: dict, confirm: bool) -> dict:
+    """Approve only the destructive action the user just confirmed, never every one."""
+    if confirm and tool in DESTRUCTIVE_ACTIONS:
+        return {**params, "confirm": True}
+    return params
+
+
 async def _parse_and_execute_action_blocks(
     content: str,
     db: Database,
     cfg: Config,
     bus: EventBus,
     sources: list[dict],
-) -> tuple[str, list[dict]]:
+    *,
+    confirm: bool = False,
+) -> tuple[str, list[dict], dict | None]:
     """Find and execute ```action blocks in LLM output, stripping them from the response."""
     blocks = ACTION_BLOCK_RE.findall(content)
     if not blocks:
-        return content, sources
+        return content, sources, None
 
     action_messages = []
     failed_messages = []
+    pending: dict | None = None
     for raw in blocks:
         try:
             payload = json.loads(raw.strip())
             tool = payload.get("tool") or payload.get("name") or payload.get("action")
             params = payload.get("parameters") or payload.get("params") or payload.get("args") or {}
             if tool:
-                res = await execute_action(tool, params, db, cfg, bus)
-                msg = _format_action_result(tool, params, res)
-                action_messages.append(msg)
-                if not res.get("ok") or msg.startswith("Could not perform action"):
-                    failed_messages.append(msg)
+                res = await execute_action(tool, _with_confirm(tool, params, confirm), db, cfg, bus)
+                if res.get("needs_confirmation"):
+                    pending = res["needs_confirmation"]
+                    action_messages.append(
+                        f"{pending['summary']} — waiting for your confirmation."
+                    )
+                else:
+                    msg = _format_action_result(tool, params, res)
+                    action_messages.append(msg)
+                    if not res.get("ok") or msg.startswith("Could not perform action"):
+                        failed_messages.append(msg)
                 if tool == "generate_daily_digest" and res.get("ok"):
                     day = res.get("day")
                     if day and not any(s.get("id") == day for s in sources):
@@ -474,7 +490,7 @@ async def _parse_and_execute_action_blocks(
     elif cleaned and failed_messages:
         cleaned = f"{cleaned}\n\n" + "\n\n".join(failed_messages)
 
-    return cleaned, sources
+    return cleaned, sources, pending
 
 
 async def ask_assistant(
@@ -485,8 +501,14 @@ async def ask_assistant(
     *,
     repo: str | None = None,
     filter_type: str | None = None,
+    confirm: bool = False,
 ) -> dict:
-    """Orchestrate grounded RAG assistant response with source citations."""
+    """Orchestrate grounded RAG assistant response with source citations.
+
+    Set confirm=True to approve the destructive action the previous turn asked
+    for; without it, delete_* tools return a pending_action for the UI to
+    confirm rather than running.
+    """
     if bus is None:
         bus = EventBus()
 
@@ -501,6 +523,7 @@ async def ask_assistant(
             "message": {"role": "assistant", "content": "How can I help you today?"},
             "sources": [],
             "context_used": {"notes_count": 0, "tasks_count": 0, "logs_count": 0},
+            "pending_action": None,
         }
 
     context_text, sources, context_used = build_assistant_context(
@@ -511,8 +534,12 @@ async def ask_assistant(
     fast_intent = match_fast_intent(user_query)
     if fast_intent is not None:
         tool, params = fast_intent
-        action_res = await execute_action(tool, params, db, cfg, bus)
-        content = _format_action_result(tool, params, action_res)
+        action_res = await execute_action(tool, _with_confirm(tool, params, confirm), db, cfg, bus)
+        pending = action_res.get("needs_confirmation")
+        if pending:
+            content = f"{pending['summary']} — waiting for your confirmation."
+        else:
+            content = _format_action_result(tool, params, action_res)
         if tool == "generate_daily_digest" and action_res.get("ok"):
             day = action_res.get("day")
             if day and not any(s.get("id") == day for s in sources):
@@ -529,8 +556,10 @@ async def ask_assistant(
             "message": {"role": "assistant", "content": content},
             "sources": sources,
             "context_used": context_used,
+            "pending_action": pending,
         }
 
+    pending: dict | None = None
     if cfg.llm.provider != "none":
         tools_desc = json.dumps(AVAILABLE_ACTIONS, indent=2)
         system_prompt = (
@@ -578,7 +607,9 @@ async def ask_assistant(
 
         try:
             content = await request_chat(url, payload, cfg.llm.timeout_secs, provider=cfg.llm.provider)
-            content, sources = await _parse_and_execute_action_blocks(content, db, cfg, bus, sources)
+            content, sources, pending = await _parse_and_execute_action_blocks(
+                content, db, cfg, bus, sources, confirm=confirm
+            )
         except (LLMUnavailable, Exception) as exc:
             log.warning("Assistant LLM request failed, falling back to extractive answer: %s", exc)
             content = _extractive_heuristic_answer(user_query, context_text, sources)
@@ -589,6 +620,7 @@ async def ask_assistant(
         "message": {"role": "assistant", "content": content},
         "sources": sources,
         "context_used": context_used,
+        "pending_action": pending,
     }
 
 

@@ -211,12 +211,14 @@ class AssistantChatIn(BaseModel):
     messages: list[ChatMessage]
     repo: str | None = None
     type: str | None = None
+    confirm: bool = False
 
 
 class AssistantChatOut(BaseModel):
     message: ChatMessage
     sources: list[SourceRef]
     context_used: dict[str, int]
+    pending_action: dict | None = None
 
 
 class AssistantSuggestionsOut(BaseModel):

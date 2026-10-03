@@ -243,6 +243,13 @@ export interface AssistantChatIn {
   messages: ChatMessage[];
   repo?: string | null;
   type?: string | null;
+  confirm?: boolean;
+}
+
+export interface PendingAction {
+  tool: string;
+  params: Record<string, unknown>;
+  summary: string;
 }
 
 export interface AssistantChatOut {
@@ -253,9 +260,37 @@ export interface AssistantChatOut {
     tasks_count: number;
     logs_count: number;
   };
+  pending_action?: PendingAction | null;
 }
 
 export interface AssistantSuggestionsOut {
   suggestions: string[];
 }
 
+export interface ProcessApp {
+  pid: number;
+  name: string;
+  cpu_percent: number;
+  memory_mb: number;
+  status: string;
+  window_title: string | null;
+}
+
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  username: string;
+  cpu_percent: number;
+  memory_mb: number;
+  status: string;
+  command: string;
+  created: string;
+}
+
+export interface ProcessDetails extends ProcessInfo {
+  num_threads: number;
+  open_files_count: number;
+  connections_count: number;
+  parent_pid: number | null;
+  children: number[];
+}

@@ -397,3 +397,124 @@ describe("AssistantView Component & Logic", () => {
     });
   });
 });
+
+// ============================================================================
+// Destructive action confirmation
+// ============================================================================
+
+describe("destructive action confirmation", () => {
+  beforeEach(() => {
+    vi.mocked(api.assistantChat).mockReset();
+  });
+
+  it("keeps a pending_action returned by the assistant", async () => {
+    vi.mocked(api.assistantChat).mockResolvedValue({
+      message: {
+        role: "assistant",
+        content: "Delete every task — waiting for your confirmation.",
+      },
+      sources: [],
+      context_used: { notes_count: 0, tasks_count: 0, logs_count: 0 },
+      pending_action: {
+        tool: "delete_tasks",
+        params: { all: true },
+        summary: "Delete every task",
+      },
+    });
+
+    const setMessages = vi.fn();
+    await sendAssistantPromptAction(
+      "delete all tasks",
+      [],
+      setMessages,
+      vi.fn(),
+      vi.fn(),
+    );
+
+    // setMessages is called with the new list, then with an updater fn.
+    const calls = setMessages.mock.calls;
+    const updater = calls[calls.length - 1][0];
+    const base = calls[calls.length - 2][0] as AssistantDisplayMessage[];
+    const added = (typeof updater === "function" ? updater(base) : updater) as AssistantDisplayMessage[];
+
+    expect(added[added.length - 1].pending_action?.tool).toBe("delete_tasks");
+    expect(added[added.length - 1].pending_action?.summary).toBe("Delete every task");
+  });
+
+  it("sends confirm:true when the option is set", async () => {
+    vi.mocked(api.assistantChat).mockResolvedValue({
+      message: { role: "assistant", content: "Deleted 3 active tasks." },
+      sources: [],
+      context_used: { notes_count: 0, tasks_count: 0, logs_count: 0 },
+      pending_action: null,
+    });
+
+    await sendAssistantPromptAction(
+      "delete all tasks",
+      [],
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      { confirm: true },
+    );
+
+    expect(api.assistantChat).toHaveBeenCalledWith(
+      expect.objectContaining({ confirm: true }),
+    );
+  });
+
+  it("omits confirm when not confirming", async () => {
+    vi.mocked(api.assistantChat).mockResolvedValue({
+      message: { role: "assistant", content: "ok" },
+      sources: [],
+      context_used: { notes_count: 0, tasks_count: 0, logs_count: 0 },
+    });
+
+    await sendAssistantPromptAction("hi", [], vi.fn(), vi.fn(), vi.fn());
+
+    expect(api.assistantChat).toHaveBeenCalledWith(
+      expect.not.objectContaining({ confirm: true }),
+    );
+  });
+
+  it("renders a confirm control for a pending action", () => {
+    const msg: AssistantDisplayMessage = {
+      id: "m1",
+      role: "assistant",
+      content: "Delete every task — waiting for your confirmation.",
+      timestamp: new Date().toISOString(),
+      pending_action: {
+        tool: "delete_tasks",
+        params: { all: true },
+        summary: "Delete every task",
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      <AssistantView
+        onOpenNote={() => {}}
+        onToast={() => {}}
+        initialMessages={[msg]}
+      />,
+    );
+
+    expect(html).toContain("Delete every task");
+    expect(html).toContain('data-testid="confirm-action"');
+    expect(html).toContain('data-testid="cancel-action"');
+  });
+
+  it("renders no confirm control without a pending action", () => {
+    const msg: AssistantDisplayMessage = {
+      id: "m2",
+      role: "assistant",
+      content: "Nothing to confirm here.",
+      timestamp: new Date().toISOString(),
+    };
+
+    const html = renderToStaticMarkup(
+      <AssistantView onOpenNote={() => {}} onToast={() => {}} initialMessages={[msg]} />,
+    );
+
+    expect(html).not.toContain("data-testid=\"confirm-action\"");
+  });
+});
