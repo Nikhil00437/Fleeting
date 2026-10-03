@@ -146,6 +146,16 @@ async def generate_log(request: Request, body: dict) -> dict:
         row = await dailylog.generate_daily_log(st.db, st.cfg, day, rolling=rolling)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
+    if rolling and day == _local_today():
+        if hasattr(st, "activity") and st.activity:
+            total_seconds = st.activity.today_screentime_seconds()
+        else:
+            sessions = [
+                s for s in st.db.activity_sessions(day)
+                if not app_blocked(st.cfg.activity, st.db, s["app_class"])
+            ]
+            total_seconds = sum(s.get("seconds", 0) for s in sessions)
+        st.db.kv_set(f"digest_screentime_hours_{day}", str(total_seconds // 3600))
     st.bus.publish("dailylog.updated", {"day": day, "kind": "daily-report" if rolling else "day-log"})
     return row
 

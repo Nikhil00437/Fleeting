@@ -20,8 +20,13 @@ class FakeDB:
         if row.get("id") is not None:
             self.rows[row["id"]] = dict(row)
             return row["id"]
-        self.rows.append(dict(row))
-        return len(self.rows) - 1
+        r = dict(row)
+        r["id"] = len(self.rows)
+        self.rows.append(r)
+        return r["id"]
+
+    def activity_sessions(self, day: str) -> list[dict]:
+        return [dict(r) for r in self.rows if r.get("day") == day and r.get("seconds", 0) >= 1]
 
     def kv_get(self, key, default=None):
         return self.store.get(key, default)
@@ -33,9 +38,14 @@ class FakeDB:
         return getattr(self, "rules", {})
 
 
-def make_collector(poll=20, idle_min=3):
-    cfg = ActivityConfig(poll_secs=poll, idle_after_min=idle_min)
-    return ActivityCollector(FakeDB(), cfg, probe=lambda: (None, None))
+def make_collector(poll=20, idle_min=3, on_screentime_milestone=None, auto_daily_log=True):
+    cfg = ActivityConfig(poll_secs=poll, idle_after_min=idle_min, auto_daily_log=auto_daily_log)
+    return ActivityCollector(
+        FakeDB(),
+        cfg,
+        probe=lambda: (None, None),
+        on_screentime_milestone=on_screentime_milestone,
+    )
 
 
 _BASE = datetime(2026, 9, 30, 10, 0, 0)
@@ -155,4 +165,154 @@ def test_daily_log_fallback_and_transcript():
     assert "**code** (1h 00m)" in md
     assert "**09:00–10:00**" in md
     assert "fleeting — main.py" in md
+
+
+def test_screentime_1hr_milestone_trigger():
+    calls = []
+
+    async def on_milestone(day: str, hours: int):
+        calls.append((day, hours))
+
+    c = make_collector(on_screentime_milestone=on_milestone)
+    today = c._today
+    c.db.rows.append({
+        "id": 1,
+        "app_class": "code",
+        "title": "work",
+        "first_seen": f"{today}T10:00:00",
+        "last_seen": f"{today}T11:00:00",
+        "seconds": 3600,
+        "day": today,
+    })
+
+    c.step()
+    assert calls == [(today, 1)]
+    assert c.db.kv_get(f"digest_screentime_hours_{today}") == "1"
+
+
+def test_screentime_sub_1hr_no_trigger():
+    calls = []
+
+    async def on_milestone(day: str, hours: int):
+        calls.append((day, hours))
+
+    c = make_collector(on_screentime_milestone=on_milestone)
+    today = c._today
+    c.db.rows.append({
+        "id": 1,
+        "app_class": "code",
+        "title": "work",
+        "first_seen": f"{today}T10:00:00",
+        "last_seen": f"{today}T10:59:59",
+        "seconds": 3599,
+        "day": today,
+    })
+
+    c.step()
+    assert calls == []
+    assert c.db.kv_get(f"digest_screentime_hours_{today}") is None
+
+
+def test_screentime_subsequent_1hr_triggers():
+    calls = []
+
+    async def on_milestone(day: str, hours: int):
+        calls.append((day, hours))
+
+    c = make_collector(on_screentime_milestone=on_milestone)
+    today = c._today
+    c.db.rows.append({
+        "id": 1,
+        "app_class": "code",
+        "title": "work",
+        "first_seen": f"{today}T10:00:00",
+        "last_seen": f"{today}T11:00:00",
+        "seconds": 3600,
+        "day": today,
+    })
+    c.step()
+    assert calls == [(today, 1)]
+
+    # Now add another hour to reach 7200s (2 hrs)
+    c.db.rows.append({
+        "id": 2,
+        "app_class": "code",
+        "title": "more work",
+        "first_seen": f"{today}T11:00:00",
+        "last_seen": f"{today}T12:00:00",
+        "seconds": 3600,
+        "day": today,
+    })
+    c.step()
+    assert calls == [(today, 1), (today, 2)]
+    assert c.db.kv_get(f"digest_screentime_hours_{today}") == "2"
+
+
+def test_milestone_persisted_avoids_retrigger():
+    calls = []
+
+    async def on_milestone(day: str, hours: int):
+        calls.append((day, hours))
+
+    c = make_collector(on_screentime_milestone=on_milestone)
+    today = c._today
+    c.db.kv_set(f"digest_screentime_hours_{today}", "1")
+    c.db.rows.append({
+        "id": 1,
+        "app_class": "code",
+        "title": "work",
+        "first_seen": f"{today}T10:00:00",
+        "last_seen": f"{today}T11:03:20",
+        "seconds": 3800,
+        "day": today,
+    })
+
+    c.step()
+    assert calls == []
+    assert c.db.kv_get(f"digest_screentime_hours_{today}") == "1"
+
+
+def test_screentime_blocked_apps_excluded():
+    calls = []
+
+    async def on_milestone(day: str, hours: int):
+        calls.append((day, hours))
+
+    c = make_collector(on_screentime_milestone=on_milestone)
+    today = c._today
+    # zen is blocked by default
+    c.db.rows.append({
+        "id": 1,
+        "app_class": "zen",
+        "title": "browsing",
+        "first_seen": f"{today}T10:00:00",
+        "last_seen": f"{today}T11:00:00",
+        "seconds": 3600,
+        "day": today,
+    })
+    c.step()
+    assert calls == []
+    assert c.today_screentime_seconds() == 0
+
+
+def test_screentime_milestone_disabled_if_auto_daily_log_false():
+    calls = []
+
+    async def on_milestone(day: str, hours: int):
+        calls.append((day, hours))
+
+    c = make_collector(on_screentime_milestone=on_milestone, auto_daily_log=False)
+    today = c._today
+    c.db.rows.append({
+        "id": 1,
+        "app_class": "code",
+        "title": "work",
+        "first_seen": f"{today}T10:00:00",
+        "last_seen": f"{today}T11:00:00",
+        "seconds": 3600,
+        "day": today,
+    })
+    c.step()
+    assert calls == []
+
 

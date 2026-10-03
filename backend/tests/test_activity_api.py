@@ -62,3 +62,20 @@ def test_daily_log_fallback_generated(client, monkeypatch):
     # second GET returns the stored log
     assert "Daily Digest" in client.get("/api/activity/daily-log", params={"day": "2026-09-01"}).json()["summary_md"]
 
+
+def test_daily_log_rolling_syncs_screentime_milestone(client):
+    from datetime import datetime
+
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    st = client.app.state.st
+    st.db.upsert_activity({
+        "app_class": "code", "title": "fleeting — main.py",
+        "first_seen": f"{today}T09:00:00", "last_seen": f"{today}T10:15:00",
+        "seconds": 4500, "day": today,
+    })
+    st.db.commit()
+    r = client.post("/api/activity/daily-log/generate", json={"rolling": True})
+    assert r.status_code == 200
+    assert st.db.kv_get(f"digest_screentime_hours_{today}") == "1"
+
+

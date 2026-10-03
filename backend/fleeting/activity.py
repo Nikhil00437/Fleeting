@@ -16,6 +16,7 @@ tests can drive it with synthetic windows without Hyprland.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import subprocess
@@ -80,12 +81,14 @@ class ActivityCollector:
         cfg: ActivityConfig,
         probe: Callable[[], tuple[dict | None, tuple[int, int] | None]] = probe_hyprland,
         on_day_rollover: Callable[[str], Awaitable[None]] | None = None,
+        on_screentime_milestone: Callable[[str, int], Awaitable[None]] | None = None,
         on_tick: Callable[[dict | None], None] | None = None,
     ):
         self.db = db
         self.cfg = cfg
         self.probe = probe
         self.on_day_rollover = on_day_rollover
+        self.on_screentime_milestone = on_screentime_milestone
         self.on_tick = on_tick
         self.running = False
         self.last_error: str | None = None
@@ -110,6 +113,53 @@ class ActivityCollector:
         if self.is_paused():
             return None
         return dict(self.current) if self.current else None
+
+    def today_screentime_seconds(self) -> int:
+        sessions = [
+            s for s in self.db.activity_sessions(self._today)
+            if not app_blocked(self.cfg, self.db, s["app_class"])
+        ]
+        total = sum(int(s.get("seconds", 0)) for s in sessions)
+        if self.current and not app_blocked(self.cfg, self.db, self.current["app_class"]):
+            current_day = self.current.get("day") or (self.current["first_seen"][:10] if "first_seen" in self.current else self._today)
+            if current_day == self._today:
+                persisted_ids = {s.get("id"): int(s.get("seconds", 0)) for s in sessions if s.get("id") is not None}
+                row_id = self.current.get("row_id")
+                curr_secs = int(self.current.get("seconds", 0))
+                if row_id is None or row_id not in persisted_ids:
+                    total += curr_secs
+                elif curr_secs > persisted_ids[row_id]:
+                    total += (curr_secs - persisted_ids[row_id])
+        return total
+
+    def check_screentime_milestones(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
+        if not self.on_screentime_milestone or not self.cfg.auto_daily_log:
+            return
+        total = self.today_screentime_seconds()
+        hours = total // 3600
+        if hours < 1:
+            return
+        try:
+            last = int(self.db.kv_get(f"digest_screentime_hours_{self._today}", "0") or "0")
+        except (ValueError, TypeError):
+            last = 0
+        if hours > last:
+            self.db.kv_set(f"digest_screentime_hours_{self._today}", str(hours))
+            if loop is not None:
+                asyncio.run_coroutine_threadsafe(self._safe_milestone(self._today, hours), loop)
+            else:
+                try:
+                    cur_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    cur_loop = None
+
+                if cur_loop is not None and cur_loop.is_running():
+                    cur_loop.create_task(self._safe_milestone(self._today, hours))
+                else:
+                    try:
+                        asyncio.run(self._safe_milestone(self._today, hours))
+                    except RuntimeError:
+                        pass
 
     async def run(self) -> None:
         import shutil
@@ -157,6 +207,7 @@ class ActivityCollector:
         win, cursor = self.probe()
         now = _local_now()
         self.poll_once(win, cursor, now)
+        self.check_screentime_milestones(loop)
 
     async def _safe_rollover(self, day: str) -> None:
         try:
@@ -164,6 +215,15 @@ class ActivityCollector:
                 await self.on_day_rollover(day)
         except Exception:
             log.exception("daily log generation for %s failed", day)
+
+    async def _safe_milestone(self, day: str, hours: int) -> None:
+        try:
+            if self.on_screentime_milestone:
+                res = self.on_screentime_milestone(day, hours)
+                if inspect.isawaitable(res):
+                    await res
+        except Exception:
+            log.exception("screentime milestone callback failed for %s (%d hrs)", day, hours)
 
     # ---- state machine ----------------------------------------------------
 

@@ -92,10 +92,23 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             except Exception:
                 log.exception("daily report backfill for %s failed", yesterday)
 
+        digest_lock = asyncio.Lock()
+
+        async def generate_milestone_digest(day: str, hours: int) -> None:
+            if digest_lock.locked():
+                log.info("milestone digest generation for %s (%d hrs) skipped: already in progress", day, hours)
+                return
+            async with digest_lock:
+                from .services import dailylog
+
+                await dailylog.generate_daily_log(db, cfg, day, rolling=True)
+                bus.publish("dailylog.updated", {"day": day, "kind": "daily-report", "hours": hours})
+
         st.activity = ActivityCollector(
             db,
             cfg.activity,
             on_day_rollover=rollover,
+            on_screentime_milestone=generate_milestone_digest,
             on_tick=lambda session: bus.publish("activity.live", {"session": session}),
         )
         activity_task = None
