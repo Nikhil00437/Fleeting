@@ -12,7 +12,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,15 @@ from .services.transcribe import Transcriber
 from .state import AppState
 
 log = logging.getLogger("fleeting")
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_VITE_DEV_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+
+
+def _allowed_origins(cfg: Config) -> set[str]:
+    """Origins permitted to call the API: the served app plus the Vite dev server."""
+    hosts = {cfg.server.host, "127.0.0.1", "localhost"}
+    return {f"http://{h}:{cfg.server.port}" for h in hosts} | set(_VITE_DEV_ORIGINS)
 
 
 def _setup_logging() -> None:
@@ -165,15 +174,38 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app = FastAPI(title="Fleeting", version=__version__, lifespan=lifespan)
     app.state.st = st
 
+    allowed_origins = _allowed_origins(cfg)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-        ],
+        allow_origins=sorted(allowed_origins),
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def guard_cross_origin_writes(request: Request, call_next):
+        """Reject side-effecting /api requests that arrive from a foreign origin.
+
+        CORS stops a hostile page from *reading* a response, not from *sending* a
+        simple request, so without this a plain form POST to 127.0.0.1 can kill
+        processes and delete notes. A missing Origin header means a non-browser
+        client (curl, the flee CLI) and is allowed through; "null" is rejected
+        because it is what a sandboxed iframe sends.
+        """
+        if request.method not in _SAFE_METHODS and request.url.path.startswith("/api"):
+            origin = request.headers.get("origin")
+            if origin and origin not in allowed_origins:
+                log.warning(
+                    "blocked cross-origin %s %s from %s",
+                    request.method,
+                    request.url.path,
+                    origin,
+                )
+                return JSONResponse(
+                    {"detail": "cross-origin request blocked"}, status_code=403
+                )
+        return await call_next(request)
 
     @app.middleware("http")
     async def no_store_api(request, call_next):
