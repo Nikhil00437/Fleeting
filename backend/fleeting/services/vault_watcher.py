@@ -202,18 +202,30 @@ class VaultWatcher:
             log.info("Vault watcher started for %s", self.vault_dir)
 
     def stop(self) -> None:
-        """Stop observer and cancel pending debounce timers."""
+        """Stop observer and cancel pending debounce timers.
+
+        The lock is deliberately released before touching watchdog. Its stop
+        path blocks in `_clear_emitters()` on `emitter.join()` with no timeout,
+        while the observer thread may be inside `_schedule_debounce` waiting for
+        this same lock. Holding it across the call is a shutdown deadlock —
+        observed hanging the lifespan ~3 runs in 20.
+        """
         with self._lock:
             for timer in self._timers.values():
                 timer.cancel()
             self._timers.clear()
+            observer = self._observer
+            self._observer = None
 
-            if self._observer is not None:
-                if self._observer.is_alive():
-                    self._observer.stop()
-                    self._observer.join(timeout=2.0)
-                self._observer = None
-                log.info("Vault watcher stopped for %s", self.vault_dir)
+        if observer is None:
+            return
+        try:
+            if observer.is_alive():
+                observer.stop()
+                observer.join(timeout=2.0)
+        except Exception:
+            log.warning("error stopping vault observer", exc_info=True)
+        log.info("Vault watcher stopped for %s", self.vault_dir)
 
     def is_running(self) -> bool:
         """Return True if observer is active and running."""
