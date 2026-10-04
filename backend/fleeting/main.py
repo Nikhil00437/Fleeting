@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -163,6 +164,22 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         recovered = await processor.recover_unfinished()
         if recovered:
             log.info("re-queued %d unfinished capture(s)", recovered)
+        # The activity table grew forever: a row per window-title change,
+        # including sub-second rows that reads filter out after storing them.
+        # Retention knob, not a hardcoded constant, so it can be tuned without
+        # a code change. Daily reports only ever look back 24h, so a short
+        # window is enough.
+        retention_days = max(1, int(getattr(cfg.activity, "retention_days", 30) or 30))
+        cutoff = (datetime.now().astimezone() - timedelta(days=retention_days)).strftime(
+            "%Y-%m-%d"
+        )
+        try:
+            pruned = db.prune_activity(before_day=cutoff)
+            if pruned:
+                log.info("pruned %d activity rows older than %s", pruned, cutoff)
+        except Exception:
+            log.exception("activity prune failed")
+
         log.info("fleeting %s ready on http://%s:%d", __version__, cfg.server.host, cfg.server.port)
         yield
         if activity_task:

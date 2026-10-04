@@ -10,9 +10,10 @@ from __future__ import annotations
 import inspect
 from datetime import datetime
 import logging
+from pathlib import Path
 from typing import Any, Callable
 
-from ..config import Config
+from ..config import AUDIO_DIR, Config, ensure_dirs
 from ..db import Database
 from ..events import EventBus
 from . import dailylog, markdown
@@ -171,6 +172,12 @@ def create_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     return {"ok": True, "note": note}
 
 
+def cfg_audio_dir() -> Path:
+    """Where voice memos live; used to clean up files on delete."""
+    ensure_dirs()
+    return AUDIO_DIR
+
+
 def delete_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     """Delete a note and associated tasks, removing from vault mirror."""
     note_id = params.get("note_id") or params.get("id")
@@ -179,7 +186,7 @@ def delete_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
 
     str_note_id = str(note_id)
     task_rows = db.execute("SELECT id FROM tasks WHERE note_id = ?", (str_note_id,)).fetchall()
-    note = db.delete_note(str_note_id)
+    note = db.delete_note(str_note_id, audio_root=cfg_audio_dir())
     if not note:
         return {"ok": False, "error": f"note {str_note_id} not found"}
 

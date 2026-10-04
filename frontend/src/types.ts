@@ -145,6 +145,8 @@ export interface Settings {
   activity_auto_daily_log: boolean;
   activity_watch_dirs: string;
   activity_mirror_daily_log: boolean;
+  /** Days of window-activity history kept; older rows pruned on startup. */
+  activity_retention_days: number;
   activity_running: boolean;
   config_path: string;
 }

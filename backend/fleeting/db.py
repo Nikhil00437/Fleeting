@@ -173,11 +173,9 @@ class Database:
     def __init__(self, path: Path | str):
         self.path = str(path)
         self._local = threading.local()
-        # Attempt one-time migration if database schema exists
-        try:
-            self._migrate_action_items()
-        except sqlite3.OperationalError:
-            pass
+        # NB: no data migration here. This used to run a full scan of `notes`
+        # with a per-row INSERT on *every* construction, which the request
+        # threadpool does up to 40 times. `migrate()` owns it now.
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -337,13 +335,36 @@ class Database:
             row = self.execute("SELECT COUNT(*) AS c FROM notes").fetchone()
         return int(row["c"])
 
-    def delete_note(self, note_id: str) -> dict | None:
+    def delete_note(self, note_id: str, audio_root: str | Path | None = None) -> dict | None:
+        """Delete a note, its tasks, and its audio file.
+
+        The audio file used to be left on disk forever, so the data dir grew
+        monotonically. Only paths inside `audio_root` are unlinked, so a
+        hand-edited or imported row cannot delete something outside it.
+        """
         note = self.get_note(note_id)
         if note:
             self.execute("DELETE FROM tasks WHERE note_id = ?", (note_id,))
             self.execute("DELETE FROM notes WHERE id = ?", (note_id,))
             self.commit()
+            self._unlink_audio(note.get("audio_path"), audio_root)
         return note
+
+    @staticmethod
+    def _unlink_audio(audio_path: str | None, audio_root: str | Path | None) -> None:
+        if not audio_path or audio_root is None:
+            return
+        try:
+            root = Path(audio_root).resolve()
+            target = Path(audio_path).resolve()
+            # is_relative_to guards against ../ traversal and absolute paths
+            # pointing anywhere else on disk.
+            if not target.is_relative_to(root):
+                log.warning("refusing to unlink audio outside %s: %s", root, target)
+                return
+            target.unlink(missing_ok=True)
+        except OSError:
+            log.warning("could not remove audio file %s", audio_path, exc_info=True)
 
     def notes_in_status(self, *statuses: str) -> list[dict]:
         placeholders = ",".join("?" for _ in statuses)
@@ -1063,6 +1084,23 @@ class Database:
                 (model, dimensions),
             ).fetchone()
         return int(row["c"])
+
+    def prune_activity(self, before_day: str, min_seconds: int = 1) -> int:
+        """Delete activity rows older than `before_day`, plus empty sessions.
+
+        Nothing ever pruned this table, and a row is written on every window
+        title change — including sub-second ones that `activity_sessions` hides
+        at read time, after storing them. Returns the number of rows removed.
+        """
+        cur = self.execute(
+            "DELETE FROM activity WHERE day < ? OR seconds < ?",
+            (before_day, min_seconds),
+        )
+        self.commit()
+        removed = cur.rowcount or 0
+        if removed:
+            log.info("pruned %d stale activity rows (before %s)", removed, before_day)
+        return removed
 
     def get_all_embeddings(self) -> list[dict]:
         rows = self.execute(

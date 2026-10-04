@@ -1159,8 +1159,56 @@ export default function SettingsView({
                   </div>
 
                   <div className="rounded-xl border border-ink-800 bg-ink-950/50 p-3.5">
-                    <label className={labelCls}>Idle Cutoff (minutes cursor still)</label>
+                    <label className={labelCls} htmlFor="retention-days">
+                      History Retention (days)
+                    </label>
+                    <p className="mt-0.5 text-[11px] text-ink-400">
+                      Window activity older than this is deleted on startup. Daily reports only
+                      look back 24 hours.
+                    </p>
                     <input
+                      id="retention-days"
+                      type="number"
+                      min={1}
+                      max={3650}
+                      value={s.activity_retention_days}
+                      onChange={(e) =>
+                        setS({ ...s, activity_retention_days: Number(e.target.value) })
+                      }
+                      onBlur={() =>
+                        void save(
+                          { activity_retention_days: s.activity_retention_days },
+                          "retention updated",
+                        )
+                      }
+                      className={`${inputCls} font-mono`}
+                    />
+                    <div className="mt-2 flex gap-1.5">
+                      {[7, 30, 90, 365].map((days) => (
+                        <button
+                          key={days}
+                          onClick={() => {
+                            setS({ ...s, activity_retention_days: days });
+                            void save({ activity_retention_days: days }, `retention set to ${days}d`);
+                          }}
+                          className={`rounded-lg px-2.5 py-0.5 font-mono text-[10px] ${
+                            s.activity_retention_days === days
+                              ? "bg-ember-500/25 font-semibold text-ember-300"
+                              : "bg-ink-850 text-ink-400 hover:text-ink-200"
+                          }`}
+                        >
+                          {days}d
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-ink-800 bg-ink-950/50 p-3.5">
+                    <label className={labelCls} htmlFor="idle-cutoff">
+                      Idle Cutoff (minutes cursor still)
+                    </label>
+                    <input
+                      id="idle-cutoff"
                       type="number"
                       min={1}
                       max={60}

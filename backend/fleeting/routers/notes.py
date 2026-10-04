@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -10,8 +11,11 @@ from ..config import save_config
 from ..db import now_iso
 from ..models import NoteOut, NoteUpdateIn
 from ..services import markdown
+from ..services.embeddings import embed_note
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
+
+log = logging.getLogger("fleeting.notes")
 
 
 def _out(note: dict) -> NoteOut:
@@ -67,6 +71,17 @@ def update_note(note_id: str, body: NoteUpdateIn, request: Request) -> NoteOut:
     assert note is not None
     if note["status"] == "done":
         markdown.sync_note(st.cfg.paths, note)
+
+    # Re-embed: semantic search reads note_embeddings, which no update path
+    # touched, so an edited note stayed findable only by its old text.
+    searchable = {"title", "summary", "raw_text", "tags"} & set(changes)
+    if searchable:
+        try:
+            embed_note(note, st.db, st.cfg)
+        except Exception:
+            # Never fail the user's edit over a best-effort index update.
+            log.warning("re-embed failed for note %s", note_id, exc_info=True)
+
     st.bus.publish("note.updated", note)
     return _out(note)
 
@@ -98,7 +113,7 @@ def toggle_archive(note_id: str, request: Request) -> NoteOut:
 @router.delete("/{note_id}")
 def delete_note(note_id: str, request: Request) -> dict:
     st = request.app.state.st
-    note = st.db.delete_note(note_id)
+    note = st.db.delete_note(note_id, audio_root=st.cfg_audio_dir())
     if not note:
         raise HTTPException(404, "note not found")
     markdown.remove_note(st.cfg.paths, note)

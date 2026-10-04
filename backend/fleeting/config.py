@@ -84,6 +84,9 @@ class ActivityConfig:
     auto_daily_log: bool = True
     watch_dirs: str = "~/Projects, ~/Documents, ~/Downloads"
     mirror_daily_log: bool = False  # report lives inside the app only, by default
+    # Days of window-activity history to keep. Older rows are pruned on boot;
+    # daily reports only ever look back 24h.
+    retention_days: int = 30
 
 
 @dataclass

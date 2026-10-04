@@ -42,6 +42,7 @@ const mockBaseSettings: Settings = {
   activity_auto_daily_log: true,
   activity_watch_dirs: "",
   activity_mirror_daily_log: true,
+  activity_retention_days: 30,
   activity_running: true,
   config_path: "/home/user/.config/fleeting/config.toml",
 };
@@ -183,5 +184,48 @@ describe("SettingsView Component", () => {
       expect(onToast).toHaveBeenCalledWith("Vault disk error", "err");
       expect(resyncStates).toEqual([true, false]);
     });
+  });
+});
+
+describe("LLM API key field", () => {
+  it("is hidden for ollama", () => {
+    const html = renderToStaticMarkup(
+      <SettingsView
+        onToast={vi.fn()}
+        defaultTab="ai"
+        initialSettings={{ ...mockBaseSettings, llm_provider: "ollama" }}
+      />,
+    );
+    expect(html).not.toContain("API Key");
+  });
+
+  it("is shown for the custom provider", () => {
+    const html = renderToStaticMarkup(
+      <SettingsView
+        onToast={vi.fn()}
+        defaultTab="ai"
+        initialSettings={{ ...mockBaseSettings, llm_provider: "custom" }}
+      />,
+    );
+    expect(html).toContain("API Key");
+    expect(html).toContain('type="password"');
+  });
+
+  it("reports a stored key without revealing it", () => {
+    const html = renderToStaticMarkup(
+      <SettingsView
+        onToast={vi.fn()}
+        defaultTab="ai"
+        initialSettings={{
+          ...mockBaseSettings,
+          llm_provider: "custom",
+          llm_api_key_set: true,
+        }}
+      />,
+    );
+    expect(html).toContain("A key is stored");
+    expect(html).toContain("clear");
+    // the field must never be prefilled with the secret
+    expect(html).not.toContain("sk-");
   });
 });

@@ -26,26 +26,58 @@ log = logging.getLogger("fleeting.process")
 
 
 class Processor:
+    # ponytail: fixed at 2. A YouTube capture with whisper fallback chains
+    # ~22 min of subprocess work, so 1 worker blocked everything behind it.
+    # Raise if captures ever queue faster than they drain.
+    WORKERS = 2
+    # Bounded so a burst of captures cannot grow memory without limit.
+    QUEUE_MAX = 500
+
     def __init__(self, db: Database, cfg: Config, bus: EventBus, transcriber: Transcriber):
         self.db = db
         self.cfg = cfg
         self.bus = bus
         self.transcriber = transcriber
-        self.queue: asyncio.Queue[str] = asyncio.Queue()
-        self._worker_task: asyncio.Task | None = None
-        self.active_id: str | None = None
+        self.queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.QUEUE_MAX)
+        self._worker_tasks: list[asyncio.Task] = []
+        self._queued: set[str] = set()
+        self._inflight: set[str] = set()
+        self.active_ids: set[str] = set()
+
+    @property
+    def active_id(self) -> str | None:
+        """Back-compat: the note currently being processed, if any."""
+        return next(iter(self.active_ids), None)
 
     # ---- lifecycle -----------------------------------------------------
 
     def start(self) -> None:
-        self._worker_task = asyncio.get_running_loop().create_task(self._worker_loop())
+        loop = asyncio.get_running_loop()
+        self._worker_tasks = [
+            loop.create_task(self._worker_loop(i)) for i in range(self.WORKERS)
+        ]
 
     def stop(self) -> None:
-        if self._worker_task:
-            self._worker_task.cancel()
+        for t in self._worker_tasks:
+            t.cancel()
+        self._worker_tasks = []
 
-    def enqueue(self, note_id: str) -> None:
-        self.queue.put_nowait(note_id)
+    def enqueue(self, note_id: str) -> bool:
+        """Queue a note. False if it is already queued/in-flight, or the queue is full.
+
+        Deduped because `reprocess` enqueues an id that may already be pending,
+        and the queue is bounded so callers must be able to see a refusal.
+        """
+        if note_id in self._queued or note_id in self._inflight:
+            return False
+        try:
+            self.queue.put_nowait(note_id)
+        except asyncio.QueueFull:
+            log.warning("capture queue full (%d) — rejected %s", self.QUEUE_MAX, note_id)
+            self.bus.publish("note.updated", {"id": note_id, "queue_full": True})
+            return False
+        self._queued.add(note_id)
+        return True
 
     async def recover_unfinished(self) -> int:
         """Re-enqueue notes left pending/processing by a previous run."""
@@ -57,10 +89,12 @@ class Processor:
 
     # ---- worker ---------------------------------------------------------
 
-    async def _worker_loop(self) -> None:
+    async def _worker_loop(self, worker: int = 0) -> None:
         while True:
             note_id = await self.queue.get()
-            self.active_id = note_id
+            self._queued.discard(note_id)
+            self._inflight.add(note_id)
+            self.active_ids.add(note_id)
             try:
                 await self._process(note_id)
             except asyncio.CancelledError:
@@ -69,7 +103,8 @@ class Processor:
                 log.exception("unexpected failure processing note %s", note_id)
                 self._fail(note_id, "internal error — see server log")
             finally:
-                self.active_id = None
+                self._inflight.discard(note_id)
+                self.active_ids.discard(note_id)
                 self.queue.task_done()
 
     async def _set_status(self, note_id: str, status: str, error: str | None = None) -> None:
