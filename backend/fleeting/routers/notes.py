@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..config import save_config
 from ..db import now_iso
@@ -21,8 +21,10 @@ def _out(note: dict) -> NoteOut:
 @router.get("")
 def list_notes(
     request: Request,
-    limit: int = 100,
-    offset: int = 0,
+    # ge=1 matters: SQLite treats a negative LIMIT as "no limit", so an
+    # unclamped limit=-1 would stream the whole table (full transcripts).
+    limit: int = Query(100, ge=1, le=500, description="Max notes to return"),
+    offset: int = Query(0, ge=0, description="Rows to skip"),
     tag: str | None = None,
     status: str | None = None,
     type: str | None = None,
@@ -30,7 +32,7 @@ def list_notes(
 ) -> list[NoteOut]:
     st = request.app.state.st
     notes = st.db.list_notes(
-        limit=min(limit, 500),
+        limit=limit,
         offset=offset,
         tag=tag,
         status=status,

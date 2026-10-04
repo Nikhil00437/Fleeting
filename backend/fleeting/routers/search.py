@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 from ..models import NoteOut
 from ..services.semantic_search import hybrid_search
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["search"])
 def search(
     request: Request,
     q: str,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
     mode: str = "hybrid",
     type: str | None = None,
     repo: str | None = None,
@@ -27,7 +27,7 @@ def search(
         q,
         st.cfg,
         mode=mode,
-        limit=min(limit, 200),
+        limit=limit,
         filter_type=type,
         repo=repo,
     )

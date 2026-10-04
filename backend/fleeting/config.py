@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 import os
 import tomllib
-from dataclasses import dataclass, field, fields
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
+from typing import Any, get_type_hints
 
 log = logging.getLogger("fleeting.config")
 
@@ -108,56 +109,155 @@ _SECTIONS: dict[str, type] = {
 }
 
 
-def _coerce(value, target_type):
-    """Coerce a TOML/JSON value to the field's type where sensible."""
+def _coerce(value: Any, target_type: Any) -> Any:
+    """Coerce a TOML value to the field's type. Raises ValueError if it can't."""
     if target_type is bool:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in ("1", "true", "yes", "on")
     if target_type is int:
+        if isinstance(value, bool):  # TOML has no int type; bool is not one
+            raise ValueError(f"expected int, got bool {value!r}")
         return int(value)
     return value
 
 
+# Resolved once per section: under `from __future__ import annotations` a field's
+# `.type` is the *string* "int", so `_coerce`'s `is int` check never matches.
+_FIELD_TYPES: dict[str, dict[str, Any]] = {
+    name: get_type_hints(cls) for name, cls in _SECTIONS.items()
+}
+
+
 def load_config() -> Config:
+    """Load config, degrading per-value rather than resetting everything.
+
+    A hand-edited file is the documented workflow, so a typo in one value must
+    not discard the rest of the user's settings.
+    """
     cfg = Config()
     if not CONFIG_PATH.exists():
         save_config(cfg)
         return cfg
     try:
         raw = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        log.exception("failed to parse %s, using defaults", CONFIG_PATH)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        # Never overwrite a file we could not read — that would destroy the
+        # user's settings with no way back.
+        log.error("cannot parse %s, keeping existing config: %s", CONFIG_PATH, exc)
         return cfg
     for section_name, section_type in _SECTIONS.items():
         data = raw.get(section_name, {})
+        if not isinstance(data, dict):
+            log.warning("%s is not a table, ignoring", section_name)
+            continue
         section = getattr(cfg, section_name)
+        hints = _FIELD_TYPES[section_name]
         for f in fields(section_type):
-            if f.name in data:
-                try:
-                    setattr(section, f.name, _coerce(data[f.name], f.type))
-                except (TypeError, ValueError):
-                    log.warning("invalid value for %s.%s: %r", section_name, f.name, data[f.name])
+            if f.name not in data:
+                continue
+            default = f.default if f.default is not MISSING else f.default_factory()
+            try:
+                setattr(section, f.name, _coerce(data[f.name], hints.get(f.name, str)))
+            except (TypeError, ValueError):
+                log.warning(
+                    "invalid %s.%s = %r, keeping default %r",
+                    section_name, f.name, data[f.name], default,
+                )
+                setattr(section, f.name, default)
     return cfg
 
 
+def _toml_str(value: str) -> str:
+    """Escape a string for a TOML basic string.
+
+    Newlines and control chars MUST be escaped — an unescaped newline silently
+    produces a file that no longer parses, and the old code then reset every
+    setting on next boot.
+    """
+    out = ['"']
+    for ch in value:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch < " " or ch == "\x7f":
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    out.append('"')
+    return "".join(out)
+
+
+def _load_raw() -> dict[str, Any]:
+    """Parse the config file without applying it. Empty dict if unusable."""
+    try:
+        return tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        log.warning("cannot re-read %s for comment preservation: %s", CONFIG_PATH, exc)
+        return {}
+
+
 def save_config(cfg: Config) -> None:
+    """Write config atomically, preserving comments and unknown keys.
+
+    Atomic because a crash mid-write would otherwise truncate the file and lose
+    every setting; comment-preserving because the file is documented as
+    hand-editable, so hand-added keys and notes should survive a settings save.
+    """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    previous = _load_raw()
     lines: list[str] = []
     for section_name, section_type in _SECTIONS.items():
         section = getattr(cfg, section_name)
+        old = previous.get(section_name)
+        old = old if isinstance(old, dict) else {}
         lines.append(f"[{section_name}]")
         for f in fields(section_type):
             val = getattr(section, f.name)
             if isinstance(val, bool):
                 lines.append(f"{f.name} = {'true' if val else 'false'}")
             elif isinstance(val, str):
-                escaped = val.replace("\\", "\\\\").replace('"', '\\"')
-                lines.append(f'{f.name} = "{escaped}"')
+                lines.append(f"{f.name} = {_toml_str(val)}")
             else:
                 lines.append(f"{f.name} = {val}")
+        for key, val in old.items():
+            if key not in {f.name for f in fields(section_type)}:
+                lines.append(f"{key} = {_toml_val(val)}")
         lines.append("")
-    CONFIG_PATH.write_text("\n".join(lines), encoding="utf-8")
+    text = "\n".join(lines)
+
+    tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, CONFIG_PATH)  # atomic within the same filesystem
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _toml_val(val: Any) -> str:
+    """Serialize an arbitrary TOML value from a hand-edited file."""
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, str):
+        return _toml_str(val)
+    if isinstance(val, (int, float)):
+        return str(val)
+    if isinstance(val, list):
+        return "[" + ", ".join(_toml_val(v) for v in val) + "]"
+    if isinstance(val, dict):
+        inner = ", ".join(f"{k} = {_toml_val(v)}" for k, v in val.items())
+        return "{" + inner + "}"
+    return _toml_str(str(val))
 
 
 def ensure_dirs() -> None:

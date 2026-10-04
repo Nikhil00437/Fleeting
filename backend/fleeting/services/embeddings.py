@@ -143,7 +143,15 @@ def embed_text_with_model(
                                 vec = [x / norm for x in vec]
                             return [float(x) for x in vec], model
         except Exception as exc:
-            log.debug("Remote embedding failed (%s), using local fallback", exc)
+            # WARNING, not DEBUG: the app runs at INFO, so a silent downgrade
+            # means the user never learns their semantic index is not real.
+            log.warning(
+                "Remote embedding failed (%s: %s) — falling back to the offline "
+                "local-hash-384 vector; semantic search will be lexical-only until "
+                "the LLM is reachable",
+                type(exc).__name__,
+                exc,
+            )
 
     return LocalHashVectorizer().embed(text), "local-hash-384"
 
@@ -207,18 +215,35 @@ def embed_note(
     return vec
 
 
-def backfill_embeddings(db: Database, cfg: Config | None = None) -> int:
-    """Find active notes missing an embedding, compute and store their embeddings.
+def backfill_embeddings(
+    db: Database,
+    cfg: Config | None = None,
+    *,
+    provider: str | None = None,
+    dimensions: int | None = None,
+) -> int:
+    """Re-embed active notes that are missing an embedding or use a stale model.
 
-    Returns the count of newly embedded notes.
+    Notes embedded by the offline `local-hash-384` fallback cannot be compared
+    with vectors from a real model (different dimensionality), so switching the
+    LLM on silently empties semantic search until every old note is redone.
+    Pass `provider`/`dimensions` to also migrate rows from a previous model.
+
+    Returns the count of notes (re-)embedded.
     """
-    rows = db.execute(
-        """
-        SELECT * FROM notes
-        WHERE archived = 0
-          AND id NOT IN (SELECT note_id FROM note_embeddings)
-        """
-    ).fetchall()
+    params: dict = {}
+    if provider is not None and dimensions is not None:
+        # Re-embed if there is no row at all, OR the row is from another model.
+        # (An "AND NOT IN" pair of clauses can never both hold for a stale row.)
+        where = (
+            "archived = 0 AND (id NOT IN (SELECT note_id FROM note_embeddings) "
+            "OR id NOT IN (SELECT note_id FROM note_embeddings "
+            "WHERE model = :provider AND dimensions = :dims))"
+        )
+        params = {"provider": provider, "dims": dimensions}
+    else:
+        where = "archived = 0 AND id NOT IN (SELECT note_id FROM note_embeddings)"
+    rows = db.execute(f"SELECT * FROM notes WHERE {where}", params).fetchall()
 
     count = 0
     for r in rows:

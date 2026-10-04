@@ -192,19 +192,47 @@ class Database:
         return conn
 
     def migrate(self) -> None:
+        """Apply pending migrations, each one all-or-nothing.
+
+        `executescript` implicitly COMMITs and then commits statement-by-
+        statement, so a script that fails halfway would leave a partially
+        migrated DB with no version row — the next boot re-runs migration v1,
+        whose bare `CREATE TABLE notes` then fails on the table v1 itself
+        created, and the service crash-loops. Running each script inside an
+        explicit transaction makes a failed migration a no-op instead.
+
+        DDL in SQLite is transactional, so this rollback is real.
+        """
         conn = self.conn
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)"
         )
+        conn.commit()
         row = conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
         current = row["v"] or 0
         for version, script in enumerate(MIGRATIONS, start=1):
             if version <= current:
                 continue
             log.info("applying migration v%d", version)
-            conn.executescript(script)
-            conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
-            conn.commit()
+            # The BEGIN/COMMIT must live *inside* the script: executescript()
+            # issues an implicit COMMIT before it runs, which would discard an
+            # externally-started transaction.
+            wrapped = (
+                "BEGIN;\n"
+                + script
+                + f"\nINSERT INTO schema_version (version) VALUES ({version});\nCOMMIT;"
+            )
+            try:
+                conn.executescript(wrapped)
+            except sqlite3.Error:
+                if conn.in_transaction:
+                    conn.rollback()
+                log.error(
+                    "migration v%d failed and was rolled back; schema left at v%d",
+                    version,
+                    current,
+                )
+                raise
         self._migrate_action_items()
 
     def execute(self, sql: str, params: tuple | list = ()) -> sqlite3.Cursor:

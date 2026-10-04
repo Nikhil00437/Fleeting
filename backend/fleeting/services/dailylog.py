@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..activity import aggregate_day
 from ..config import Config, expand_path
@@ -138,18 +138,35 @@ def merge_focus_blocks(sessions: list[dict]) -> list[dict]:
     return out
 
 
-def collect_notes_context(db: Database, since: datetime, until: datetime) -> list[dict]:
-    """Fetch Fleeting notes/voice memos/YouTube captures created in [since, until]."""
+def _parse_ts(raw: str) -> datetime | None:
+    """Parse a stored ISO timestamp into an aware datetime (assume UTC if naive)."""
     try:
-        notes = db.list_notes(limit=100)
+        dt = datetime.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+def collect_notes_context(db: Database, since: datetime, until: datetime) -> list[dict]:
+    """Fetch captures created in [since, until], both ends inclusive.
+
+    `notes.created_at` is UTC while `since`/`until` are local, so this compares
+    parsed instants — string comparison silently shifted the window by the UTC
+    offset and dropped notes from the digest.
+    """
+    if since.tzinfo is None:
+        since = since.astimezone()
+    if until.tzinfo is None:
+        until = until.astimezone()
+    try:
+        notes = db.list_notes(limit=1000)
     except Exception:
+        log.exception("daily log: could not read notes for the window")
         return []
-    since_iso = since.isoformat(timespec="seconds")
-    until_iso = until.isoformat(timespec="seconds")
     matched = []
     for n in notes:
-        created = n.get("created_at") or ""
-        if since_iso <= created <= until_iso:
+        created = _parse_ts(n.get("created_at") or "")
+        if created is not None and since <= created <= until:
             matched.append(n)
     return matched
 
