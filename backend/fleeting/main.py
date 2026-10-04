@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import time
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
@@ -192,6 +193,8 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app.state.st = st
 
     allowed_origins = _allowed_origins(cfg)
+    allowed_hosts = {h.lower() for h in {cfg.server.host, "127.0.0.1", "localhost"}}
+    st.api_token = cfg.activity.api_token.strip() or None
 
     app.add_middleware(
         CORSMiddleware,
@@ -199,6 +202,42 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Endpoints the SPA must reach before it can present a token, or that are
+    # needed to obtain one. Health is included so the UI can still detect a
+    # live server when its token is wrong.
+    _TOKEN_EXEMPT = frozenset({"/api/health"})
+
+    @app.middleware("http")
+    async def guard_api(request: Request, call_next):
+        """Validate Host, then require a bearer token on mutating /api calls.
+
+        Host first: a rebound DNS name still arrives carrying the attacker's
+        Host header, and the Origin check below cannot see that.
+        """
+        path = request.url.path
+        if path.startswith("/api"):
+            host = (request.headers.get("host") or "").split(":")[0].lower()
+            if host and host not in allowed_hosts:
+                log.warning("blocked request with foreign Host header %r", host)
+                return JSONResponse({"detail": "invalid host"}, status_code=421)
+
+        if (
+            st.api_token
+            and path.startswith("/api")
+            and path not in _TOKEN_EXEMPT
+            and request.method not in _SAFE_METHODS
+        ):
+            header = request.headers.get("authorization") or ""
+            scheme, _, presented = header.partition(" ")
+            # compare_digest avoids leaking the token through response timing.
+            if scheme.lower() != "bearer" or not secrets.compare_digest(
+                presented, st.api_token
+            ):
+                log.warning("blocked unauthenticated %s %s", request.method, path)
+                return JSONResponse({"detail": "authentication required"}, status_code=401)
+
+        return await call_next(request)
 
     @app.middleware("http")
     async def guard_cross_origin_writes(request: Request, call_next):

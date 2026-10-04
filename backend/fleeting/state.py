@@ -23,6 +23,8 @@ class AppState:
     activity: object = None  # ActivityCollector, set in create_app
     vault_watcher: object = None  # VaultWatcher, set in create_app
     digest_lock: asyncio.Lock | None = None
+    # Bearer token for mutating /api requests; None/"" disables the check.
+    api_token: str | None = None
 
     def cfg_audio_dir(self):
         from .config import AUDIO_DIR, ensure_dirs

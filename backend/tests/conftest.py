@@ -24,7 +24,9 @@ def client(tmp_path, monkeypatch):
     from fleeting.main import create_app
 
     app = create_app(cfg, load_from_disk=False)
-    with TestClient(app) as c:
+    # Real base_url, because the app validates the Host header (DNS-rebinding
+    # guard). TestClient's default of "testserver" is not a legitimate host.
+    with TestClient(app, base_url=f"http://127.0.0.1:{cfg.server.port}") as c:
         yield c
 
 

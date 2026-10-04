@@ -63,7 +63,11 @@ def seeded(tmp_path, monkeypatch):
 def _app_client(db, cfg, TestClient):
     from fleeting.main import create_app
 
-    return TestClient(create_app(cfg, load_from_disk=False))
+    # Real base_url: the app validates the Host header (DNS-rebinding guard),
+    # and TestClient's default "testserver" is not a legitimate host.
+    return TestClient(
+        create_app(cfg, load_from_disk=False), base_url=f"http://127.0.0.1:{cfg.server.port}"
+    )
 
 
 def test_boot_prunes_rows_beyond_retention(seeded) -> None:

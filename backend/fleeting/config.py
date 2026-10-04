@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import tomllib
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
@@ -84,6 +85,9 @@ class ActivityConfig:
     auto_daily_log: bool = True
     watch_dirs: str = "~/Projects, ~/Documents, ~/Downloads"
     mirror_daily_log: bool = False  # report lives inside the app only, by default
+    # Bearer token required on mutating /api requests. Empty = disabled, which
+    # keeps the single-user loopback setup working with no extra setup.
+    api_token: str = ""
     # Days of window-activity history to keep. Older rows are pruned on boot;
     # daily reports only ever look back 24h.
     retention_days: int = 30
@@ -261,6 +265,37 @@ def _toml_val(val: Any) -> str:
         inner = ", ".join(f"{k} = {_toml_val(v)}" for k, v in val.items())
         return "{" + inner + "}"
     return _toml_str(str(val))
+
+
+def ensure_token(cfg: Config) -> str:
+    """Return the API token, generating and persisting one on first run.
+
+    Loopback binding is not an auth boundary: any local process can reach the
+    port. An unguessable token is the cheapest thing that actually stops it.
+    Existing tokens are never rotated — that would break a running client.
+    """
+    existing = cfg.activity.api_token.strip()
+    if existing:
+        return existing
+
+    # Re-read before minting: if a previous run generated a token but failed to
+    # persist it, minting a second one would lock out a live client.
+    try:
+        on_disk = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        stored = str(on_disk.get("activity", {}).get("api_token") or "").strip()
+    except (OSError, tomllib.TOMLDecodeError):
+        stored = ""
+    if stored:
+        cfg.activity.api_token = stored
+        return stored
+
+    token = secrets.token_urlsafe(32)
+    cfg.activity.api_token = token
+    try:
+        save_config(cfg)
+    except OSError:
+        log.warning("could not persist generated API token", exc_info=True)
+    return token
 
 
 def ensure_dirs() -> None:
