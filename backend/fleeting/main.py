@@ -245,13 +245,13 @@ async def _autodetect_llm_model(cfg: Config) -> None:
     """
     import httpx
 
-    from .services.llm import chat_model_names
+    from .services.llm import auth_headers, chat_model_names
 
     if cfg.llm.provider == "none" or cfg.llm.model:
         return
     base = cfg.llm.base_url.rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=4) as client:
+        async with httpx.AsyncClient(timeout=4, headers=auth_headers(cfg.llm)) as client:
             if cfg.llm.provider == "ollama":
                 r = await client.get(f"{base}/api/tags")
                 r.raise_for_status()

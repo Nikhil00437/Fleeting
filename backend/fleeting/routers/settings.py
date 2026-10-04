@@ -27,6 +27,7 @@ def _settings_payload(request: Request) -> dict:
         "llm_base_url": cfg.llm.base_url,
         "llm_model": cfg.llm.model,
         "llm_timeout_secs": cfg.llm.timeout_secs,
+        "llm_api_key_set": bool(cfg.llm.api_key),
         "transcribe_model": cfg.transcribe.model,
         "transcribe_language": cfg.transcribe.language,
         "transcribe_loaded": st.transcriber.is_ready(),
@@ -89,6 +90,10 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.llm.model = body.llm_model.strip()
     if body.llm_timeout_secs is not None:
         cfg.llm.timeout_secs = body.llm_timeout_secs
+    if body.llm_api_key is not None:
+        # Never echoed back by GET, so an absent value must mean "unchanged"
+        # rather than "wipe it".
+        cfg.llm.api_key = body.llm_api_key.strip()
     if body.transcribe_model is not None:
         if body.transcribe_model != cfg.transcribe.model:
             cfg.transcribe.model = body.transcribe_model
@@ -142,6 +147,8 @@ async def test_llm(request: Request, body: LLMProbeIn | None = None) -> dict:
             probe.base_url = body.base_url.strip()
         if body.model is not None:
             probe.model = body.model.strip()
+        if body.api_key is not None:
+            probe.api_key = body.api_key.strip()
     return await llm.check_llm(probe)
 
 

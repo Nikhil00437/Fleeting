@@ -95,6 +95,16 @@ def normalize_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+def auth_headers(cfg: LLMConfig) -> dict[str, str]:
+    """Authorization header for endpoints that need one.
+
+    Sent whenever a key is configured, regardless of provider: local servers
+    ignore it, and an OpenAI-compatible gateway may sit behind any of them.
+    """
+    key = (cfg.api_key or "").strip()
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
 def chat_model_names(entries: list[dict], provider: str) -> list[str]:
     """Model names usable for chat, from a provider's /models listing.
 
@@ -119,7 +129,7 @@ async def check_llm(cfg: LLMConfig) -> dict:
     if cfg.provider == "none":
         return {"ok": False, "detail": "LLM disabled in settings"}
     try:
-        async with httpx.AsyncClient(timeout=4) as client:
+        async with httpx.AsyncClient(timeout=4, headers=auth_headers(cfg)) as client:
             if cfg.provider == "ollama":
                 r = await client.get(f"{base}/api/tags")
                 r.raise_for_status()
@@ -149,10 +159,17 @@ async def check_llm(cfg: LLMConfig) -> dict:
         return {"ok": False, "detail": f"{type(exc).__name__}: {exc}", "models": [], "hidden": 0}
 
 
-async def request_chat(url: str, payload: dict, timeout_secs: int, *, provider: str = "ollama") -> str:
+async def request_chat(
+    url: str,
+    payload: dict,
+    timeout_secs: int,
+    *,
+    provider: str = "ollama",
+    headers: dict[str, str] | None = None,
+) -> str:
     """POST a chat request to an Ollama/OpenAI-compatible server, return content."""
     try:
-        async with httpx.AsyncClient(timeout=timeout_secs) as client:
+        async with httpx.AsyncClient(timeout=timeout_secs, headers=headers or None) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -204,7 +221,9 @@ async def enrich(text: str, cfg: LLMConfig) -> dict:
         }
         url = f"{base}/api/chat"
 
-    content = await request_chat(url, payload, cfg.timeout_secs, provider=cfg.provider)
+    content = await request_chat(
+        url, payload, cfg.timeout_secs, provider=cfg.provider, headers=auth_headers(cfg)
+    )
     parsed = _parse_json_loose(content)
     if parsed is None:
         raise LLMUnavailable("model returned unparseable JSON")

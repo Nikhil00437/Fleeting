@@ -257,7 +257,13 @@ async def generate_with_llm(transcript: str, day: str, cfg) -> tuple[str, str]:
         }
         url = f"{base}/api/chat"
 
-    content = await llm_svc.request_chat(url, payload, cfg.llm.timeout_secs, provider=cfg.llm.provider)
+    content = await llm_svc.request_chat(
+        url,
+        payload,
+        cfg.llm.timeout_secs,
+        provider=cfg.llm.provider,
+        headers=llm_svc.auth_headers(cfg.llm),
+    )
     md = content.strip()
     if not md or len(md) < 40:
         raise llm_svc.LLMUnavailable("model returned an empty daily log")

@@ -48,10 +48,13 @@ class PathsConfig:
 
 @dataclass
 class LLMConfig:
-    provider: str = "ollama"  # "ollama" | "lmstudio" | "none"
+    provider: str = "ollama"  # "ollama" | "lmstudio" | "custom" | "none"
     base_url: str = "http://127.0.0.1:11434"
     model: str = ""
     timeout_secs: int = 120
+    # Bearer token for OpenAI-compatible endpoints. Stored in plaintext in
+    # ~/.config/fleeting/config.toml, so keep that file readable only by you.
+    api_key: str = ""
 
 
 @dataclass

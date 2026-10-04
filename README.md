@@ -138,9 +138,10 @@ vault_dir = "~/Documents/FleetingVault"   # markdown mirror
 vault_sync = true
 
 [llm]
-provider = "ollama"            # ollama | lmstudio | none
+provider = "ollama"            # ollama | lmstudio | custom | none
 base_url = "http://127.0.0.1:11434"
-model = ""                     # empty = auto-detect first model
+model = ""                     # empty = auto-detect first chat-capable model
+api_key = ""                   # optional bearer token for custom/OpenAI-compatible
 
 [transcribe]
 model = "base"                 # tiny | base | small | medium
@@ -165,6 +166,10 @@ desktop = true
 
 Data lives in `~/.local/share/fleeting/` (`fleeting.db` + audio). The server
 binds to `127.0.0.1` only — it is a single-user local app.
+
+If you set an `api_key` it is stored **in plaintext** in
+`~/.config/fleeting/config.toml`; keep that file readable only by you. The
+Settings API never returns the stored key, only whether one is set.
 
 Because a browser will happily fire a cross-origin `POST` at a loopback port
 without any user intent, every mutating `/api` request must carry an `Origin`

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..events import EventBus
 from .actions import AVAILABLE_ACTIONS, DESTRUCTIVE_ACTIONS, execute_action
-from .llm import LLMUnavailable, normalize_base_url, request_chat
+from .llm import LLMUnavailable, auth_headers, normalize_base_url, request_chat
 from .semantic_search import hybrid_search
 
 if TYPE_CHECKING:
@@ -621,7 +621,13 @@ async def ask_assistant(
             url = f"{base}/api/chat"
 
         try:
-            content = await request_chat(url, payload, cfg.llm.timeout_secs, provider=cfg.llm.provider)
+            content = await request_chat(
+                url,
+                payload,
+                cfg.llm.timeout_secs,
+                provider=cfg.llm.provider,
+                headers=auth_headers(cfg.llm),
+            )
             content, sources, pending = await _parse_and_execute_action_blocks(
                 content, db, cfg, bus, sources, confirm=confirm
             )

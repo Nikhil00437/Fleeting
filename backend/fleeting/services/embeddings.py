@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from .llm import auth_headers
+
 if TYPE_CHECKING:
     from ..config import Config
     from ..db import Database
@@ -109,7 +111,7 @@ def embed_text_with_model(
         base_url = cfg.llm.base_url.rstrip("/")
         timeout = min(float(cfg.llm.timeout_secs), 5.0)
         try:
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(timeout=timeout, headers=auth_headers(cfg.llm)) as client:
                 if provider == "ollama":
                     model = cfg.llm.model or "nomic-embed-text"
                     resp = client.post(

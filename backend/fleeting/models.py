@@ -180,6 +180,9 @@ class SettingsIn(BaseModel):
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_timeout_secs: int | None = Field(default=None, ge=5, le=600)
+    # Absent or null keeps the stored key; an empty string clears it. The stored
+    # value is never returned by GET, so the UI cannot accidentally echo it back.
+    llm_api_key: str | None = None
     transcribe_model: str | None = Field(default=None, pattern="^(tiny|base|small|medium)$")
     transcribe_language: str | None = None
     yt_transcribe_fallback: bool | None = None
@@ -213,6 +216,7 @@ class LLMProbeIn(BaseModel):
     provider: str | None = Field(default=None, pattern="^(ollama|lmstudio|custom|none)$")
     base_url: str | None = None
     model: str | None = None
+    api_key: str | None = None
 
 
 class AssistantChatIn(BaseModel):
