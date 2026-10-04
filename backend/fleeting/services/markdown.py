@@ -350,9 +350,3 @@ def remove_note(cfg: PathsConfig, note: dict) -> None:
         log.error("vault cleanup failed for note %s: %s", note.get("id"), exc)
 
 
-def export_all(cfg: PathsConfig, notes: list[dict]) -> int:
-    count = 0
-    for note in notes:
-        if sync_note(cfg, note):
-            count += 1
-    return count

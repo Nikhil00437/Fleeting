@@ -13,7 +13,7 @@ import TasksView, {
   updateTaskTextAction,
   createQuickTaskAction,
 } from "../TasksView";
-import type { TaskItem, RepoInfo, TaskStats } from "../../types";
+import type { TaskItem, RepoInfo } from "../../types";
 import { api } from "../../api";
 
 // Mock api methods
@@ -25,7 +25,6 @@ vi.mock("../../api", () => ({
     createTask: vi.fn(),
     deleteTask: vi.fn(),
     taskRepos: vi.fn(),
-    taskStats: vi.fn(),
     note: vi.fn(),
     updateNote: vi.fn(),
     captureText: vi.fn(),
@@ -88,22 +87,11 @@ const mockRepos: RepoInfo[] = [
   { name: "studio-ui", path: "/home/nikhil/studio-ui", task_count: 1 },
 ];
 
-const mockStats: TaskStats = {
-  total: 4,
-  open: 3,
-  done: 1,
-  completion_rate: 0.25,
-  by_priority: { P1: 1, P2: 2, P3: 1 },
-  overdue: 0,
-  due_today: 1,
-};
-
 describe("TasksView Component & Helpers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.tasks).mockResolvedValue(mockTasks);
     vi.mocked(api.taskRepos).mockResolvedValue(mockRepos);
-    vi.mocked(api.taskStats).mockResolvedValue(mockStats);
   });
 
   describe("Helper Functions", () => {

@@ -1,6 +1,7 @@
 import { createPortal, flushSync } from "react-dom";
 import { vt } from "./motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyServerEvent, emptyServerState, type ServerState } from "./components/serverEvents";
 import { api } from "./api";
 import { fmtSecs, prettyAppName } from "./apps";
 import CaptureBar from "./components/CaptureBar";
@@ -60,6 +61,8 @@ export default function App() {
  const [loading, setLoading] = useState(true);
  const [trackedToday, setTrackedToday] = useState(0);
  const [liveApp, setLiveApp] = useState<string | null>(null);
+ // True while the SSE stream is disconnected, so the UI can say so.
+ const [streamDown, setStreamDown] = useState(false);
  const [week, setWeek] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
  const [whisperProgress, setWhisperProgress] = useState<WhisperProgress | null>(null);
 
@@ -146,36 +149,60 @@ export default function App() {
   };
  }, [desktop]);
 
- // Live SSE Event Bus
+ // Live SSE Event Bus. All event handling lives in the reducer so it can be
+ // unit tested; this used to be an if-chain that silently skipped task.* events,
+ // leaving vault-watcher task edits invisible until the view remounted.
+ //
+ // The ref carries the reducer's input so the effect does not re-subscribe on
+ // every state change (which would thrash the EventSource). It is refreshed on
+ // each render, and the reducer's output is pushed straight into the setters
+ // below, so the two stay in step.
+ const serverState = useRef<ServerState>({
+  ...emptyServerState(),
+  notes,
+  liveApp,
+  whisper: whisperProgress as unknown as Record<string, unknown> | null,
+  timelineKey,
+  tasksKey,
+ });
+ serverState.current = {
+  ...serverState.current,
+  notes,
+  liveApp,
+  whisper: whisperProgress as unknown as Record<string, unknown> | null,
+  timelineKey,
+  tasksKey,
+ };
+
  useEffect(() => {
   const es = new EventSource("/api/events");
   es.onmessage = (e) => {
+   let parsed: { type?: string; data?: unknown };
    try {
-    const { type, data } = JSON.parse(e.data);
-    if (type === "note.created" || type === "note.updated") {
-     mergeNote(data as Note);
-     if ((data as Note).status === "done") refreshStats();
-    }
-    if (type === "note.deleted") removeNote(data.id);
-    if (type === "activity.live") {
-     const session = data.session as { app_class?: string } | null;
-     setLiveApp(session?.app_class ?? null);
-    }
-    if (type === "whisper.progress") {
-     setWhisperProgress(data as WhisperProgress);
-    }
-    if (type === "dailylog.updated") {
-     setTimelineKey((k) => k + 1);
-     if (data.kind === "daily-report") {
-      toast(`Daily report for ${data.day} is ready`);
-     }
-    }
+    parsed = JSON.parse(e.data);
    } catch {
-    /* ignore malformed events */
+    return; // malformed frame — ignore
    }
+   const before = serverState.current;
+   const next = applyServerEvent(before, parsed);
+   serverState.current = next;
+   if (next.notes !== before.notes) setNotes(next.notes as Note[]);
+   if (next.liveApp !== before.liveApp) setLiveApp(next.liveApp);
+   if (next.whisper !== before.whisper)
+    setWhisperProgress(next.whisper as WhisperProgress | null);
+   if (next.timelineKey !== before.timelineKey) setTimelineKey(next.timelineKey);
+   if (next.tasksKey !== before.tasksKey) setTasksKey(next.tasksKey);
+   if (next.refreshStats) refreshStats();
+   if (next.toast) toast(next.toast);
   };
+  es.onerror = () => {
+   // EventSource reconnects on its own, but silently — surface it, or a
+   // restarted backend leaves the inbox stale with no indication why.
+   setStreamDown(true);
+  };
+  es.onopen = () => setStreamDown(false);
   return () => es.close();
- }, [mergeNote, removeNote, refreshStats, toast]);
+ }, [refreshStats, toast]);
 
  // Global Desktop Keyboard Shortcuts
  useEffect(() => {
@@ -818,10 +845,6 @@ export default function App() {
         refreshStats();
         setTasksKey((k) => k + 1);
        }}
-       onNoteCreated={(n) => {
-        mergeNote(n);
-        refreshStats();
-       }}
       />
      )}
      {view === "search" && (
@@ -887,6 +910,19 @@ export default function App() {
       <ClockIcon className="h-3 w-3 text-ink-500" />
       {fmtSecs(trackedToday)} today
      </span>
+     {streamDown && (
+      <>
+       <span className="text-ink-700">|</span>
+       <span
+        role="status"
+        className="flex items-center gap-1.5 text-amber-300"
+        title="Live updates are disconnected. The app reconnects automatically; the view may be stale until then."
+       >
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+        live updates offline
+       </span>
+      </>
+     )}
      {stats && stats.queue > 0 && (
       <>
        <span className="text-ink-700">|</span>

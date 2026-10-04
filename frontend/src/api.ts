@@ -5,10 +5,10 @@ import type {
   TagCount,
   TaskItem,
   TaskPriority,
-  TaskStats,
   RepoInfo,
   HealthStatus,
   ConnectionTest,
+  LLMProbeOverrides,
   ActivityDay,
   ActivitySession,
   DailyLog,
@@ -19,6 +19,9 @@ import type {
   AssistantChatIn,
   AssistantChatOut,
   AssistantSuggestionsOut,
+  ProcessApp,
+  ProcessInfo,
+  ProcessDetails,
 } from "./types";
 
 const BASE = "/api";
@@ -47,16 +50,12 @@ export const api = {
   notes: (params: Record<string, string> = {}) =>
     req<Note[]>(`/notes?${new URLSearchParams(params)}`),
 
-  note: (id: string) => req<Note>(`/notes/${id}`),
-
   updateNote: (id: string, changes: Partial<Note>) =>
     req<Note>(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
 
   deleteNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}`, { method: "DELETE" }),
 
   pinNote: (id: string) => req<Note>(`/notes/${id}/pin`, { method: "POST" }),
-
-  archiveNote: (id: string) => req<Note>(`/notes/${id}/archive`, { method: "POST" }),
 
   reprocess: (id: string) => req<Note>(`/notes/${id}/reprocess`, { method: "POST" }),
 
@@ -137,8 +136,6 @@ export const api = {
 
   taskRepos: () => req<RepoInfo[]>("/tasks/repos"),
 
-  taskStats: () => req<TaskStats>("/tasks/stats"),
-
   stats: (days = 7) => req<Stats>(`/stats?days=${days}`),
 
   settings: () => req<Settings>("/settings"),
@@ -148,7 +145,11 @@ export const api = {
   updateSettings: (changes: Record<string, unknown>) =>
     req<Settings>("/settings", { method: "PUT", body: JSON.stringify(changes) }),
 
-  testLLM: () => req<ConnectionTest>("/settings/test-llm", { method: "POST" }),
+  testLLM: (overrides?: LLMProbeOverrides) =>
+    req<ConnectionTest>("/settings/test-llm", {
+      method: "POST",
+      body: overrides ? JSON.stringify(overrides) : undefined,
+    }),
 
   testWhisper: () => req<ConnectionTest>("/settings/test-whisper", { method: "POST" }),
 
@@ -190,4 +191,19 @@ export const api = {
 
   assistantSuggestions: () =>
     req<AssistantSuggestionsOut>("/assistant/suggestions"),
+
+  processApps: () => req<ProcessApp[]>("/processes/apps"),
+
+  processList: (params?: { sort_by?: string; limit?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.sort_by) sp.set("sort_by", params.sort_by);
+    if (params?.limit) sp.set("limit", String(params.limit));
+    const q = sp.toString();
+    return req<ProcessInfo[]>(`/processes/list${q ? `?${q}` : ""}`);
+  },
+
+  processKill: (pid: number, force = false) =>
+    req<{ ok: boolean; pid: number }>(`/processes/${pid}/kill${force ? "?force=true" : ""}`, { method: "POST" }),
+
+  processDetails: (pid: number) => req<ProcessDetails>(`/processes/${pid}/details`),
 };

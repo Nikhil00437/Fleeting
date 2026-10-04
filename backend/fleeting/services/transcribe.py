@@ -373,6 +373,3 @@ class Transcriber:
             raise TranscriptionError(f"ffmpeg failed: {err}")
         return out
 
-
-def create_transcriber(cfg: TranscribeConfig) -> Transcriber:
-    return Transcriber(cfg)

@@ -593,22 +593,6 @@ class Database:
             },
         }
 
-    def open_tasks(self, limit: int = 200, include_done: bool = False) -> list[dict]:
-        """Action items joined with their note (unfinished only by default)."""
-        status = "all" if include_done else "open"
-        tasks = self.list_tasks(status=status, limit=limit)
-        return [
-            {
-                "note_id": t["note_id"],
-                "note_title": t["note_title"],
-                "item_id": t["id"],
-                "text": t["text"],
-                "done": t["done"],
-                "created_at": t["created_at"],
-            }
-            for t in tasks
-        ]
-
     # ---- tasks & action items -------------------------------------------
 
     def _migrate_action_items(self) -> None:

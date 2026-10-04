@@ -9,6 +9,7 @@ import {
   TextIcon,
   TrashIcon,
 } from "./Icons";
+import { noteCardActivationProps } from "./a11y";
 import type { Note } from "../types";
 
 const TYPE_META: Record<
@@ -25,22 +26,22 @@ const TYPE_META: Record<
     icon: <TextIcon className="h-3 w-3" />,
     label: "Note",
     pillCls: "bg-ember-500/12 text-ember-300 ring-1 ring-ember-400/25",
-    glow: "radial-gradient(220px circle at 0% 0%, rgba(216, 120, 76, 0.09), transparent 70%)",
-    accent: "#d8784c",
+    glow: "radial-gradient(220px circle at 0% 0%, rgba(59, 130, 246, 0.08), transparent 70%)",
+    accent: "#3b82f6",
   },
   voice: {
     icon: <MicIcon className="h-3 w-3" />,
     label: "Voice",
     pillCls: "bg-iris-500/15 text-iris-300 ring-1 ring-iris-400/25",
-    glow: "radial-gradient(220px circle at 0% 0%, rgba(116, 135, 92, 0.1), transparent 70%)",
-    accent: "#74875c",
+    glow: "radial-gradient(220px circle at 0% 0%, rgba(139, 92, 246, 0.08), transparent 70%)",
+    accent: "#8b5cf6",
   },
   youtube: {
     icon: <LinkIcon className="h-3 w-3" />,
     label: "YouTube",
     pillCls: "bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-400/25",
-    glow: "radial-gradient(220px circle at 0% 0%, rgba(75, 120, 107, 0.1), transparent 70%)",
-    accent: "#4b786b",
+    glow: "radial-gradient(220px circle at 0% 0%, rgba(6, 182, 212, 0.08), transparent 70%)",
+    accent: "#06b6d4",
   },
 };
 
@@ -103,15 +104,21 @@ export default function NoteCard({
   const openTasks = note.action_items.filter((it) => !it.done);
   const doneTasks = note.action_items.filter((it) => it.done);
 
+  const isNew = Date.now() - new Date(note.created_at).getTime() < 5 * 60 * 1000;
+
   return (
     <article
       onClick={() => onOpen(note.id)}
-      className={`glass card-hover rise group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4 cursor-pointer ${
+      {...noteCardActivationProps(
+        `Open note: ${note.title || note.raw_text.slice(0, 60) || note.id}`,
+        () => onOpen(note.id),
+      )}
+      className={`glass card-hover reveal group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4 cursor-pointer ${
         highlight
           ? "!border-ember-400/50 ring-1 ring-ember-400/25"
           : ""
       }`}
-      style={{ backgroundImage: meta.glow }}
+      style={{ backgroundImage: meta.glow, borderLeftWidth: '3px', borderLeftColor: meta.accent }}
     >
       <div>
         {/* Top Meta Header Row */}
@@ -162,12 +169,15 @@ export default function NoteCard({
           )}
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            <span
-              className="font-mono text-[10.5px] tabular-nums text-ink-400"
-              title={timeOfDay(note.created_at)}
-            >
-              {relTime(note.created_at)}
-            </span>
+            <div className="flex items-center">
+              {isNew && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-ember-500 pulse-dot" title="New" />}
+              <span
+                className="font-mono text-[10.5px] tabular-nums text-ink-400"
+                title={timeOfDay(note.created_at)}
+              >
+                {relTime(note.created_at)}
+              </span>
+            </div>
 
             {note.status === "failed" && onRetry && (
               <button
@@ -252,7 +262,7 @@ export default function NoteCard({
               <img
                 src={ytThumb}
                 alt=""
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className="h-full w-full object-cover transition-transform duration-[3s] ease-out group-hover:scale-[1.15]"
                 onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
               />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20">
@@ -273,40 +283,49 @@ export default function NoteCard({
 
         {/* Inline Action Items Checklist */}
         {note.action_items.length > 0 && (
-          <div className="mt-3 space-y-1.5 rounded-xl border border-white/[0.05] bg-ink-950/45 p-2.5">
-            {note.action_items.slice(0, 2).map((it) => (
-              <div
-                key={it.id}
-                onClick={(e) => {
-                  if (!onToggleTask) return;
-                  e.stopPropagation();
-                  onToggleTask(note, it.id);
-                }}
-                className="flex items-start gap-2 text-xs transition-colors hover:text-ink-100"
-              >
-                <span
-                  className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
-                    it.done
-                      ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
-                      : "border-ink-500 bg-ink-900 hover:border-ember-400"
-                  }`}
+          <div className="mt-3 rounded-xl border border-ink-800/80 bg-ink-900/90 p-2.5 relative overflow-hidden">
+            <div className="space-y-1.5">
+              {note.action_items.slice(0, 2).map((it) => (
+                <div
+                  key={it.id}
+                  onClick={(e) => {
+                    if (!onToggleTask) return;
+                    e.stopPropagation();
+                    onToggleTask(note, it.id);
+                  }}
+                  className="flex items-start gap-2 text-xs transition-colors hover:text-ink-100"
                 >
-                  {it.done && <CheckIcon className="h-2.5 w-2.5" />}
-                </span>
-                <span
-                  className={`line-clamp-1 leading-snug ${
-                    it.done ? "text-ink-400 line-through" : "text-ink-200"
-                  }`}
-                >
-                  {it.text}
-                </span>
-              </div>
-            ))}
-            {note.action_items.length > 2 && (
-              <p className="pl-5 font-mono text-[10px] text-ink-400">
-                +{note.action_items.length - 2} more · {doneTasks.length}/{note.action_items.length} completed
-              </p>
-            )}
+                  <span
+                    className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
+                      it.done
+                        ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                        : "border-ink-500 bg-ink-900 hover:border-ember-400"
+                    }`}
+                  >
+                    {it.done && <CheckIcon className="h-2.5 w-2.5" />}
+                  </span>
+                  <span
+                    className={`line-clamp-1 leading-snug ${
+                      it.done ? "text-ink-400 line-through" : "text-ink-200"
+                    }`}
+                  >
+                    {it.text}
+                  </span>
+                </div>
+              ))}
+              {note.action_items.length > 2 && (
+                <p className="pl-5 font-mono text-[10px] text-ink-400">
+                  +{note.action_items.length - 2} more · {doneTasks.length}/{note.action_items.length} completed
+                </p>
+              )}
+            </div>
+            {/* Micro progress bar */}
+            <div className="absolute bottom-0 left-0 h-[2px] w-full bg-white/[0.02]">
+              <div 
+                className="h-full bg-emerald-500/60 transition-all duration-500" 
+                style={{ width: `${(doneTasks.length / note.action_items.length) * 100}%` }}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -323,7 +342,8 @@ export default function NoteCard({
                 e.stopPropagation();
                 onTagClick(t);
               }}
-              className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10.5px] text-ink-300 transition-colors hover:border-ember-400/40 hover:bg-ember-500/10 hover:text-ember-200"
+              className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10.5px] text-ink-300 transition-all duration-200 hover:scale-105 hover:border-ember-400/40 hover:bg-ember-500/10 hover:text-ember-200"
+              style={{ borderLeftColor: meta.accent, borderLeftWidth: '2px' }}
             >
               #{t}
             </button>

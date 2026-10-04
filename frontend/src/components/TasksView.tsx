@@ -15,17 +15,15 @@ import {
   XIcon,
 } from "./Icons";
 import { Ring, StackBar } from "./charts";
-import type { Note, RepoInfo, TaskItem, TaskPriority, TaskStats } from "../types";
+import type { RepoInfo, TaskItem, TaskPriority } from "../types";
 
 export interface TasksViewProps {
   refreshKey?: number;
   onOpenNote: (id: string) => void;
   onToast: (message: string, kind?: "ok" | "err") => void;
   onTasksChanged: () => void;
-  onNoteCreated?: (note: Note) => void;
   initialTasks?: TaskItem[];
   initialRepos?: RepoInfo[];
-  initialStats?: TaskStats;
   initialStatusFilter?: "open" | "done" | "all";
   initialPriorityFilter?: "all" | "P1" | "P2" | "P3";
   initialDueDateFilter?: "all" | "overdue" | "today" | "week";
@@ -297,10 +295,8 @@ export default function TasksView({
   onOpenNote,
   onToast,
   onTasksChanged,
-  onNoteCreated: _onNoteCreated,
   initialTasks,
   initialRepos,
-  initialStats: _initialStats,
   initialStatusFilter = "open",
   initialPriorityFilter = "all",
   initialDueDateFilter = "all",

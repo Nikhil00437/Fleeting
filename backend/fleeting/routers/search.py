@@ -39,12 +39,6 @@ def tags(request: Request) -> list[dict]:
     return request.app.state.st.db.all_tags()
 
 
-@router.get("/tasks", include_in_schema=False)
-def tasks(request: Request, include_done: bool = False) -> list[dict]:
-    status = "all" if include_done else "open"
-    return request.app.state.st.db.list_tasks(status=status)
-
-
 @router.get("/stats")
 def stats(request: Request, days: int = 7) -> dict:
     st = request.app.state.st
