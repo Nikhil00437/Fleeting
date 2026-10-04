@@ -7,8 +7,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ..config import CONFIG_PATH, expand_path, save_config
-from ..models import SettingsIn
+from ..config import CONFIG_PATH, LLMConfig, expand_path, save_config
+from ..models import LLMProbeIn, SettingsIn
 from ..services import llm
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -121,9 +121,28 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
 
 
 @router.post("/test-llm")
-async def test_llm(request: Request) -> dict:
+async def test_llm(request: Request, body: LLMProbeIn | None = None) -> dict:
+    """Probe the LLM endpoint and return its chat-capable models.
+
+    Accepts optional overrides so the UI can test a URL the user just typed
+    without saving first — otherwise the probe races the settings PUT.
+    """
     st = request.app.state.st
-    return await llm.check_llm(st.cfg.llm)
+    cfg = st.cfg.llm
+    probe = LLMConfig(
+        provider=cfg.provider,
+        base_url=cfg.base_url,
+        model=cfg.model,
+        timeout_secs=cfg.timeout_secs,
+    )
+    if body is not None:
+        if body.provider is not None:
+            probe.provider = body.provider
+        if body.base_url is not None:
+            probe.base_url = body.base_url.strip()
+        if body.model is not None:
+            probe.model = body.model.strip()
+    return await llm.check_llm(probe)
 
 
 @router.post("/test-whisper")

@@ -237,8 +237,15 @@ def _db_path():
 
 
 async def _autodetect_llm_model(cfg: Config) -> None:
-    """On first run, pick the first available model from the local server."""
+    """On first run, pick a chat-capable model from the local server.
+
+    Embedding-only models are skipped: pointing enrichment at one makes every
+    capture silently fall back to heuristics, which is worse than leaving the
+    model unset and showing the user an empty picker.
+    """
     import httpx
+
+    from .services.llm import chat_model_names
 
     if cfg.llm.provider == "none" or cfg.llm.model:
         return
@@ -247,16 +254,21 @@ async def _autodetect_llm_model(cfg: Config) -> None:
         async with httpx.AsyncClient(timeout=4) as client:
             if cfg.llm.provider == "ollama":
                 r = await client.get(f"{base}/api/tags")
-                names = [m.get("name") for m in r.json().get("models", []) if m.get("name")]
+                r.raise_for_status()
+                entries = r.json().get("models", [])
             else:
                 r = await client.get(f"{base}/v1/models")
-                names = [m.get("id") for m in r.json().get("data", []) if m.get("id")]
+                r.raise_for_status()
+                entries = r.json().get("data", [])
+        names = chat_model_names(entries, cfg.llm.provider)
         if names:
             cfg.llm.model = names[0]
             from .config import save_config
 
             save_config(cfg)
             log.info("auto-detected local model: %s", names[0])
+        else:
+            log.info("no chat-capable model at %s — heuristic enrichment will be used", base)
     except Exception:
         log.info("no local LLM reachable at %s — heuristic enrichment will be used", base)
 

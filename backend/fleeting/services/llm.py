@@ -95,6 +95,24 @@ def normalize_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+def chat_model_names(entries: list[dict], provider: str) -> list[str]:
+    """Model names usable for chat, from a provider's /models listing.
+
+    Ollama reports a `capabilities` list per model; embedding-only models must be
+    excluded or the settings UI will happily offer one as the enrichment model
+    and every capture silently falls back to heuristics. Older Ollama builds omit
+    the field, so treat a missing list as chat-capable rather than hiding all.
+    """
+    if provider == "ollama":
+        return [
+            e.get("name")
+            for e in entries
+            if e.get("name")
+            and "completion" in (e.get("capabilities") or ["completion"])
+        ]
+    return [e.get("id") for e in entries if e.get("id")]
+
+
 async def check_llm(cfg: LLMConfig) -> dict:
     """Probe the configured LLM server; returns status info for the UI."""
     base = normalize_base_url(cfg.base_url)
@@ -105,22 +123,30 @@ async def check_llm(cfg: LLMConfig) -> dict:
             if cfg.provider == "ollama":
                 r = await client.get(f"{base}/api/tags")
                 r.raise_for_status()
-                models = [m.get("name") for m in r.json().get("models", [])]
-            else:  # lmstudio / openai-compatible
+                entries = r.json().get("models", [])
+            else:  # lmstudio / custom / openai-compatible
                 r = await client.get(f"{base}/v1/models")
                 r.raise_for_status()
-                models = [m.get("id") for m in r.json().get("data", [])]
+                entries = r.json().get("data", [])
+        models = chat_model_names(entries, cfg.provider)
+        hidden = len(entries) - len(models)
         if not models:
-            return {"ok": False, "detail": f"server reachable but no models installed"}
-        if cfg.model and cfg.model not in models and not any(m and m.startswith(cfg.model) for m in models):
+            return {
+                "ok": False,
+                "detail": "server reachable but no chat models installed",
+                "models": [],
+                "hidden": hidden,
+            }
+        if cfg.model and cfg.model not in models and not any(m.startswith(cfg.model) for m in models):
             return {
                 "ok": False,
                 "detail": f"model '{cfg.model}' not found on server",
                 "models": models,
+                "hidden": hidden,
             }
-        return {"ok": True, "models": models}
+        return {"ok": True, "models": models, "hidden": hidden}
     except Exception as exc:
-        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}", "models": []}
+        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}", "models": [], "hidden": 0}
 
 
 async def request_chat(url: str, payload: dict, timeout_secs: int, *, provider: str = "ollama") -> str:
@@ -152,7 +178,7 @@ async def enrich(text: str, cfg: LLMConfig) -> dict:
     today_iso = datetime.now(timezone.utc).date().isoformat()
     system_prompt = ENRICH_SYSTEM_TEMPLATE.format(today_iso=today_iso)
 
-    if cfg.provider == "lmstudio":
+    if cfg.provider in ("lmstudio", "custom"):
         payload = {
             "model": cfg.model,
             "messages": [

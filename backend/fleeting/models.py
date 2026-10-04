@@ -176,7 +176,7 @@ class SettingsIn(BaseModel):
     port: int | None = Field(default=None, ge=1, le=65535)
     vault_dir: str | None = None
     vault_sync: bool | None = None
-    llm_provider: str | None = Field(default=None, pattern="^(ollama|lmstudio|none)$")
+    llm_provider: str | None = Field(default=None, pattern="^(ollama|lmstudio|custom|none)$")
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_timeout_secs: int | None = Field(default=None, ge=5, le=600)
@@ -205,6 +205,14 @@ class SourceRef(BaseModel):
     type: str
     kind: str = "note"  # 'note' | 'task' | 'log'
     snippet: str = ""
+
+
+class LLMProbeIn(BaseModel):
+    """Optional overrides so the UI can probe values the user has not saved yet."""
+
+    provider: str | None = Field(default=None, pattern="^(ollama|lmstudio|custom|none)$")
+    base_url: str | None = None
+    model: str | None = None
 
 
 class AssistantChatIn(BaseModel):
