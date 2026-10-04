@@ -63,6 +63,9 @@ export default function App() {
  const [liveApp, setLiveApp] = useState<string | null>(null);
  // True while the SSE stream is disconnected, so the UI can say so.
  const [streamDown, setStreamDown] = useState(false);
+ // Latest embedding-migration progress, from the SSE reducer.
+ const [embedding, setEmbedding] = useState<Record<string, unknown> | null>(null);
+ const [backfillBusy, setBackfillBusy] = useState(false);
  const [week, setWeek] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
  const [whisperProgress, setWhisperProgress] = useState<WhisperProgress | null>(null);
 
@@ -164,6 +167,7 @@ export default function App() {
   whisper: whisperProgress as unknown as Record<string, unknown> | null,
   timelineKey,
   tasksKey,
+  embedding: null,
  });
  serverState.current = {
   ...serverState.current,
@@ -172,6 +176,7 @@ export default function App() {
   whisper: whisperProgress as unknown as Record<string, unknown> | null,
   timelineKey,
   tasksKey,
+  embedding,
  };
 
  useEffect(() => {
@@ -192,6 +197,17 @@ export default function App() {
     setWhisperProgress(next.whisper as WhisperProgress | null);
    if (next.timelineKey !== before.timelineKey) setTimelineKey(next.timelineKey);
    if (next.tasksKey !== before.tasksKey) setTasksKey(next.tasksKey);
+   if (next.embedding !== before.embedding) {
+    setEmbedding(next.embedding);
+    // the finished marker means the button should re-enable and health is stale
+    const done = next.embedding?.finished === true;
+    if (done) {
+     setBackfillBusy(false);
+     void refreshStats();
+    } else if (next.embedding?.started === true) {
+     setBackfillBusy(true);
+    }
+   }
    if (next.refreshStats) refreshStats();
    if (next.toast) toast(next.toast);
   };
@@ -866,7 +882,12 @@ export default function App() {
       <ProcessesView onToast={toast} />
      )}
      {view === "settings" && (
-      <SettingsView onToast={toast} whisperProgress={whisperProgress} />
+      <SettingsView
+       onToast={toast}
+       whisperProgress={whisperProgress}
+       embeddingProgress={embedding}
+       backfillBusy={backfillBusy}
+      />
      )}
      {view === "assistant" && (
       <AssistantView

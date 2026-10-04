@@ -15,7 +15,7 @@ import re
 import sqlite3
 import struct
 from collections import Counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import httpx
 
@@ -221,26 +221,41 @@ def backfill_embeddings(
     *,
     provider: str | None = None,
     dimensions: int | None = None,
+    on_progress: "Callable[[int], None] | None" = None,
 ) -> int:
     """Re-embed active notes that are missing an embedding or use a stale model.
 
     Notes embedded by the offline `local-hash-384` fallback cannot be compared
     with vectors from a real model (different dimensionality), so switching the
     LLM on silently empties semantic search until every old note is redone.
-    Pass `provider`/`dimensions` to also migrate rows from a previous model.
+
+    `provider` selects notes stored under a different model. `dimensions` is
+    optional and only tightens the match: the new model's width is not known
+    until something is embedded with it, so callers normally pass `provider`
+    alone and let `embed_note` record whatever it gets.
+
+    `on_progress(count)` fires after each note, for callers that need to report
+    a long migration.
 
     Returns the count of notes (re-)embedded.
     """
     params: dict = {}
-    if provider is not None and dimensions is not None:
-        # Re-embed if there is no row at all, OR the row is from another model.
-        # (An "AND NOT IN" pair of clauses can never both hold for a stale row.)
+    if provider is not None:
+        # Select a note when it has NO embedding, OR its embedding is not the
+        # current model. Two independent NOT IN clauses OR'd together — joining
+        # them with AND would exclude every stale row (both clauses are false
+        # for a row that exists but is outdated).
+        match = "model = :provider"
+        params["provider"] = provider
+        if dimensions is not None:
+            match += " AND dimensions = :dims"
+            params["dims"] = dimensions
         where = (
-            "archived = 0 AND (id NOT IN (SELECT note_id FROM note_embeddings) "
-            "OR id NOT IN (SELECT note_id FROM note_embeddings "
-            "WHERE model = :provider AND dimensions = :dims))"
+            "archived = 0 AND ("
+            "id NOT IN (SELECT note_id FROM note_embeddings) OR "
+            f"id NOT IN (SELECT note_id FROM note_embeddings WHERE {match})"
+            ")"
         )
-        params = {"provider": provider, "dims": dimensions}
     else:
         where = "archived = 0 AND id NOT IN (SELECT note_id FROM note_embeddings)"
     rows = db.execute(f"SELECT * FROM notes WHERE {where}", params).fetchall()
@@ -248,7 +263,16 @@ def backfill_embeddings(
     count = 0
     for r in rows:
         note_dict = dict(r)
-        vec = embed_note(note_dict, db, cfg)
+        try:
+            vec = embed_note(note_dict, db, cfg)
+        except Exception:
+            # One unreachable note must not abandon the rest of the migration.
+            log.warning("backfill: could not embed note %s", note_dict.get("id"), exc_info=True)
+            continue
         if vec is not None:
             count += 1
+        if on_progress is not None:
+            on_progress(count)
+    if on_progress is not None:
+        on_progress(count)
     return count

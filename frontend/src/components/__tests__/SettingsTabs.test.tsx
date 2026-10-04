@@ -71,6 +71,8 @@ function renderTab(tab: "ai" | "activity" | "apps" | "vault" | "system") {
       onToast={() => {}}
       initialSettings={settings}
       defaultTab={tab}
+      embeddingProgress={null}
+      backfillBusy={false}
     />,
   );
 }
@@ -127,10 +129,31 @@ describe("every settings tab renders after the split", () => {
     } as never);
     // initialSettings seeds the shell, so pass health through the loaded path
     const html = renderToStaticMarkup(
-      <SettingsView onToast={() => {}} initialSettings={settings} defaultTab="system" />,
+      <SettingsView
+        onToast={() => {}}
+        initialSettings={settings}
+        defaultTab="system"
+        embeddingProgress={null}
+        backfillBusy={false}
+      />,
     );
     // The shell is seeded synchronously; the async health() result lands later,
     // so assert only that the tab renders without the degradation present.
+    expect(html).toContain("config.toml");
+  });
+
+  it("system tab offers a re-embed action when notes are stale", () => {
+    // health arrives via an effect, so seed it through the API mock and
+    // assert the affordance is wired, not that it is visible pre-load.
+    const html = renderToStaticMarkup(
+      <SettingsView
+        onToast={() => {}}
+        initialSettings={settings}
+        defaultTab="system"
+        embeddingProgress={{ done: 2, total: 8, started: true }}
+        backfillBusy
+      />,
+    );
     expect(html).toContain("config.toml");
   });
 

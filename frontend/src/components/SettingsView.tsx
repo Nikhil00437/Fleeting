@@ -12,6 +12,10 @@ import type { AppRule, HealthStatus, Settings, WhisperProgress, VaultSyncResult 
 
 export interface Props {
   onToast: (message: string, kind?: "ok" | "err") => void;
+  /** Latest `embedding.backfill.progress` payload, fed down from App's SSE. */
+  embeddingProgress?: Record<string, unknown> | null;
+  /** True while a migration is running, so the button can disable itself. */
+  backfillBusy?: boolean;
   whisperProgress?: WhisperProgress | null;
   initialSettings?: Settings | null;
   defaultTab?: SettingsTab;
@@ -46,6 +50,8 @@ export async function forceVaultResyncAction(
 export default function SettingsView({
   onToast,
   whisperProgress,
+  embeddingProgress: embeddingProgressIn = null,
+  backfillBusy = false,
   initialSettings,
   defaultTab = "ai",
   initialResyncResult = null,
@@ -71,6 +77,25 @@ export default function SettingsView({
     .filter((x) => x.trim()).length;
 
   /** Local, optimistic edit; `save` is what persists it. */
+  const embeddingProgress = embeddingProgressIn;
+
+  /** Kick off the embedding migration; progress arrives over SSE. */
+  async function runBackfill() {
+    try {
+      const res = await api.backfillEmbeddings();
+      if (!res.started) {
+        onToast(
+          res.reason === "already running" ? "Already re-embedding" : "Could not start",
+          "err",
+        );
+        return;
+      }
+      onToast("Re-embedding notes for semantic search\u2026");
+    } catch (e) {
+      onToast(errorMessage(e), "err");
+    }
+  }
+
   // The Whisper summary card on this shell mirrors AiTab's derived state.
   const wp: WhisperProgress | null = whisperProgress ?? s?.transcribe_progress ?? null;
   const cachedWhisperSet = new Set<string>([
@@ -416,7 +441,15 @@ export default function SettingsView({
           )}
 
           {tab === "system" && (
-            <SystemTab health={health} s={s} onToast={onToast} loadAll={loadAll} />
+            <SystemTab
+              health={health}
+              s={s}
+              onToast={onToast}
+              loadAll={loadAll}
+              embedding={embeddingProgress}
+              onBackfill={() => void runBackfill()}
+              backfillBusy={backfillBusy}
+            />
           )}
         </div>
       </div>

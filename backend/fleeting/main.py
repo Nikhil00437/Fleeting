@@ -40,6 +40,55 @@ def _allowed_origins(cfg: Config) -> set[str]:
     return {f"http://{h}:{cfg.server.port}" for h in hosts} | set(_VITE_DEV_ORIGINS)
 
 
+def _maybe_backfill_embeddings(db: Database, cfg: Config, bus, st=None) -> "asyncio.Task | None":
+    """Schedule the embedding migration if the corpus is on an older model.
+
+    Turning the LLM on changes the embedding dimensionality, and vectors of
+    different lengths cannot be compared — so without this, every note captured
+    before the switch is invisible to semantic search, silently. `backfill_embeddings`
+    existed but nothing called it, which is why that went unnoticed.
+
+    Returns the task, or None when there is nothing to migrate (no LLM, or the
+    corpus is already current — the common case, so boot stays cheap).
+    """
+    from .routers.settings import backfill_embeddings_stream
+    from .routers.system import _embedding_status
+
+    if cfg.llm.provider == "none":
+        return None
+
+    class _St:
+        pass
+
+    probe = _St()
+    probe.cfg = cfg
+    probe.db = db
+    try:
+        model, stale = _embedding_status(probe)
+    except Exception:
+        log.warning("could not check embedding freshness", exc_info=True)
+        return None
+    if stale == 0:
+        return None
+
+    log.info("%d note(s) on an older embedding model than %s — migrating", stale, model)
+
+    async def _run() -> None:
+        try:
+            await asyncio.to_thread(backfill_embeddings_stream, db, cfg, bus)
+        except Exception:
+            log.exception("embedding backfill failed")
+        finally:
+            if st is not None:
+                st.backfill_task = None
+
+    try:
+        return asyncio.get_running_loop().create_task(_run())
+    except RuntimeError:
+        # No running loop (e.g. called from a sync context in tests).
+        return None
+
+
 def _setup_logging() -> None:
     ensure_dirs()
     handlers: list[logging.Handler] = [logging.StreamHandler()]
@@ -180,6 +229,11 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
                 log.info("pruned %d activity rows older than %s", pruned, cutoff)
         except Exception:
             log.exception("activity prune failed")
+
+        # Migrate the embedding corpus if the model changed since last run.
+        backfill_task = _maybe_backfill_embeddings(db, cfg, bus, st)
+        if backfill_task is not None:
+            st.backfill_task = backfill_task
 
         log.info("fleeting %s ready on http://%s:%d", __version__, cfg.server.host, cfg.server.port)
         yield

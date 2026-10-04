@@ -6,6 +6,7 @@ import {
   TerminalIcon,
 } from "../Icons";
 import { type ToastFn } from "./shared";
+import { backfillProgress, describeBackfill } from "../backfill";
 import type { HealthStatus, Settings } from "../../types";
 
 /** Diagnostics tab: /api/health telemetry and where the config lives. */
@@ -14,13 +15,22 @@ export default function SystemTab({
   s,
   onToast,
   loadAll,
+  embedding,
+  onBackfill,
+  backfillBusy,
 }: {
   health: HealthStatus | null;
   s: Settings;
   onToast: ToastFn;
   /** Re-probes /api/health, /api/settings and /api/apps. */
   loadAll: () => void;
+  /** Latest embedding-migration payload from SSE. */
+  embedding: Record<string, unknown> | null;
+  onBackfill: () => void;
+  backfillBusy: boolean;
 }) {
+  const bf = embedding ? backfillProgress(embedding) : null;
+  const bfMsg = describeBackfill(bf);
   const fmtUptime = (secs: number) => {
     if (!secs || secs < 0) return "—";
     const d = Math.floor(secs / 86400);
@@ -157,6 +167,40 @@ export default function SystemTab({
                       </li>
                     ))}
                   </ul>
+                  {health.stale_embeddings ? (
+                    <div className="mt-3 border-t border-amber-500/20 pt-3">
+                      <button
+                        onClick={onBackfill}
+                        disabled={backfillBusy}
+                        className="rounded-lg border border-amber-400/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 disabled:opacity-50"
+                      >
+                        {backfillBusy ? "Re-embedding\u2026" : "Re-embed for semantic search"}
+                      </button>
+                      {bfMsg ? (
+                        <p role="status" className="mt-2 font-mono text-[11px] text-ink-300">
+                          {bfMsg}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-ink-400">
+                          Older notes stay out of semantic search until this runs.
+                        </p>
+                      )}
+                      {bf && bf.percent !== null ? (
+                        <div
+                          role="progressbar"
+                          aria-valuenow={bf.percent}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink-800"
+                        >
+                          <div
+                            className="h-full rounded-full bg-amber-400 transition-[width]"
+                            style={{ width: `${bf.percent}%` }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 

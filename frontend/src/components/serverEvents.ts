@@ -21,6 +21,8 @@ export interface ServerState {
   timelineKey: number;
   tasksKey: number;
   notes: ServerNote[];
+  /** Raw latest embedding-migration payload, if any. */
+  embedding: Record<string, unknown> | null;
 }
 
 /** What the caller should do after applying an event. */
@@ -35,7 +37,14 @@ export interface RawEvent {
 }
 
 export function emptyServerState(): ServerState {
-  return { liveApp: null, whisper: null, timelineKey: 0, tasksKey: 0, notes: [] };
+  return {
+    liveApp: null,
+    whisper: null,
+    timelineKey: 0,
+    tasksKey: 0,
+    notes: [],
+    embedding: null,
+  };
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -105,6 +114,10 @@ export function applyServerEvent(
     }
     case "whisper.progress":
       return { ...state, whisper: data, ...noEffects };
+
+    case "embedding.backfill.progress":
+      // Carried raw; backfill.ts turns it into display state.
+      return { ...state, embedding: data, ...noEffects };
 
     case "dailylog.updated":
       return {

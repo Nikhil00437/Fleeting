@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from fastapi import APIRouter, HTTPException, Request
 from ..config import CONFIG_PATH, LLMConfig, expand_path, save_config
 from ..models import LLMProbeIn, SettingsIn
 from ..services import llm
+
+log = logging.getLogger("fleeting.settings")
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -191,3 +194,72 @@ def resync_vault(request: Request) -> dict:
     return resync_all(vault_dir, st.db, st.bus, st.cfg)
 
 
+
+def backfill_embeddings_stream(db, cfg, bus) -> dict:
+    """Re-embed every note left on an older model, reporting progress.
+
+    Switching the LLM on changes the embedding dimensionality, and vectors of
+    different lengths cannot be compared — so every note captured before the
+    switch becomes invisible to semantic search until it is redone. This is the
+    migration that makes turning the model on safe.
+
+    Synchronous; the caller runs it in a thread and owns cancellation.
+    Progress is published per note because a large corpus is one HTTP call per
+    note and the UI has to see it moving.
+    """
+    from ..routers.system import _embedding_status
+    from ..services.embeddings import backfill_embeddings
+
+    if cfg.llm.provider == "none":
+        return {"migrated": 0, "skipped": "no llm configured"}
+
+    class _St:
+        pass
+
+    st = _St()
+    st.cfg = cfg
+    st.db = db
+    model, stale_before = _embedding_status(st)
+    if stale_before == 0:
+        return {"migrated": 0, "model": model, "was_stale": 0}
+
+    bus.publish(
+        "embedding.backfill.progress",
+        {"done": 0, "total": stale_before, "model": model, "started": True},
+    )
+
+    def on_progress(done: int) -> None:
+        bus.publish(
+            "embedding.backfill.progress",
+            {"done": done, "total": stale_before, "model": model},
+        )
+
+    migrated = backfill_embeddings(db, cfg, provider=model, on_progress=on_progress)
+    bus.publish(
+        "embedding.backfill.progress",
+        {"done": migrated, "total": stale_before, "model": model, "finished": True},
+    )
+    log.info("embedding backfill: migrated %d/%d notes to %s", migrated, stale_before, model)
+    return {"migrated": migrated, "model": model, "was_stale": stale_before}
+
+
+@router.post("/embeddings/backfill")
+async def start_embeddings_backfill(request: Request) -> dict:
+    """Kick off the embedding migration in the background."""
+    import asyncio
+
+    st = request.app.state.st
+    existing = getattr(st, "backfill_task", None)
+    if existing is not None and not existing.done():
+        return {"started": False, "reason": "already running"}
+
+    async def _run() -> None:
+        try:
+            await asyncio.to_thread(backfill_embeddings_stream, st.db, st.cfg, st.bus)
+        except Exception:
+            log.exception("embedding backfill failed")
+        finally:
+            st.backfill_task = None
+
+    st.backfill_task = asyncio.create_task(_run())
+    return {"started": True}

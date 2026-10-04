@@ -25,6 +25,8 @@ class AppState:
     digest_lock: asyncio.Lock | None = None
     # Bearer token for mutating /api requests; None/"" disables the check.
     api_token: str | None = None
+    # In-flight embedding migration, if one is running.
+    backfill_task: object = None
 
     def cfg_audio_dir(self):
         from .config import AUDIO_DIR, ensure_dirs

@@ -7,6 +7,7 @@ const base = (): ServerState => ({
   timelineKey: 0,
   tasksKey: 0,
   notes: [],
+  embedding: null,
 });
 
 describe("note events", () => {
@@ -74,6 +75,37 @@ describe("task events — the bug this fixes", () => {
   });
 });
 
+describe("embedding backfill events", () => {
+  it("carries the latest progress payload", () => {
+    const s = applyServerEvent(base(), {
+      type: "embedding.backfill.progress",
+      data: { done: 3, total: 10, started: true },
+    });
+    expect(s.embedding).toEqual({ done: 3, total: 10, started: true });
+  });
+
+  it("keeps the newest payload", () => {
+    let s = applyServerEvent(base(), {
+      type: "embedding.backfill.progress",
+      data: { done: 1, total: 10 },
+    });
+    s = applyServerEvent(s, {
+      type: "embedding.backfill.progress",
+      data: { done: 9, total: 10, finished: true },
+    });
+    expect(s.embedding).toMatchObject({ done: 9, finished: true });
+  });
+
+  it("does not bump unrelated keys", () => {
+    const s = applyServerEvent(base(), {
+      type: "embedding.backfill.progress",
+      data: { done: 1, total: 2 },
+    });
+    expect(s.tasksKey).toBe(0);
+    expect(s.timelineKey).toBe(0);
+  });
+});
+
 describe("other event types", () => {
   it("tracks the live activity app", () => {
     const s = applyServerEvent(base(), {
@@ -129,6 +161,7 @@ describe("other event types", () => {
     expect(after.timelineKey).toBe(before.timelineKey);
     expect(after.liveApp).toBe(before.liveApp);
     expect(after.whisper).toBe(before.whisper);
+    expect(after.embedding).toBe(before.embedding);
     expect(after.refreshStats).toBe(false);
     expect(after.toast).toBeNull();
   });
@@ -156,6 +189,7 @@ describe("emptyServerState", () => {
       timelineKey: 0,
       tasksKey: 0,
       notes: [],
+      embedding: null,
     });
   });
 });

@@ -47,6 +47,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => req<HealthStatus>("/health"),
 
+  /** Kick off the embedding migration; returns immediately. */
+  backfillEmbeddings: () =>
+    req<{ started: boolean; reason?: string }>("/settings/embeddings/backfill", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
   notes: (params: Record<string, string> = {}) =>
     req<Note[]>(`/notes?${new URLSearchParams(params)}`),
 
