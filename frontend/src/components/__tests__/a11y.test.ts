@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isActivationKey, noteCardActivationProps } from "../a11y";
+import { activationProps, isActivationKey } from "../a11y";
 
 describe("activation keys", () => {
   it("accepts Enter and Space, the two keys that mean 'activate' a button", () => {
@@ -24,14 +24,14 @@ describe("activation keys", () => {
 
 describe("clickable container accessibility props", () => {
   it("exposes the element as a keyboard-reachable button", () => {
-    const props = noteCardActivationProps("open the note");
+    const props = activationProps("open the note");
     expect(props.role).toBe("button");
     expect(props.tabIndex).toBe(0);
     expect(props["aria-label"]).toBe("open the note");
   });
 
   it("does not swallow Tab so focus can leave the card", () => {
-    const props = noteCardActivationProps("x");
+    const props = activationProps("x");
     expect("onKeyDown" in props).toBe(true);
   });
 });

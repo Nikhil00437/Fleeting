@@ -63,7 +63,7 @@ describe("TimelineView session ribbon", () => {
   // rendering the whole dashboard.
   it("uses the same activation helper as the note cards", async () => {
     const mod = await import("../a11y");
-    const props = mod.noteCardActivationProps("session 10:00 zen");
+    const props = mod.activationProps("session 10:00 zen");
     expect(props.role).toBe("button");
     expect(props.tabIndex).toBe(0);
   });

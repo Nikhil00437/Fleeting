@@ -9,7 +9,7 @@ import {
   TextIcon,
   TrashIcon,
 } from "./Icons";
-import { noteCardActivationProps } from "./a11y";
+import { activationProps } from "./a11y";
 import type { Note } from "../types";
 
 const TYPE_META: Record<
@@ -109,7 +109,7 @@ export default function NoteCard({
   return (
     <article
       onClick={() => onOpen(note.id)}
-      {...noteCardActivationProps(
+      {...activationProps(
         `Open note: ${note.title || note.raw_text.slice(0, 60) || note.id}`,
         () => onOpen(note.id),
       )}
