@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { appColor } from "../apps";
 import NoteCard from "./NoteCard";
+import { runNoteAction } from "./actionRunner";
 import { LinkIcon, MicIcon, SearchIcon, SparkIcon, TextIcon, XIcon } from "./Icons";
 import type { Note, SearchMode, TagCount } from "../types";
 
@@ -13,6 +14,7 @@ interface Props {
   onPin: (id: string) => void;
   onNoteUpdated?: (note: Note) => void;
   onNoteDeleted?: (id: string) => void;
+  onToast?: (message: string, kind?: "ok" | "err") => void;
 }
 
 function isEmptyFailedVoice(n: Note): boolean {
@@ -32,7 +34,11 @@ export default function SearchView({
   onPin,
   onNoteUpdated,
   onNoteDeleted,
+  onToast,
 }: Props) {
+  // These three were passed to NoteCard as bare async handlers with no catch,
+  // so any failure became an unhandled rejection with nothing on screen.
+  const toast = onToast ?? ((message: string) => void message);
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("hybrid");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -287,21 +293,38 @@ export default function SearchView({
                   onOpen={onOpen}
                   onPin={onPin}
                   onTagClick={(t) => setQuery(t)}
-                  onToggleTask={async (note, itemId) => {
-                    const items = note.action_items.map((it) =>
-                      it.id === itemId ? { ...it, done: !it.done } : it,
-                    );
-                    const updated = await api.updateNote(note.id, { action_items: items } as never);
-                    onNoteUpdated?.(updated);
-                  }}
-                  onRetry={async (id) => {
-                    const updated = await api.reprocess(id);
-                    onNoteUpdated?.(updated);
-                  }}
-                  onDelete={async (id) => {
-                    await api.deleteNote(id);
-                    onNoteDeleted?.(id);
-                  }}
+                  onToggleTask={(note, itemId) =>
+                    runNoteAction({
+                      api,
+                      toast,
+                      action: () =>
+                        api.updateNote(note.id, {
+                          action_items: note.action_items.map((it) =>
+                            it.id === itemId ? { ...it, done: !it.done } : it,
+                          ),
+                        } as never),
+                      success: "Task updated",
+                      onDone: (updated) => onNoteUpdated?.(updated),
+                    })
+                  }
+                  onRetry={(id) =>
+                    runNoteAction({
+                      api,
+                      toast,
+                      action: () => api.reprocess(id),
+                      success: "Reprocessing started",
+                      onDone: (updated) => onNoteUpdated?.(updated),
+                    })
+                  }
+                  onDelete={(id) =>
+                    runNoteAction({
+                      api,
+                      toast,
+                      action: () => api.deleteNote(id),
+                      success: "Note deleted",
+                      onDone: () => onNoteDeleted?.(id),
+                    })
+                  }
                 />
               ))}
             </div>

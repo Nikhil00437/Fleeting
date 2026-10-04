@@ -17,6 +17,8 @@ import {
   XIcon,
 } from "./Icons";
 import { StatusBadge } from "./NoteCard";
+import { runNoteAction } from "./actionRunner";
+import { errorMessage } from "./settingsState";
 import type { Note } from "../types";
 
 interface Props {
@@ -81,8 +83,35 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
     try {
       onUpdate(await api.updateNote(note.id, changes));
     } catch (e) {
-      onToast(e instanceof Error ? e.message : String(e), "err");
+      onToast(errorMessage(e), "err");
     }
+  }
+
+  // These two previously did `await api.<call>()` in an onClick with no catch:
+  // a failed request was invisible, and on a failed delete onClose() never ran
+  // so the drawer just sat there.
+  async function reprocess() {
+    await runNoteAction({
+      api,
+      toast: onToast,
+      action: () => api.reprocess(note.id),
+      success: "Reprocessing started",
+      onDone: (updated) => onUpdate(updated),
+    });
+  }
+
+  async function remove() {
+    setConfirmDelete(false);
+    await runNoteAction({
+      api,
+      toast: onToast,
+      action: () => api.deleteNote(note.id),
+      success: "Note deleted",
+      onDone: () => {
+        onDelete?.(note.id);
+        onClose();
+      },
+    });
   }
 
   async function toggleItem(itemId: string) {
@@ -124,8 +153,14 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
   const typeInfo = TYPE_LABEL[note.type] ?? TYPE_LABEL.text;
   const mdPreview = toMarkdown(note);
 
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+
   return (
-    <aside className="flex h-full w-[410px] shrink-0 flex-col border-l border-white/[0.07] bg-ink-900/95 shadow-2xl xl:w-[460px]">
+    <aside className="note-page fixed bottom-6 left-0 right-0 top-14 z-40 flex flex-col bg-ink-950">
       {/* Docked Inspector Top Bar */}
       <div className="app-toolbar flex h-11 shrink-0 items-center gap-2 px-3.5">
         <span
@@ -225,17 +260,13 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
             <span className="min-w-0 flex-1">{note.error}</span>
             <div className="flex shrink-0 items-center gap-1.5">
               <button
-                onClick={async () => onUpdate(await api.reprocess(note.id))}
+                onClick={() => void reprocess()}
                 className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/20"
               >
                 <RefreshIcon className="h-3 w-3" /> Retry
               </button>
               <button
-                onClick={async () => {
-                  await api.deleteNote(note.id);
-                  onDelete?.(note.id);
-                  onClose();
-                }}
+                onClick={() => void remove()}
                 className="inline-flex items-center gap-1 rounded-lg border border-red-400/30 bg-red-500/20 px-2.5 py-1 text-[11px] font-semibold text-red-200 hover:bg-red-500/30"
               >
                 <TrashIcon className="h-3 w-3" /> Delete
@@ -442,7 +473,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
       {/* Docked Inspector Footer Actions */}
       <div className="flex h-10 shrink-0 items-center gap-1 border-t border-white/[0.07] bg-ink-950/80 px-3">
         <button
-          onClick={async () => onUpdate(await api.reprocess(note.id))}
+          onClick={() => void reprocess()}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
           title="Re-run transcription + enrichment"
         >
@@ -454,7 +485,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
               const r = await api.exportNote(note.id);
               onToast(`exported → ${r.path.replace(/^\/home\/[^/]+/, "~")}`);
             } catch (e) {
-              onToast(e instanceof Error ? e.message : String(e), "err");
+              onToast(errorMessage(e), "err");
             }
           }}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
@@ -463,9 +494,11 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
           <ExportIcon className="h-3 w-3" /> Export
         </button>
         <button
-          onClick={async () => {
-            await navigator.clipboard.writeText(toMarkdown(note));
-            onToast("markdown copied");
+          onClick={() => {
+            navigator.clipboard
+              .writeText(toMarkdown(note))
+              .then(() => onToast("markdown copied"))
+              .catch((e: unknown) => onToast(errorMessage(e), "err"));
           }}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
         >
@@ -476,11 +509,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
             <span className="flex items-center gap-1.5 text-[11px]">
               <span className="text-ink-400">Delete?</span>
               <button
-                onClick={async () => {
-                  await api.deleteNote(note.id);
-                  onDelete?.(note.id);
-                  onClose();
-                }}
+                onClick={() => void remove()}
                 className="rounded-md bg-red-500/20 px-2 py-0.5 font-semibold text-red-300 hover:bg-red-500/30"
               >
                 Yes

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { dayGroup } from "../time";
 import { AreaTrend, Bars, Ring, StackBar } from "./charts";
 import NoteCard from "./NoteCard";
+import { runNoteAction } from "./actionRunner";
 import {
   ActivityIcon,
   FilterIcon,
@@ -27,6 +28,7 @@ interface Props {
   onQuickStart: () => void;
   onNoteUpdated?: (note: Note) => void;
   onNoteDeleted?: (id: string) => void;
+  onToast?: (message: string, kind?: "ok" | "err") => void;
 }
 
 function dayLabel(d: string, total: number) {
@@ -43,6 +45,7 @@ export default function Inbox({
   onQuickStart,
   onNoteUpdated,
   onNoteDeleted,
+  onToast,
 }: Props) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [rangeDays, setRangeDays] = useState<7 | 14 | 30>(7);
@@ -54,52 +57,68 @@ export default function Inbox({
   const [showMetrics, setShowMetrics] = useState(true);
   const [showFailed, setShowFailed] = useState(false);
 
+  // Every mutation below used to swallow its error, so a failed delete left the
+  // note on screen with no explanation. Toast the outcome instead.
+  const toast = onToast ?? ((message: string) => void message);
+  const refreshStats = useCallback(
+    () => api.stats(rangeDays).then(setStats).catch(() => {}),
+    [rangeDays],
+  );
+
   useEffect(() => {
-    api.stats(rangeDays).then(setStats).catch(() => {});
-  }, [notes.length, rangeDays]);
+    refreshStats();
+  }, [refreshStats, notes.length]);
 
   async function handleToggleTask(note: Note, itemId: string) {
     const items = note.action_items.map((it) =>
       it.id === itemId ? { ...it, done: !it.done } : it,
     );
-    try {
-      const updated = await api.updateNote(note.id, { action_items: items } as Partial<Note>);
-      onNoteUpdated?.(updated);
-      api.stats(rangeDays).then(setStats).catch(() => {});
-    } catch {
-      /* ignore */
-    }
+    await runNoteAction({
+      api,
+      toast,
+      action: () => api.updateNote(note.id, { action_items: items } as Partial<Note>),
+      success: "Task updated",
+      onDone: (updated) => {
+        onNoteUpdated?.(updated);
+        void refreshStats();
+      },
+    });
   }
 
   async function handleRetry(id: string) {
-    try {
-      const updated = await api.reprocess(id);
-      onNoteUpdated?.(updated);
-    } catch {
-      /* ignore */
-    }
+    await runNoteAction({
+      api,
+      toast,
+      action: () => api.reprocess(id),
+      success: "Reprocessing started",
+      onDone: (updated) => onNoteUpdated?.(updated),
+    });
   }
 
   async function handleDelete(id: string) {
-    try {
-      await api.deleteNote(id);
-      onNoteDeleted?.(id);
-      api.stats(rangeDays).then(setStats).catch(() => {});
-    } catch {
-      /* ignore */
-    }
+    await runNoteAction({
+      api,
+      toast,
+      action: () => api.deleteNote(id),
+      success: "Note deleted",
+      onDone: () => {
+        onNoteDeleted?.(id);
+        void refreshStats();
+      },
+    });
   }
 
   async function handleClearFailed(failedNotes: Note[]) {
     for (const n of failedNotes) {
-      try {
-        await api.deleteNote(n.id);
-        onNoteDeleted?.(n.id);
-      } catch {
-        /* ignore */
-      }
+      await runNoteAction({
+        api,
+        toast,
+        action: () => api.deleteNote(n.id),
+        success: `Cleared ${failedNotes.length} failed capture${failedNotes.length === 1 ? "" : "s"}`,
+        onDone: () => onNoteDeleted?.(n.id),
+      });
     }
-    api.stats(rangeDays).then(setStats).catch(() => {});
+    void refreshStats();
   }
 
   const activeNotes = useMemo(() => notes.filter((n) => !n.archived), [notes]);
@@ -311,174 +330,201 @@ export default function Inbox({
 
       {/* Scrollable Workspace Body */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-5">
+        <div className="px-1 pb-1 pt-4">
+          <p className="micro-label mb-3">Your vault{stats ? ` · ${stats.total} captures` : ""}</p>
+          <h1 className="hero-title max-w-3xl text-[clamp(2.4rem,5vw,4rem)]">
+            Passing thoughts, <em>kept</em> and ready when you are.
+          </h1>
+        </div>
         {/* Elevated 3-Card Telemetry Deck */}
-        {showMetrics && stats && (
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
-            {/* Card 1: Capture Mix & Totals (4 cols) */}
-            <div className="glass-studio flex flex-col justify-between rounded-2xl p-4 xl:col-span-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="micro-label">Today</p>
-                  <p className="stat-number mt-0.5 text-2xl leading-none">{stats.today}</p>
-                </div>
-                <div className="border-l border-white/[0.07] pl-4">
-                  <p className="micro-label">7-Day</p>
-                  <p className="stat-number-iris mt-0.5 text-2xl leading-none">{stats.week}</p>
-                </div>
-                <div className="border-l border-white/[0.07] pl-4">
-                  <p className="micro-label">Vault Total</p>
-                  <p className="stat-number-emerald mt-0.5 text-2xl leading-none">
-                    {healthyNotes.length}
-                  </p>
-                </div>
-              </div>
+        {showMetrics && (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 min-h-[220px]">
+            {!stats ? (
+              <>
+                <div className="skeleton-card rounded-2xl xl:col-span-4"></div>
+                <div className="skeleton-card rounded-2xl xl:col-span-5"></div>
+                <div className="skeleton-card rounded-2xl xl:col-span-3"></div>
+              </>
+            ) : (
+              <>
+                {/* Card 1: Capture Mix & Totals (4 cols) */}
+                <div className="glass-studio stagger-1 flex flex-col justify-between rounded-2xl p-4 xl:col-span-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="micro-label">Today</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="stat-number text-2xl leading-none counter-up-anim">{stats.today}</p>
+                        {stats.today > 0 && (
+                          <span className={`flex items-center text-[10px] font-medium ${stats.today >= stats.week / 7 ? 'text-emerald-500' : 'text-ember-500'}`}>
+                            {stats.today >= stats.week / 7 ? (
+                              <svg className="h-3 w-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+                            ) : (
+                              <svg className="h-3 w-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="border-l border-white/[0.07] pl-4">
+                      <p className="micro-label">7-Day</p>
+                      <p className="stat-number-iris mt-0.5 text-2xl leading-none counter-up-anim">{stats.week}</p>
+                    </div>
+                    <div className="border-l border-white/[0.07] pl-4">
+                      <p className="micro-label">Vault Total</p>
+                      <p className="stat-number-emerald mt-0.5 text-2xl leading-none counter-up-anim">
+                        {healthyNotes.length}
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="mt-4">
-                <StackBar
-                  height={7}
-                  segments={[
-                    {
-                      key: "text",
-                      value: typeCounts.text || 0,
-                      color: "#bd5d38",
-                      title: `Notes: ${typeCounts.text}`,
-                    },
-                    {
-                      key: "voice",
-                      value: typeCounts.voice || 0,
-                      color: "#74875c",
-                      title: `Voice: ${typeCounts.voice}`,
-                    },
-                    {
-                      key: "youtube",
-                      value: typeCounts.youtube || 0,
-                      color: "#4b786b",
-                      title: `YouTube: ${typeCounts.youtube}`,
-                    },
-                  ]}
-                  selectedKey={typeFilter === "all" ? null : typeFilter}
-                  onSelect={(k) => setTypeFilter((cur) => (cur === k ? "all" : k))}
-                />
-                <div className="mt-2 flex items-center justify-between text-[11px] text-ink-300">
-                  <button
-                    onClick={() => setTypeFilter((c) => (c === "text" ? "all" : "text"))}
-                    className="flex items-center gap-1.5 hover:text-ink-100"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-ember-400" />
-                    <span>Notes</span>
-                    <span className="font-mono text-ink-400">{typeCounts.text}</span>
-                  </button>
-                  <button
-                    onClick={() => setTypeFilter((c) => (c === "voice" ? "all" : "voice"))}
-                    className="flex items-center gap-1.5 hover:text-ink-100"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-iris-400" />
-                    <span>Voice</span>
-                    <span className="font-mono text-ink-400">{typeCounts.voice}</span>
-                  </button>
-                  <button
-                    onClick={() => setTypeFilter((c) => (c === "youtube" ? "all" : "youtube"))}
-                    className="flex items-center gap-1.5 hover:text-ink-100"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-cyan-400" />
-                    <span>YouTube</span>
-                    <span className="font-mono text-ink-400">{typeCounts.youtube}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 2: Capture Velocity Chart (5 cols) */}
-            <div className="glass-studio flex flex-col justify-between rounded-2xl p-4 xl:col-span-5">
-              <div className="mb-2 flex items-center justify-between">
-                <div>
-                  <p className="micro-label">Capture Velocity ({rangeDays}d)</p>
-                  <p className="mt-0.5 font-mono text-[11px] text-ink-400">
-                    <span className="font-semibold text-ink-200">
-                      {chartData.reduce((s, d) => s + d.value, 0)} captures
-                    </span>
-                    {" · "}
-                    {(
-                      chartData.reduce((s, d) => s + d.value, 0) / Math.max(chartData.length, 1)
-                    ).toFixed(1)}
-                    /day avg
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="flex rounded-md border border-white/[0.06] bg-ink-950/90 p-0.5 text-[9.5px]">
-                    {([7, 14, 30] as const).map((r) => (
+                  <div className="mt-4">
+                    <StackBar
+                      height={7}
+                      segments={[
+                        {
+                          key: "text",
+                          value: typeCounts.text || 0,
+                          color: "#bd5d38",
+                          title: `Notes: ${typeCounts.text}`,
+                        },
+                        {
+                          key: "voice",
+                          value: typeCounts.voice || 0,
+                          color: "#74875c",
+                          title: `Voice: ${typeCounts.voice}`,
+                        },
+                        {
+                          key: "youtube",
+                          value: typeCounts.youtube || 0,
+                          color: "#4b786b",
+                          title: `YouTube: ${typeCounts.youtube}`,
+                        },
+                      ]}
+                      selectedKey={typeFilter === "all" ? null : typeFilter}
+                      onSelect={(k) => setTypeFilter((cur) => (cur === k ? "all" : k))}
+                    />
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-ink-300">
                       <button
-                        key={r}
-                        onClick={() => setRangeDays(r)}
-                        className={`rounded px-1.5 py-0.5 font-mono transition-colors ${
-                          rangeDays === r
-                            ? "bg-iris-500/25 font-semibold text-iris-300"
-                            : "text-ink-400 hover:text-ink-200"
-                        }`}
+                        onClick={() => setTypeFilter((c) => (c === "text" ? "all" : "text"))}
+                        className="relative flex items-center gap-1.5 hover:text-ink-100 after:absolute after:-bottom-1 after:left-0 after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform hover:after:origin-left hover:after:scale-x-100"
                       >
-                        {r}D
+                        <span className="h-2 w-2 rounded-full bg-ember-400" />
+                        <span>Notes</span>
+                        <span className="font-mono text-ink-400">{typeCounts.text}</span>
                       </button>
-                    ))}
-                  </div>
-                  <div className="flex rounded-md border border-white/[0.06] bg-ink-950/90 p-0.5 text-[9.5px]">
-                    <button
-                      onClick={() => setChartMode("bars")}
-                      className={`rounded px-1.5 py-0.5 transition-colors ${
-                        chartMode === "bars"
-                          ? "bg-ember-500/20 font-medium text-ember-300"
-                          : "text-ink-400 hover:text-ink-200"
-                      }`}
-                    >
-                      Bars
-                    </button>
-                    <button
-                      onClick={() => setChartMode("area")}
-                      className={`rounded px-1.5 py-0.5 transition-colors ${
-                        chartMode === "area"
-                          ? "bg-ember-500/20 font-medium text-ember-300"
-                          : "text-ink-400 hover:text-ink-200"
-                      }`}
-                    >
-                      Curve
-                    </button>
+                      <button
+                        onClick={() => setTypeFilter((c) => (c === "voice" ? "all" : "voice"))}
+                        className="relative flex items-center gap-1.5 hover:text-ink-100 after:absolute after:-bottom-1 after:left-0 after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform hover:after:origin-left hover:after:scale-x-100"
+                      >
+                        <span className="h-2 w-2 rounded-full bg-iris-400" />
+                        <span>Voice</span>
+                        <span className="font-mono text-ink-400">{typeCounts.voice}</span>
+                      </button>
+                      <button
+                        onClick={() => setTypeFilter((c) => (c === "youtube" ? "all" : "youtube"))}
+                        className="relative flex items-center gap-1.5 hover:text-ink-100 after:absolute after:-bottom-1 after:left-0 after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform hover:after:origin-left hover:after:scale-x-100"
+                      >
+                        <span className="h-2 w-2 rounded-full bg-cyan-400" />
+                        <span>YouTube</span>
+                        <span className="font-mono text-ink-400">{typeCounts.youtube}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-              {chartMode === "bars" ? (
-                <Bars data={chartData} color="#5e826b" height={90} highlightLast showAvg />
-              ) : (
-                <AreaTrend data={chartData} color="#5e826b" height={90} showAvg />
-              )}
-            </div>
 
-            {/* Card 3: Task Completion Ring (3 cols) */}
-            <div className="glass-studio flex items-center gap-3.5 rounded-2xl p-4 xl:col-span-3">
-              <Ring
-                progress={completion}
-                color="#10b981"
-                size={66}
-                thickness={6}
-                label={`${Math.round(completion * 100)}%`}
-                sub="done"
-              />
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <p className="micro-label">Action Items</p>
-                <div className="space-y-1 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-ink-300">Done</span>
-                    <span className="font-mono font-semibold tabular-nums text-emerald-300">
-                      {stats.done_tasks}
-                    </span>
+                {/* Card 2: Capture Velocity Chart (5 cols) */}
+                <div className="glass-studio stagger-2 flex flex-col justify-between rounded-2xl p-4 xl:col-span-5">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div>
+                      <p className="micro-label">Capture Velocity ({rangeDays}d)</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-ink-400">
+                        <span className="font-semibold text-ink-200">
+                          {chartData.reduce((s, d) => s + d.value, 0)} captures
+                        </span>
+                        {" · "}
+                        {(
+                          chartData.reduce((s, d) => s + d.value, 0) / Math.max(chartData.length, 1)
+                        ).toFixed(1)}
+                        /day avg
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="flex rounded-md border border-white/[0.06] bg-ink-950/90 p-0.5 text-[9.5px]">
+                        {([7, 14, 30] as const).map((r) => (
+                          <button
+                            key={r}
+                            onClick={() => setRangeDays(r)}
+                            className={`rounded px-1.5 py-0.5 font-mono transition-colors ${
+                              rangeDays === r
+                                ? "bg-iris-500/25 font-semibold text-iris-300"
+                                : "text-ink-400 hover:text-ink-200"
+                            }`}
+                          >
+                            {r}D
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex rounded-md border border-white/[0.06] bg-ink-950/90 p-0.5 text-[9.5px]">
+                        <button
+                          onClick={() => setChartMode("bars")}
+                          className={`rounded px-1.5 py-0.5 transition-colors ${
+                            chartMode === "bars"
+                              ? "bg-ember-500/20 font-medium text-ember-300"
+                              : "text-ink-400 hover:text-ink-200"
+                          }`}
+                        >
+                          Bars
+                        </button>
+                        <button
+                          onClick={() => setChartMode("area")}
+                          className={`rounded px-1.5 py-0.5 transition-colors ${
+                            chartMode === "area"
+                              ? "bg-ember-500/20 font-medium text-ember-300"
+                              : "text-ink-400 hover:text-ink-200"
+                          }`}
+                        >
+                          Curve
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-ink-300">Open</span>
-                    <span className="font-mono font-semibold tabular-nums text-ember-300">
-                      {stats.open_tasks}
-                    </span>
+                  {chartMode === "bars" ? (
+                    <Bars data={chartData} color="#5e826b" height={90} highlightLast showAvg />
+                  ) : (
+                    <AreaTrend data={chartData} color="#5e826b" height={90} showAvg />
+                  )}
+                </div>
+
+                {/* Card 3: Task Completion Ring (3 cols) */}
+                <div className="glass-studio stagger-3 flex items-center gap-3.5 rounded-2xl p-4 xl:col-span-3">
+                  <Ring
+                    progress={completion}
+                    color="#10b981"
+                    size={66}
+                    thickness={6}
+                    label={`${Math.round(completion * 100)}%`}
+                    sub="done"
+                  />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <p className="micro-label">Action Items</p>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-ink-300">Done</span>
+                        <span className="font-mono font-semibold tabular-nums text-emerald-300">
+                          {stats.done_tasks}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-ink-300">Open</span>
+                        <span className="font-mono font-semibold tabular-nums text-ember-300">
+                          {stats.open_tasks}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         )}
 
@@ -545,12 +591,18 @@ export default function Inbox({
 
             {groups.map(([label, items]) => (
               <section key={label}>
-                <div className="mb-2.5 flex items-center gap-2 px-1">
+                <div className="mb-3 flex items-center gap-2.5 px-1">
+                  <svg className="h-3.5 w-3.5 text-ink-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
                   <h2 className="micro-label !text-ink-300">{label}</h2>
                   <span className="rounded-full bg-white/[0.05] px-2 py-0.2 font-mono text-[10px] text-ink-400">
                     {items.length}
                   </span>
-                  <div className="h-px flex-1 bg-gradient-to-r from-white/[0.06] to-transparent" />
+                  <div className="h-px flex-1 bg-gradient-to-r from-ink-500/20 via-ink-500/5 to-transparent" />
                 </div>
                 <div className={gridCls}>
                   {items.map((n) => (

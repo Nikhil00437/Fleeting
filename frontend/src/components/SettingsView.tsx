@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { appColor, appMonogram, fmtSecs, prettyAppName } from "../apps";
 import { StackBar } from "./charts";
+import { applySettingsChange, errorMessage, reconcileSettings } from "./settingsState";
 import {
   ActivityIcon,
   BotIcon,
@@ -88,6 +89,8 @@ export default function SettingsView({
     null,
   );
   const [whisperTest, setWhisperTest] = useState<{ ok?: boolean; text: string } | null>(null);
+  // Never prefilled: the API deliberately does not return a stored key.
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [whisperBusy, setWhisperBusy] = useState(false);
 
   // App rules state
@@ -113,16 +116,36 @@ export default function SettingsView({
     loadAll();
   }, [loadAll]);
 
-  async function save(changes: Partial<Record<string, unknown>>, label = "settings saved") {
+  async function save(changes: Record<string, unknown>, label = "settings saved") {
+    if (!s) return;
     setSaving(true);
+    // Optimistic: show the new value immediately, then reconcile with whatever
+    // the server actually stored. Without the rollback, a rejected save left the
+    // input showing a value that was never persisted.
+    const previous = s;
+    setS(applySettingsChange(previous, changes));
     try {
-      setS(await api.updateSettings(changes));
+      setS(reconcileSettings(previous, previous, await api.updateSettings(changes)));
       onToast(label);
     } catch (e) {
-      onToast(e instanceof Error ? e.message : String(e), "err");
+      setS(reconcileSettings(previous, previous, null));
+      onToast(errorMessage(e), "err");
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Blank draft means "leave the stored key alone"; only a real value writes. */
+  async function commitApiKey() {
+    const key = apiKeyDraft.trim();
+    if (!key) return;
+    setApiKeyDraft("");
+    await save({ llm_api_key: key }, "API key saved");
+  }
+
+  async function clearApiKey() {
+    setApiKeyDraft("");
+    await save({ llm_api_key: "" }, "API key cleared");
   }
 
   async function toggleApp(app: AppRule) {
@@ -462,7 +485,7 @@ export default function SettingsView({
                       <div>
                         <h2 className="text-sm font-semibold text-ink-100">Local LLM Engine</h2>
                         <p className="text-xs text-ink-400">
-                          Generates titles, summaries, tags, action items & midnight digests
+                          Generates titles, summaries, tags, action items &amp; midnight digests
                         </p>
                       </div>
                     </div>
@@ -470,19 +493,49 @@ export default function SettingsView({
                     {/* Visual Provider Cards */}
                     <div>
                       <label className={labelCls}>Inference Provider</label>
-                      <div className="grid grid-cols-3 gap-2.5">
+                      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                         {[
-                          { id: "ollama", title: "Ollama", desc: "127.0.0.1:11434" },
-                          { id: "lmstudio", title: "LM Studio", desc: "OpenAI API" },
-                          { id: "none", title: "Offline Rules", desc: "Deterministic" },
+                          { id: "ollama", title: "Ollama", desc: "127.0.0.1:11434", defaultUrl: "http://127.0.0.1:11434" },
+                          { id: "lmstudio", title: "LM Studio", desc: "OpenAI API", defaultUrl: "http://127.0.0.1:1234" },
+                          { id: "custom", title: "Custom", desc: "OpenAI-compatible", defaultUrl: s.llm_base_url },
+                          { id: "none", title: "Offline Rules", desc: "Deterministic", defaultUrl: "" },
                         ].map((p) => {
                           const active = s.llm_provider === p.id;
                           return (
                             <button
                               key={p.id}
-                              onClick={() =>
-                                void save({ llm_provider: p.id }, `provider: ${p.title}`)
-                              }
+                              onClick={async () => {
+                                const newUrl = p.id === "custom" ? s.llm_base_url : p.defaultUrl;
+                                setS({ ...s, llm_provider: p.id, llm_base_url: newUrl || s.llm_base_url });
+                                setLlmTest(null);
+                                const changes: Record<string, unknown> = { llm_provider: p.id };
+                                if (p.id !== "custom" && p.defaultUrl) {
+                                  changes.llm_base_url = p.defaultUrl;
+                                }
+                                await save(changes, `provider: ${p.title}`);
+                                // Auto-test connection for active providers
+                                if (p.id !== "none") {
+                                  setLlmTest({ text: "probing endpoint…" });
+                                  try {
+                                    const r = await api.testLLM({
+                                      provider: p.id,
+                                      base_url: changes.llm_base_url as string | undefined ?? s.llm_base_url,
+                                    });
+                                    setLlmTest({
+                                      ok: r.ok,
+                                      text: r.ok
+                                        ? `Connected · ${(r.models ?? []).length} chat models`
+                                        : r.detail ?? "Unreachable",
+                                      models: r.models,
+                                    });
+                                  } catch (e) {
+                                    setLlmTest({
+                                      ok: false,
+                                      text: e instanceof Error ? e.message : String(e),
+                                    });
+                                  }
+                                }
+                              }}
                               className={`rounded-xl border p-3 text-left transition-all ${
                                 active
                                   ? "border-ember-400/50 bg-ember-500/15 text-ink-100 shadow-xs"
@@ -497,113 +550,196 @@ export default function SettingsView({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className={labelCls}>Model Identifier</label>
-                        <input
-                          value={s.llm_model}
-                          onChange={(e) => setS({ ...s, llm_model: e.target.value })}
-                          onBlur={() => void save({ llm_model: s.llm_model }, "LLM model updated")}
-                          className={`${inputCls} font-mono`}
-                          placeholder="auto (first available)"
-                          spellCheck={false}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelCls}>Timeout (seconds)</label>
-                        <input
-                          type="number"
-                          value={s.llm_timeout_secs}
-                          onChange={(e) => setS({ ...s, llm_timeout_secs: Number(e.target.value) })}
-                          onBlur={() =>
-                            void save({ llm_timeout_secs: s.llm_timeout_secs }, "timeout updated")
-                          }
-                          className={`${inputCls} font-mono`}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Endpoint Base URL</label>
-                      <input
-                        value={s.llm_base_url}
-                        onChange={(e) => setS({ ...s, llm_base_url: e.target.value })}
-                        onBlur={() =>
-                          void save({ llm_base_url: s.llm_base_url }, "endpoint URL updated")
-                        }
-                        className={`${inputCls} font-mono`}
-                        spellCheck={false}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Connection Tester + Clickable Discovered Models */}
-                  <div className="mt-5 border-t border-ink-800/80 pt-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        onClick={async () => {
-                          setLlmTest({ text: "probing local endpoint…" });
-                          try {
-                            const r = await api.testLLM();
-                            setLlmTest({
-                              ok: r.ok,
-                              text: r.ok
-                                ? `Connected (${(r.models ?? []).length} models available)`
-                                : r.detail ?? "Unreachable",
-                              models: r.models,
-                            });
-                          } catch (e) {
-                            setLlmTest({
-                              ok: false,
-                              text: e instanceof Error ? e.message : String(e),
-                            });
-                          }
-                        }}
-                        className="flex items-center gap-1.5 rounded-xl border border-ember-500/40 bg-ember-500/15 px-3.5 py-2 text-xs font-semibold text-ember-200 transition-colors hover:bg-ember-500/25"
-                      >
-                        <CpuIcon className="h-3.5 w-3.5" /> Test Connection & Discover Models
-                      </button>
-                      {llmTest && (
-                        <span
-                          className={`text-xs font-medium ${
-                            llmTest.ok === true
-                              ? "text-emerald-300"
-                              : llmTest.ok === false
-                                ? "text-red-300"
-                                : "text-ink-300"
-                          }`}
-                        >
-                          {llmTest.text}
-                        </span>
-                      )}
-                    </div>
-
-                    {llmTest?.models && llmTest.models.length > 0 && (
-                      <div className="mt-3">
-                        <p className="micro-label mb-1.5 !text-[9px]">
-                          Click a discovered model to activate:
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {llmTest.models.map((m) => (
-                            <button
-                              key={m}
-                              onClick={() => {
-                                setS({ ...s, llm_model: m });
-                                void save({ llm_model: m }, `selected model: ${m}`);
-                              }}
-                              className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] transition-colors ${
-                                s.llm_model === m
-                                  ? "border-ember-400 bg-ember-500/25 text-ember-200"
-                                  : "border-ink-700 bg-ink-950 text-ink-300 hover:border-ember-400/40 hover:text-ink-100"
-                              }`}
-                            >
-                              {m}
-                            </button>
-                          ))}
+                    {s.llm_provider !== "none" && (
+                      <>
+                        <div>
+                          <label className={labelCls}>Endpoint Base URL</label>
+                          <input
+                            value={s.llm_base_url}
+                            onChange={(e) => setS({ ...s, llm_base_url: e.target.value })}
+                            onBlur={() =>
+                              void save({ llm_base_url: s.llm_base_url }, "endpoint URL updated")
+                            }
+                            className={`${inputCls} font-mono`}
+                            spellCheck={false}
+                            placeholder={
+                              s.llm_provider === "ollama"
+                                ? "http://127.0.0.1:11434"
+                                : s.llm_provider === "lmstudio"
+                                  ? "http://127.0.0.1:1234"
+                                  : "http://your-server:port"
+                            }
+                          />
                         </div>
-                      </div>
+
+                        <div>
+                          <label className={labelCls}>Timeout (seconds)</label>
+                          <input
+                            type="number"
+                            value={s.llm_timeout_secs}
+                            onChange={(e) => setS({ ...s, llm_timeout_secs: Number(e.target.value) })}
+                            onBlur={() =>
+                              void save({ llm_timeout_secs: s.llm_timeout_secs }, "timeout updated")
+                            }
+                            className={`${inputCls} w-32 font-mono`}
+                          />
+                        </div>
+
+                        {(s.llm_provider === "custom" || s.llm_provider === "lmstudio") && (
+                          <div>
+                            <label className={labelCls}>API Key (optional)</label>
+                            <input
+                              type="password"
+                              value={apiKeyDraft}
+                              onChange={(e) => setApiKeyDraft(e.target.value)}
+                              onBlur={() => void commitApiKey()}
+                              placeholder={
+                                s.llm_api_key_set ? "stored — type to replace" : "sk-..."
+                              }
+                              spellCheck={false}
+                              autoComplete="off"
+                              className={`${inputCls} font-mono`}
+                            />
+                            <div className="mt-1 flex items-center gap-3">
+                              <p className="text-[10px] text-ink-500">
+                                {s.llm_api_key_set
+                                  ? "A key is stored. Leave blank to keep it."
+                                  : "Sent as an Authorization: Bearer header."}
+                              </p>
+                              {s.llm_api_key_set && (
+                                <button
+                                  type="button"
+                                  onClick={() => void clearApiKey()}
+                                  className="text-[10px] text-red-300/80 underline hover:text-red-300 cursor-pointer"
+                                >
+                                  clear
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
+
+                  {/* Connection Tester + Dynamic Model Selector */}
+                  {s.llm_provider !== "none" && (
+                    <div className="mt-5 border-t border-ink-800/80 pt-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            setLlmTest({ text: "probing endpoint…" });
+                            try {
+                              // Probe the values in the form, not the saved config:
+                              // blur-save and this POST would otherwise race.
+                              const r = await api.testLLM({
+                                provider: s.llm_provider,
+                                base_url: s.llm_base_url,
+                                model: s.llm_model,
+                                // Probe with the typed key if there is one, else the
+                                // stored one, so testing works before saving.
+                                ...(apiKeyDraft.trim() ? { api_key: apiKeyDraft.trim() } : {}),
+                              });
+                              setLlmTest({
+                                ok: r.ok,
+                                text: r.ok
+                                  ? `Connected · ${(r.models ?? []).length} chat models available${
+                                      r.hidden ? ` · ${r.hidden} embedding-only hidden` : ""
+                                    }`
+                                  : r.detail ?? "Unreachable",
+                                models: r.models,
+                              });
+                            } catch (e) {
+                              setLlmTest({
+                                ok: false,
+                                text: e instanceof Error ? e.message : String(e),
+                              });
+                            }
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl border border-ember-500/40 bg-ember-500/15 px-3.5 py-2 text-xs font-semibold text-ember-200 transition-colors hover:bg-ember-500/25"
+                        >
+                          <CpuIcon className="h-3.5 w-3.5" /> Test Connection &amp; Discover Models
+                        </button>
+                        {llmTest && (
+                          <span
+                            className={`flex items-center gap-1.5 text-xs font-medium ${
+                              llmTest.ok === true
+                                ? "text-emerald-300"
+                                : llmTest.ok === false
+                                  ? "text-red-300"
+                                  : "text-ink-300 animate-pulse"
+                            }`}
+                          >
+                            {llmTest.ok === true && (
+                              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                            )}
+                            {llmTest.ok === false && (
+                              <span className="inline-block h-2 w-2 rounded-full bg-red-400" />
+                            )}
+                            {llmTest.text}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Dynamic Model Selector — shows discovered models as clickable chips */}
+                      {llmTest?.models && llmTest.models.length > 0 ? (
+                        <div className="mt-3">
+                          <p className="micro-label mb-1.5 !text-[9px]">
+                            Select a model to use:
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {llmTest.models.map((m) => (
+                              <button
+                                key={m}
+                                onClick={() => {
+                                  setS({ ...s, llm_model: m });
+                                  void save({ llm_model: m }, `selected model: ${m}`);
+                                }}
+                                className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+                                  s.llm_model === m
+                                    ? "border-ember-400 bg-ember-500/25 text-ember-200"
+                                    : "border-ink-700 bg-ink-950 text-ink-300 hover:border-ember-400/40 hover:text-ink-100"
+                                }`}
+                              >
+                                {m}
+                              </button>
+                            ))}
+                          </div>
+                          {s.llm_model && (
+                            <p className="mt-2 font-mono text-[11px] text-ink-400">
+                              Active: <span className="text-ember-300">{s.llm_model}</span>
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        /* Fallback manual model input — only when no models discovered yet */
+                        <div className="mt-3">
+                          <label className={labelCls}>Model Identifier</label>
+                          <input
+                            value={s.llm_model}
+                            onChange={(e) => setS({ ...s, llm_model: e.target.value })}
+                            onBlur={() => void save({ llm_model: s.llm_model }, "LLM model updated")}
+                            className={`${inputCls} font-mono`}
+                            placeholder="test connection to discover models"
+                            spellCheck={false}
+                          />
+                          <p className="mt-1 text-[10px] text-ink-500">
+                            Click &quot;Test Connection&quot; to auto-discover available models
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {s.llm_provider === "none" && (
+                    <div className="mt-5 border-t border-ink-800/80 pt-4">
+                      <p className="text-xs text-ink-400">
+                        LLM enrichment is disabled. Notes will be processed using deterministic
+                        heuristic rules (keyword extraction, pattern matching). Switch to a provider
+                        above to enable AI-powered enrichment.
+                      </p>
+                    </div>
+                  )}
                 </section>
 
                 {/* Whisper Speech-to-Text Compartment */}
@@ -1638,8 +1774,37 @@ export default function SettingsView({
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3">
                     <p className="micro-label !text-[9px]">Status</p>
-                    <p className="mt-1 flex items-center gap-1 font-mono text-xs font-bold text-emerald-300">
-                      <CheckIcon className="h-3.5 w-3.5" /> {health?.ok ? "Healthy" : "Degraded"}
+                    {/* health===null means the probe failed: say so, rather than
+                        reporting "Degraded" for a server that is not answering. */}
+                    <p
+                      className={`mt-1 flex items-center gap-1 font-mono text-xs font-bold ${
+                        !health
+                          ? "text-ink-300"
+                          : health.ok && !health.degradations?.length
+                            ? "text-emerald-300"
+                            : "text-amber-300"
+                      }`}
+                    >
+                      {!health ? (
+                        "Unreachable"
+                      ) : health.ok && !health.degradations?.length ? (
+                        <>
+                          <CheckIcon className="h-3.5 w-3.5" /> Healthy
+                        </>
+                      ) : (
+                        "Reduced"
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3">
+                    <p className="micro-label !text-[9px]">Semantic search</p>
+                    <p className="mt-1 font-mono text-xs font-bold text-ink-100">
+                      {health?.semantic_search === "semantic" ? "Semantic" : "Lexical only"}
+                      {health?.stale_embeddings ? (
+                        <span className="ml-1 text-[10px] font-normal text-amber-300">
+                          {health.stale_embeddings} stale
+                        </span>
+                      ) : null}
                     </p>
                   </div>
                   <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3">
@@ -1691,6 +1856,27 @@ export default function SettingsView({
                 </div>
 
                 <div className="space-y-3">
+                  {health?.degradations?.length ? (
+                    <div
+                      role="status"
+                      className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5"
+                    >
+                      <p className="micro-label !text-[9px] !text-amber-300">
+                        Running in a reduced mode
+                      </p>
+                      <ul className="mt-2 space-y-1.5 text-xs text-ink-200">
+                        {health.degradations.map((d) => (
+                          <li key={d} className="flex gap-1.5">
+                            <span aria-hidden="true" className="text-amber-400">
+                              •
+                            </span>
+                            <span>{d}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
                   <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">
                     <p className="micro-label !text-[9px]">TOML Configuration File</p>
                     <div className="mt-1.5 flex items-center justify-between gap-2">

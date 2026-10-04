@@ -1046,6 +1046,24 @@ class Database:
             "updated_at": row["updated_at"],
         }
 
+    def count_stale_embeddings(self, model: str, dimensions: int | None = None) -> int:
+        """Count active notes whose embedding is not from `model`.
+
+        Vectors of different dimensionality cannot be compared, so these notes
+        are invisible to semantic search while the new model is active.
+        """
+        if dimensions is None:
+            row = self.execute(
+                "SELECT COUNT(*) AS c FROM note_embeddings WHERE model != ?", (model,)
+            ).fetchone()
+        else:
+            row = self.execute(
+                "SELECT COUNT(*) AS c FROM note_embeddings "
+                "WHERE model != ? OR dimensions != ?",
+                (model, dimensions),
+            ).fetchone()
+        return int(row["c"])
+
     def get_all_embeddings(self) -> list[dict]:
         rows = self.execute(
             "SELECT note_id, embedding, dimensions, model, updated_at FROM note_embeddings"

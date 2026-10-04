@@ -98,6 +98,13 @@ export interface HealthStatus {
   db: boolean;
   whisper_loaded: boolean;
   queue: number;
+  /** Model actually used for embeddings; "local-hash-384" means offline fallback. */
+  embedding_model?: string;
+  semantic_search?: "semantic" | "lexical";
+  /** Notes still on an older embedding model, invisible to semantic search. */
+  stale_embeddings?: number;
+  /** Human-readable reasons the app is running in a reduced mode. */
+  degradations?: string[];
 }
 
 export interface WhisperProgress {
@@ -120,6 +127,8 @@ export interface Settings {
   llm_base_url: string;
   llm_model: string;
   llm_timeout_secs: number;
+  /** Whether an API key is stored. The key itself is never returned by the API. */
+  llm_api_key_set?: boolean;
   transcribe_model: string;
   transcribe_language: string;
   transcribe_loaded: boolean;
@@ -151,7 +160,16 @@ export interface ConnectionTest {
   ok: boolean;
   detail?: string;
   models?: string[];
+  /** Models the server reported that cannot be used for chat (embedding-only). */
+  hidden?: number;
   model?: string;
+}
+
+export interface LLMProbeOverrides {
+  provider?: string;
+  base_url?: string;
+  model?: string;
+  api_key?: string;
 }
 
 export interface ActivitySession {
