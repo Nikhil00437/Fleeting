@@ -21,6 +21,7 @@ import {
   XIcon,
 } from "./Icons";
 import type { ActivityDay, ActivitySession, DailyLog, FilesActivity } from "../types";
+import WeeklyDigestCard from "./WeeklyDigestCard";
 
 function todayLocal(): string {
   const d = new Date();
@@ -616,6 +617,10 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                 onSelect={(idx) => setSelectedHour((cur) => (cur === idx ? null : idx))}
               />
             </div>
+          </div>
+
+          <div className="xl:col-span-2">
+            <WeeklyDigestCard onToast={onToast} refreshKey={refreshKey} />
           </div>
 
           {/* Daily AI Report */}

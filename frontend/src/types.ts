@@ -143,6 +143,7 @@ export interface Settings {
   activity_idle_after_min: number;
   activity_excluded_apps: string;
   activity_auto_daily_log: boolean;
+  activity_auto_weekly_log: boolean;
   activity_watch_dirs: string;
   activity_mirror_daily_log: boolean;
   /** Days of window-activity history kept; older rows pruned on startup. */
@@ -313,4 +314,44 @@ export interface ProcessDetails extends ProcessInfo {
   connections_count: number;
   parent_pid: number | null;
   children: number[];
+}
+
+export interface WeekDayRow {
+  day: string;
+  seconds: number;
+  busy: boolean;
+}
+
+export interface WeekAppRow {
+  app_class: string;
+  seconds: number;
+}
+
+export interface WeekSummary {
+  week_start: string;
+  week_end: string;
+  days: WeekDayRow[];
+  apps: WeekAppRow[];
+  total_seconds: number;
+  busiest_day: string | null;
+  quietest_day: string | null;
+  daily_logs: { day: string; summary_md: string; model: string | null }[];
+  total_tasks: number;
+  open_tasks: number;
+  commits: { repo?: string; subject?: string }[];
+  files_touched: number;
+}
+
+export interface WeeklyLogRow {
+  week_start: string;
+  summary_md: string;
+  model: string | null;
+  created_at: string;
+}
+
+export interface WeeklyLogOut {
+  week: string;
+  this_week: string;
+  report: WeeklyLogRow | null;
+  summary: WeekSummary;
 }

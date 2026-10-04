@@ -40,6 +40,7 @@ const mockBaseSettings: Settings = {
   activity_idle_after_min: 5,
   activity_excluded_apps: "",
   activity_auto_daily_log: true,
+  activity_auto_weekly_log: true,
   activity_watch_dirs: "",
   activity_mirror_daily_log: true,
   activity_retention_days: 30,

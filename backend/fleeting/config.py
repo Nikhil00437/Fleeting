@@ -83,6 +83,8 @@ class ActivityConfig:
     idle_after_min: int = 3
     excluded_apps: str = "zen"  # comma-separated class substrings, e.g. "zen, keepassxc"
     auto_daily_log: bool = True
+    # Monday-morning summary of the finished week, on top of the daily report.
+    auto_weekly_log: bool = True
     watch_dirs: str = "~/Projects, ~/Documents, ~/Downloads"
     mirror_daily_log: bool = False  # report lives inside the app only, by default
     # Bearer token required on mutating /api requests. Empty = disabled, which

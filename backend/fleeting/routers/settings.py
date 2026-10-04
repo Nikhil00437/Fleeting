@@ -47,6 +47,7 @@ def _settings_payload(request: Request) -> dict:
         "activity_auto_daily_log": cfg.activity.auto_daily_log,
         "activity_watch_dirs": cfg.activity.watch_dirs,
         "activity_mirror_daily_log": cfg.activity.mirror_daily_log,
+        "activity_auto_weekly_log": cfg.activity.auto_weekly_log,
         "activity_retention_days": cfg.activity.retention_days,
         "activity_running": bool(st.activity and st.activity.running),
         "config_path": str(CONFIG_PATH),
@@ -124,6 +125,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.activity.watch_dirs = body.activity_watch_dirs.strip()
     if body.activity_mirror_daily_log is not None:
         cfg.activity.mirror_daily_log = body.activity_mirror_daily_log
+    if body.activity_auto_weekly_log is not None:
+        cfg.activity.auto_weekly_log = body.activity_auto_weekly_log
     if body.activity_retention_days is not None:
         cfg.activity.retention_days = body.activity_retention_days
 

@@ -77,6 +77,28 @@ export default function ActivityTab({ s, patch, save }: FormProps) {
                   />
                 </label>
               </div>
+
+              <div className="rounded-xl border border-ink-800 bg-ink-950/50 p-3.5">
+                <label className="flex cursor-pointer items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold text-ink-100">
+                      Automated Weekly Digest
+                    </p>
+                    <p className="text-[11px] text-ink-400">
+                      Summarises the finished week on Monday morning
+                    </p>
+                  </div>
+                  <Toggle
+                    checked={s.activity_auto_weekly_log}
+                    onChange={(v) =>
+                      void save(
+                        { activity_auto_weekly_log: v },
+                        v ? "weekly digest enabled" : "weekly digest disabled",
+                      )
+                    }
+                  />
+                </label>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

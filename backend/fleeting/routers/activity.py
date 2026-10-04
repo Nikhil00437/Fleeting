@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from ..activity import aggregate_day, app_blocked
 from ..config import expand_path
-from ..services import dailylog
+from ..services import dailylog, weeklylog
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 
@@ -177,3 +177,60 @@ async def generate_yesterday(request: Request) -> dict:
     row = await dailylog.generate_daily_log(st.db, st.cfg, yesterday)
     st.bus.publish("dailylog.updated", {"day": yesterday})
     return {**row, "skipped": False}
+
+
+def _valid_week(week: str | None) -> str:
+    """Validate a week-start key and snap it to its Monday."""
+    from ..services.weeklylog import week_start_for
+
+    raw = week or weeklylog.previous_week_start()
+    try:
+        parsed = datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(422, "week must be YYYY-MM-DD")
+    return week_start_for(parsed.date())
+
+
+@router.get("/weekly-log")
+def get_weekly_log(request: Request, week: str | None = None) -> dict:
+    """The finished week's report plus its shape, so the UI can chart either."""
+    st = request.app.state.st
+    start = _valid_week(week)
+    return {
+        "week": start,
+        "this_week": weeklylog.current_week_start(),
+        "report": st.db.get_weekly_log(start),
+        "summary": weeklylog.aggregate_week(st.db, start),
+    }
+
+
+@router.post("/weekly-log/generate")
+async def generate_weekly(request: Request, body: dict) -> dict:
+    st = request.app.state.st
+    start = _valid_week(str(body.get("week") or "") or None)
+    lock = getattr(st, "digest_lock", None)
+    try:
+        if lock:
+            async with lock:
+                row = await weeklylog.generate_weekly_log(
+                    st.db, st.cfg, start, bus=st.bus
+                )
+        else:
+            row = await weeklylog.generate_weekly_log(st.db, st.cfg, start, bus=st.bus)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"report": row, "week": start}
+
+
+@router.post("/weekly-log/generate-previous-if-missing")
+async def generate_previous_weekly(request: Request) -> dict:
+    """Monday-morning automation; skips when already written."""
+    st = request.app.state.st
+    start = weeklylog.previous_week_start()
+    if st.db.get_weekly_log(start):
+        return {"ok": True, "skipped": True, "week": start}
+    try:
+        row = await weeklylog.generate_weekly_log(st.db, st.cfg, start, bus=st.bus)
+    except ValueError:
+        return {"ok": True, "skipped": True, "week": start}
+    return {"ok": True, "skipped": False, "week": start, "report": row}

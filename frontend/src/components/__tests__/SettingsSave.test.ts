@@ -29,6 +29,7 @@ const base: Settings = {
   activity_idle_after_min: 3,
   activity_excluded_apps: "zen",
   activity_auto_daily_log: true,
+  activity_auto_weekly_log: true,
   activity_watch_dirs: "",
   activity_mirror_daily_log: false,
   activity_retention_days: 30,

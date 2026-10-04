@@ -152,6 +152,27 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             except Exception:
                 log.exception("daily report backfill for %s failed", yesterday)
 
+        async def backfill_weekly() -> None:
+            """On a Monday, write last week's summary if it is missing.
+
+            A week is only summarisable once it is over, so this runs on boot
+            rather than at a fixed hour — same reasoning as the daily backfill:
+            the laptop is usually asleep at midnight.
+            """
+            from .services import weeklylog
+
+            await asyncio.sleep(5)  # let the collector settle; git scan is slower
+            start = weeklylog.previous_week_start()
+            if db.get_weekly_log(start):
+                return
+            try:
+                await weeklylog.generate_weekly_log(db, cfg, start, bus=bus)
+                log.info("backfilled weekly report for %s", start)
+            except ValueError:
+                log.info("no tracked activity in the week of %s — skipped", start)
+            except Exception:
+                log.exception("weekly report backfill for %s failed", start)
+
         digest_lock = asyncio.Lock()
         st.digest_lock = digest_lock
 
@@ -176,6 +197,12 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         if cfg.activity.enabled:
             activity_task = asyncio.get_running_loop().create_task(st.activity.run())
             asyncio.get_running_loop().create_task(backfill_yesterday())
+
+        # Weekly summary only makes sense on a Monday, and only when asked for.
+        if cfg.activity.enabled and cfg.activity.auto_weekly_log:
+            today = datetime.now().astimezone()
+            if today.weekday() == 0:  # Monday
+                asyncio.get_running_loop().create_task(backfill_weekly())
 
         st.vault_watcher = None
         if cfg.paths.vault_sync:

@@ -22,6 +22,9 @@ import type {
   ProcessApp,
   ProcessInfo,
   ProcessDetails,
+  WeeklyLogOut,
+  WeeklyLogRow,
+
 } from "./types";
 
 const BASE = "/api";
@@ -46,6 +49,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => req<HealthStatus>("/health"),
+
+  /** Weekly digest plus the week's shape. Defaults to last week. */
+  weeklyLog: (week?: string) =>
+    req<WeeklyLogOut>(`/activity/weekly-log${week ? `?week=${week}` : ""}`),
+
+  generateWeeklyLog: (week?: string) =>
+    req<{ report: WeeklyLogRow; week: string }>("/activity/weekly-log/generate", {
+      method: "POST",
+      body: JSON.stringify({ week }),
+    }),
 
   /** Kick off the embedding migration; returns immediately. */
   backfillEmbeddings: () =>

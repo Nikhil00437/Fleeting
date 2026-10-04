@@ -149,6 +149,16 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX IF NOT EXISTS idx_note_embeddings_updated ON note_embeddings(updated_at);
     """,
+    # v7 — weekly digest, mirroring daily_logs. A separate table rather than a
+    # "YYYY-Www" key in daily_logs, so a week can never collide with a day.
+    """
+    CREATE TABLE IF NOT EXISTS weekly_logs (
+        week_start TEXT PRIMARY KEY,
+        summary_md TEXT NOT NULL,
+        model TEXT,
+        created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -425,6 +435,30 @@ class Database:
     def get_daily_log(self, day: str) -> dict | None:
         row = self.execute("SELECT * FROM daily_logs WHERE day = ?", (day,)).fetchone()
         return dict(row) if row else None
+
+    def get_weekly_log(self, week_start: str) -> dict | None:
+        row = self.execute(
+            "SELECT * FROM weekly_logs WHERE week_start = ?", (week_start,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def upsert_weekly_log(self, week_start: str, summary_md: str, model: str) -> None:
+        self.execute(
+            """
+            INSERT OR REPLACE INTO weekly_logs (week_start, summary_md, model, created_at)
+            VALUES (:week, :md, :model, :created_at)
+            """,
+            {"week": week_start, "md": summary_md, "model": model, "created_at": now_iso()},
+        )
+        self.commit()
+
+    def daily_logs_between(self, start_day: str, end_day: str) -> list[dict]:
+        """Stored daily summaries in [start_day, end_day], oldest first."""
+        rows = self.execute(
+            "SELECT * FROM daily_logs WHERE day >= ? AND day <= ? ORDER BY day ASC",
+            (start_day, end_day),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def upsert_daily_log(self, day: str, summary_md: str, model: str) -> None:
         self.execute(
