@@ -17,6 +17,7 @@ import ReportsView from "./components/ReportsView";
 import CaptureHud from "./components/CaptureHud";
 import AssistantView from "./components/AssistantView";
 import ProcessesView from "./components/ProcessesView";
+import DictationView from "./components/DictationView";
 import {
  ActivityIcon,
  BotIcon,
@@ -42,7 +43,8 @@ type View =
   | "search"
   | "settings"
   | "assistant"
-  | "processes";
+  | "processes"
+  | "dictation";
 
 interface ToastAction {
  label: string;
@@ -159,7 +161,8 @@ export default function App() {
     target === "search" ||
     target === "settings" ||
     target === "assistant" ||
-     target === "processes"
+     target === "processes" ||
+     target === "dictation"
    ) {
     setView(target);
    }
@@ -292,6 +295,7 @@ export default function App() {
    else if (e.key === "r") setView("reports");
    else if (e.key === "s") setView("settings");
     else if (e.key === "p") setView("processes");
+   else if (e.key === "d") setView("dictation");
   }
   window.addEventListener("keydown", onKey);
   return () => window.removeEventListener("keydown", onKey);
@@ -359,6 +363,7 @@ export default function App() {
    hint: "t",
   },
      { id: "processes", label: "Processes", icon: <CpuIcon className="h-4 w-4" />, badge: inFlightCount || undefined, hint: "p" },
+   { id: "dictation", label: "Dictation", icon: <MicIcon className="h-4 w-4" />, hint: "d" },
    { id: "search", label: "Search", icon: <SearchIcon className="h-4 w-4" />, hint: "/" },
   { id: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" />, hint: "s" },
  ];
@@ -926,6 +931,7 @@ export default function App() {
      {view === "processes" && (
       <ProcessesView onToast={toast} />
      )}
+     {view === "dictation" && <DictationView notes={notes} onToast={toast} />}
      {view === "settings" && (
       <SettingsView
        onToast={toast}
