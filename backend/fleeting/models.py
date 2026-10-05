@@ -133,6 +133,12 @@ class TaskUpdateIn(BaseModel):
 REVIEW_STATES = ("raw", "enriched", "reviewed", "final")
 
 
+class RegenerateIn(BaseModel):
+    """#20: re-run title/summary/tags enrichment. Model overrides the default."""
+
+    model: str | None = Field(default=None, max_length=120)
+
+
 class SnoozeIn(BaseModel):
     """#14 snooze: preset name, YYYY-MM-DD, full ISO stamp, or null to wake now."""
 

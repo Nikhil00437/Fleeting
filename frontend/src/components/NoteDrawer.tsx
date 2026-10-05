@@ -13,6 +13,7 @@ import {
   PinIcon,
   RefreshIcon,
   ShieldIcon,
+  SparkIcon,
   StarIcon,
   TextIcon,
   TrashIcon,
@@ -24,7 +25,17 @@ import AudioPlayer from "./AudioPlayer";
 import { runNoteAction } from "./actionRunner";
 import { errorMessage } from "./settingsState";
 import { NOTE_COLORS, colorHex } from "./noteColors";
+import { diffStats, diffText } from "./textDiff";
 import type { Note } from "../types";
+
+interface NoteVersion {
+  id: number;
+  title: string;
+  summary: string;
+  raw_text: string;
+  origin: string;
+  created_at: string;
+}
 
 interface Props {
   note: Note;
@@ -108,15 +119,24 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
   const [summary, setSummary] = useState(note.summary || "");
   const [tagInput, setTagInput] = useState("");
   const [newTaskText, setNewTaskText] = useState("");
-  const [inspectorTab, setInspectorTab] = useState<"overview" | "raw" | "markdown">("overview");
+  const [inspectorTab, setInspectorTab] = useState<
+    "overview" | "raw" | "markdown" | "history"
+  >("overview");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [regenModels, setRegenModels] = useState<string[] | null>(null);
+  const [versions, setVersions] = useState<NoteVersion[] | null>(null);
+  const [versionError, setVersionError] = useState<string | null>(null);
 
   useEffect(() => {
     setTitle(note.title);
     setSummary(note.summary || "");
     setConfirmDelete(false);
     setSnoozeOpen(false);
+    setRegenOpen(false);
+    setVersions(null);
+    setVersionError(null);
     setNewTaskText("");
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -155,6 +175,47 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
       success: until ? `Snoozed until ${until.replace("_", " ")}` : "Note woken up",
       onDone: (updated) => onUpdate(updated),
     });
+  }
+
+  function loadVersions() {
+    setVersionError(null);
+    api
+      .noteVersions(note.id)
+      .then(setVersions)
+      .catch((e) => setVersionError(errorMessage(e)));
+  }
+
+  async function revertTo(versionId: number) {
+    await runNoteAction({
+      api,
+      toast: onToast,
+      action: () => api.revertVersion(note.id, versionId),
+      success: "Reverted",
+      onDone: (updated) => onUpdate(updated),
+    });
+  }
+
+  async function regenerate(model?: string) {
+    setRegenOpen(false);
+    await runNoteAction({
+      api,
+      toast: onToast,
+      action: () => api.regenerateNote(note.id, model),
+      success: model ? `Regenerated with ${model}` : "Regenerated title, summary and tags",
+      onDone: (updated) => onUpdate(updated),
+    });
+  }
+
+  async function openRegenMenu() {
+    setRegenOpen((v) => !v);
+    if (!regenModels) {
+      try {
+        const probe = await api.testLLM();
+        setRegenModels(probe.models ?? []);
+      } catch {
+        setRegenModels([]);
+      }
+    }
   }
 
   async function restoreFromTrash() {
@@ -247,6 +308,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
               { id: "overview", label: "Inspector" },
               { id: "raw", label: "Source" },
               { id: "markdown", label: "MD" },
+              { id: "history", label: "History" },
             ] as const
           ).map((t) => (
             <button
@@ -616,6 +678,16 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
           </div>
         )}
 
+        {inspectorTab === "history" && (
+          <HistoryPanel
+            note={note}
+            versions={versions}
+            error={versionError}
+            onVisible={loadVersions}
+            onRevert={(id) => void revertTo(id)}
+          />
+        )}
+
         {inspectorTab === "markdown" && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -691,6 +763,39 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
         >
           <RefreshIcon className="h-3 w-3" /> Reprocess
         </button>
+        <div className="relative">
+          <button
+            onClick={() => void openRegenMenu()}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
+            title="#20 Re-run title/summary/tags enrichment only"
+          >
+            <SparkIcon className="h-3 w-3" /> Regenerate
+          </button>
+          {regenOpen && (
+            <div className="glass-studio absolute bottom-9 left-0 z-50 w-56 rounded-xl p-1.5">
+              <button
+                onClick={() => void regenerate()}
+                className="block w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-ink-200 hover:bg-white/[0.06]"
+              >
+                Default model
+              </button>
+              {(regenModels ?? []).slice(0, 8).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => void regenerate(m)}
+                  className="block w-full truncate rounded-lg px-2.5 py-1.5 text-left font-mono text-[10.5px] text-ink-300 hover:bg-white/[0.06]"
+                >
+                  {m}
+                </button>
+              ))}
+              {regenModels !== null && regenModels.length === 0 && (
+                <p className="px-2.5 py-1.5 text-[10.5px] text-ink-500">
+                  No other models found on the server.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
         <button
           onClick={async () => {
             try {
@@ -744,5 +849,104 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
         </div>
       </div>
     </aside>
+  );
+}
+
+/** #19/#21: version history with a raw-vs-clean diff against the current text. */
+function HistoryPanel({
+  note,
+  versions,
+  error,
+  onVisible,
+  onRevert,
+}: {
+  note: Note;
+  versions: NoteVersion[] | null;
+  error: string | null;
+  onVisible: () => void;
+  onRevert: (versionId: number) => void;
+}) {
+  useEffect(() => {
+    if (versions === null) onVisible();
+  }, [versions, onVisible]);
+
+  if (error) {
+    return <p className="text-xs text-red-300">{error}</p>;
+  }
+  if (versions === null) {
+    return <div className="shimmer h-24 rounded-2xl" />;
+  }
+  if (versions.length === 0) {
+    return (
+      <div className="glass rounded-xl p-3.5 text-xs text-ink-400">
+        No edits recorded yet — history appears when the note&apos;s content changes.
+      </div>
+    );
+  }
+
+  const original = versions.find((v) => (v.raw_text || "").trim()) ?? versions[0];
+  const differs = (original.raw_text || "") !== (note.raw_text || "");
+  const parts = differs ? diffText(original.raw_text || "", note.raw_text || "") : null;
+  const stats = parts ? diffStats(parts) : null;
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-xl p-3.5">
+        <p className="micro-label mb-2 !text-[9.5px]">
+          Original capture vs current text
+        </p>
+        {differs && parts ? (
+          <>
+            <p className="mb-2 font-mono text-[10px] text-ink-500">
+              {stats && stats.added > 0 ? `+${stats.added} ` : ""}
+              {stats && stats.removed > 0 ? `−${stats.removed}` : ""}
+              {" words"}
+            </p>
+            <p className="selectable max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed">
+              {parts.map((p, i) =>
+                p.type === "same" ? (
+                  <span key={i} className="text-ink-400">
+                    {p.text}
+                  </span>
+                ) : p.type === "add" ? (
+                  <span key={i} className="rounded bg-emerald-500/15 text-emerald-300">
+                    {p.text}
+                  </span>
+                ) : (
+                  <span key={i} className="rounded bg-red-500/15 text-red-300 line-through">
+                    {p.text}
+                  </span>
+                ),
+              )}
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-ink-400">The text is unchanged since the capture.</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <p className="micro-label !text-[9.5px]">Snapshots ({versions.length})</p>
+        {[...versions].reverse().map((v) => (
+          <div key={v.id} className="glass flex items-center gap-2.5 rounded-xl px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-ink-200">
+                {v.title || v.raw_text.slice(0, 60) || "(empty)"}
+              </p>
+              <p className="font-mono text-[10px] text-ink-500">
+                {new Date(v.created_at).toLocaleString()} · {v.origin}
+              </p>
+            </div>
+            <button
+              onClick={() => onRevert(v.id)}
+              className="shrink-0 rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-[11px] text-ink-200 hover:border-ember-400/40 hover:text-ember-200"
+              title="Restore title, summary and text from this snapshot"
+            >
+              Revert
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

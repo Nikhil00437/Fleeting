@@ -144,3 +144,52 @@ def test_heuristic_enrichment_lands_in_the_review_queue(client):
     r = client.patch(f"/api/notes/{note['id']}", json={"review_state": "reviewed"})
     assert r.json()["review_state"] == "reviewed"
     assert client.get("/api/notes", params={"review_state": "raw"}).json() == []
+
+
+# ---- #19 version history + revert ----------------------------------------
+
+def test_edits_snapshot_previous_content(client):
+    note = _note(client, "history begins here")
+    client.patch(f"/api/notes/{note['id']}", json={"raw_text": "second version of the text"})
+    client.patch(f"/api/notes/{note['id']}", json={"raw_text": "third version", "title": "renamed"})
+
+    versions = client.get(f"/api/notes/{note['id']}/versions").json()
+    # 1: pre-enrichment (raw capture, no title/summary yet), 2-3: the two edits
+    assert len(versions) == 3
+    # oldest first: every snapshot keeps the original raw capture
+    assert versions[0]["raw_text"].startswith("history begins here")
+    assert versions[0]["title"] == ""  # enrichment had not landed yet
+    assert versions[1]["origin"] == "edit"
+    assert versions[2]["raw_text"] == "second version of the text"
+
+    # bookkeeping-only updates (pin, status) must not fabricate history
+    client.post(f"/api/notes/{note['id']}/pin")
+    assert len(client.get(f"/api/notes/{note['id']}/versions").json()) == 3
+
+
+def test_revert_restores_and_is_itself_undoable(client):
+    note = _note(client, "original text to keep")
+    client.patch(f"/api/notes/{note['id']}", json={"raw_text": "oops destroyed"})
+
+    original = client.get(f"/api/notes/{note['id']}/versions").json()[0]
+    r = client.post(f"/api/notes/{note['id']}/versions/{original['id']}/revert")
+    assert r.status_code == 200
+    assert r.json()["raw_text"].startswith("original text to keep")
+
+    # the revert appended a history entry holding the destroyed text
+    versions = client.get(f"/api/notes/{note['id']}/versions").json()
+    assert versions[-1]["raw_text"] == "oops destroyed"
+    assert versions[-1]["origin"] == "edit"
+
+    assert client.post(
+        f"/api/notes/{note['id']}/versions/999999/revert"
+    ).status_code == 404
+
+
+# ---- #20 regenerate ------------------------------------------------------
+
+def test_regenerate_requires_a_provider(client):
+    note = _note(client, "regenerate me")
+    r = client.post(f"/api/notes/{note['id']}/regenerate", json={})
+    assert r.status_code == 400
+    assert "no LLM provider" in r.json()["detail"]

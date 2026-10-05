@@ -217,6 +217,21 @@ MIGRATIONS: list[str] = [
     ALTER TABLE notes ADD COLUMN snoozed_until TEXT;
     CREATE INDEX idx_notes_snoozed ON notes(snoozed_until);
     """,
+    # v12 — #19 version history. Each row is the state *before* an edit to
+    # title/summary/raw_text, so "revert" is a plain field copy and the first
+    # row per note is the original capture that #21 diffs against.
+    """
+    CREATE TABLE note_versions (
+      id INTEGER PRIMARY KEY,
+      note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      title TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      raw_text TEXT NOT NULL DEFAULT '',
+      origin TEXT NOT NULL DEFAULT 'edit',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_note_versions_note ON note_versions(note_id, created_at);
+    """,
 ]
 
 
@@ -407,6 +422,10 @@ class Database:
             self._sync_note_action_items(note["id"])
         return self.get_note(note["id"])  # type: ignore[return-value]
 
+    # Version history keeps the last N content snapshots per note; edits are
+    # rare enough that 20 comfortably covers a note's editing lifetime.
+    VERSIONS_PER_NOTE = 20
+
     def update_note(self, note_id: str, changes: dict) -> dict | None:
         if not changes:
             return self.get_note(note_id)
@@ -415,6 +434,7 @@ class Database:
         changes = {k: v for k, v in changes.items() if k in NOTE_COLUMNS}
         if not changes:
             return self.get_note(note_id)
+        self._snapshot_before_edit(note_id, changes)
         changes = {**changes, "updated_at": changes.get("updated_at") or now_iso()}
         sets = ", ".join(f"{key} = :{key}" for key in changes)
         changes_sql = dict(changes)
@@ -434,6 +454,69 @@ class Database:
             self._sync_tasks_from_note(note_id, changes["action_items"])
             self._sync_note_action_items(note_id)
         return self.get_note(note_id)
+
+    def _snapshot_before_edit(self, note_id: str, changes: dict) -> None:
+        """#19: record the current title/summary/raw_text before an edit lands.
+
+        Only content fields trigger a snapshot — status/source churn from the
+        pipeline must not fabricate history. Skips the snapshot when nothing
+        actually differs (update_note is called for bookkeeping fields too).
+        """
+        watched = ("title", "summary", "raw_text")
+        if not any(f in changes for f in watched):
+            return
+        cur = self.execute(
+            "SELECT title, summary, raw_text, status FROM notes WHERE id = ?", (note_id,)
+        ).fetchone()
+        if not cur:
+            return
+        if all(changes.get(f, cur[f]) == cur[f] for f in watched):
+            return
+        # A wholly-empty state (text capture pre-enrichment, voice note pre-
+        # transcription) has nothing worth restoring — skip it.
+        if not (cur["title"] or cur["summary"] or cur["raw_text"]):
+            return
+        # While the pipeline is mid-flight (status=processing) any content
+        # change is automatic — transcription landing, output-mode shaping.
+        origin = "pipeline" if cur["status"] == "processing" else "edit"
+        self.execute(
+            "INSERT INTO note_versions (note_id, title, summary, raw_text, origin, created_at) "
+            "VALUES (:note_id, :title, :summary, :raw_text, :origin, :created_at)",
+            {
+                "note_id": note_id,
+                "title": cur["title"],
+                "summary": cur["summary"],
+                "raw_text": cur["raw_text"],
+                "origin": origin,
+                "created_at": now_iso(),
+            },
+        )
+        self.execute(
+            """
+            DELETE FROM note_versions WHERE note_id = :nid AND id NOT IN (
+              SELECT id FROM note_versions WHERE note_id = :nid
+              ORDER BY id DESC LIMIT :cap
+            )
+            """,
+            {"nid": note_id, "cap": self.VERSIONS_PER_NOTE},
+        )
+
+    def note_versions(self, note_id: str) -> list[dict]:
+        """Snapshots for a note, oldest first (index 0 = original capture)."""
+        rows = self.execute(
+            "SELECT id, note_id, title, summary, raw_text, origin, created_at "
+            "FROM note_versions WHERE note_id = ? ORDER BY id ASC",
+            (note_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_note_version(self, note_id: str, version_id: int) -> dict | None:
+        row = self.execute(
+            "SELECT id, note_id, title, summary, raw_text, origin, created_at "
+            "FROM note_versions WHERE note_id = ? AND id = ?",
+            (note_id, version_id),
+        ).fetchone()
+        return dict(row) if row else None
 
     def get_note(self, note_id: str) -> dict | None:
         row = self.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()

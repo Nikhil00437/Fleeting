@@ -79,6 +79,20 @@ export const api = {
 
   restoreNote: (id: string) => req<Note>(`/notes/${id}/restore`, { method: "POST" }),
 
+  noteVersions: (id: string) =>
+    req<
+      { id: number; title: string; summary: string; raw_text: string; origin: string; created_at: string }[]
+    >(`/notes/${id}/versions`),
+
+  revertVersion: (id: string, versionId: number) =>
+    req<Note>(`/notes/${id}/versions/${versionId}/revert`, { method: "POST" }),
+
+  regenerateNote: (id: string, model?: string) =>
+    req<Note>(`/notes/${id}/regenerate`, {
+      method: "POST",
+      body: JSON.stringify(model ? { model } : {}),
+    }),
+
   purgeNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}/purge`, { method: "POST" }),
 
   trash: () => req<Note[]>("/trash"),

@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..config import save_config
 from ..db import now_iso
-from ..models import NoteOut, NoteUpdateIn, SnoozeIn
+from ..models import NoteOut, NoteUpdateIn, RegenerateIn, SnoozeIn
 from ..services import markdown
 from ..services.embeddings import embed_note
 
@@ -279,6 +279,93 @@ def trash_empty(request: Request) -> dict:
         st.bus.publish("note.deleted", {"id": note["id"]})
         purged += 1
     return {"ok": True, "purged": purged}
+
+
+@router.get("/{note_id}/versions")
+def list_note_versions(note_id: str, request: Request) -> list[dict]:
+    """#19: snapshots of title/summary/raw_text, oldest first."""
+    st = request.app.state.st
+    if not st.db.get_note(note_id):
+        raise HTTPException(404, "note not found")
+    return st.db.note_versions(note_id)
+
+
+@router.post("/{note_id}/versions/{version_id}/revert")
+def revert_note_version(note_id: str, version_id: int, request: Request) -> NoteOut:
+    """Restore title/summary/raw_text from a snapshot.
+
+    update_note snapshots the current content first, so a revert is itself
+    undoable — the history grows by one entry, nothing is destroyed.
+    """
+    st = request.app.state.st
+    version = st.db.get_note_version(note_id, version_id)
+    if not version:
+        raise HTTPException(404, "version not found")
+    note = st.db.update_note(
+        note_id,
+        {
+            "title": version["title"],
+            "summary": version["summary"],
+            "raw_text": version["raw_text"],
+        },
+    )
+    assert note
+    if note["status"] == "done":
+        markdown.sync_note(st.cfg.paths, note)
+    try:
+        embed_note(note, st.db, st.cfg)
+    except Exception:
+        log.warning("re-embed failed after revert of note %s", note_id, exc_info=True)
+    st.bus.publish("note.updated", note)
+    return _out(note)
+
+
+@router.post("/{note_id}/regenerate")
+async def regenerate_note(note_id: str, body: RegenerateIn, request: Request) -> NoteOut:
+    """#20: re-run enrichment (title/summary/tags) for this note.
+
+    Accepts a one-off model override so the user can pick a different model
+    without changing their default. Tasks and raw_text are untouched.
+    """
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, "note not found")
+    if not (note.get("raw_text") or "").strip():
+        raise HTTPException(400, "note has no content to enrich")
+    if st.cfg.llm.provider == "none":
+        raise HTTPException(400, "no LLM provider configured — set one in settings")
+
+    from dataclasses import replace as dc_replace
+
+    llm_cfg = st.cfg.llm
+    if body.model:
+        llm_cfg = dc_replace(llm_cfg, model=body.model)
+
+    from ..services import llm as llm_svc
+
+    try:
+        enriched = await llm_svc.enrich(note["raw_text"], llm_cfg)
+    except llm_svc.LLMUnavailable as exc:
+        raise HTTPException(502, f"model unreachable: {exc}") from exc
+
+    note = st.db.update_note(
+        note_id,
+        {
+            "title": enriched["title"],
+            "summary": enriched["summary"],
+            "tags": enriched["tags"],
+            "review_state": "enriched",
+        },
+    )
+    assert note
+    markdown.sync_note(st.cfg.paths, note)
+    try:
+        embed_note(note, st.db, st.cfg)
+    except Exception:
+        log.warning("re-embed failed after regenerate of note %s", note_id, exc_info=True)
+    st.bus.publish("note.updated", note)
+    return _out(note)
 
 
 @router.post("/{note_id}/reprocess")
