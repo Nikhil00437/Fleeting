@@ -1,4 +1,5 @@
 import { useState } from "react";
+import MicPicker from "./MicPicker";
 import { api } from "../../api";
 import { BotIcon, CpuIcon, MicIcon, SparkIcon } from "../Icons";
 import { fmtMB, inputCls, labelCls, Toggle, type FormProps } from "./shared";
@@ -514,6 +515,8 @@ export default function AiTab({
                   />
                 </div>
               </div>
+
+              <MicPicker />
 
               <div className="mt-5 space-y-3 border-t border-ink-800/80 pt-4">
                 <div className="flex flex-wrap items-center gap-3">

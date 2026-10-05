@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { audioConstraints } from "../mic";
 import { api } from "../api";
 import { LinkIcon, MicIcon, SendIcon, SparkIcon, StopIcon, TaskIcon, XIcon } from "./Icons";
 import type { Note } from "../types";
@@ -112,7 +113,7 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
 
   async function startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints() });
       streamRef.current = stream;
       cancelledRef.current = false;
 

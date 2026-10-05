@@ -1,3 +1,4 @@
+import { audioConstraints } from "../mic";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export const WAVE_BARS = 9;
@@ -68,7 +69,7 @@ export function useAudioVisualizer(): AudioVisualizerState {
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true },
+          audio: audioConstraints(),
         });
         mediaStreamRef.current = stream;
 
