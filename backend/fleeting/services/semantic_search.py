@@ -130,7 +130,7 @@ def hybrid_search(
         candidates: list[dict] = []
         for idx, r in enumerate(kw_results):
             note = dict(r)
-            if note.get("archived"):
+            if note.get("archived") or note.get("trashed_at"):
                 continue
             note["match_type"] = "keyword"
             note["score"] = float(round(1.0 / (1.0 + idx * 0.1), 4))
@@ -170,7 +170,7 @@ def hybrid_search(
             if not raw_note:
                 continue
             note = dict(raw_note)
-            if note.get("archived"):
+            if note.get("archived") or note.get("trashed_at"):
                 continue
 
             note["score"] = float(round(sim, 4))
@@ -252,7 +252,7 @@ def hybrid_search(
                     continue
                 note = dict(raw_note)
 
-            if note.get("archived"):
+            if note.get("archived") or note.get("trashed_at"):
                 continue
 
             if not note.get("snippet"):

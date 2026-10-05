@@ -114,6 +114,13 @@ class ActivityConfig:
 
 
 @dataclass
+class NotesConfig:
+    # #274: notes sit in the trash this long before the boot purge hard-deletes
+    # them. 0 disables the purge entirely (trash grows forever).
+    trash_retention_days: int = 30
+
+
+@dataclass
 class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
@@ -122,6 +129,7 @@ class Config:
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     activity: ActivityConfig = field(default_factory=ActivityConfig)
+    notes: NotesConfig = field(default_factory=NotesConfig)
 
 
 # Sections that map to dataclass fields, used for (de)serialization.
@@ -133,6 +141,7 @@ _SECTIONS: dict[str, type] = {
     "youtube": YouTubeConfig,
     "notifications": NotificationsConfig,
     "activity": ActivityConfig,
+    "notes": NotesConfig,
 }
 
 

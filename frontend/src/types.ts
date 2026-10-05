@@ -24,6 +24,13 @@ export interface Note {
   snippet?: string | null;
   score?: number;
   match_type?: SearchMode | "hybrid" | "keyword" | "semantic";
+  // 0.4 metadata
+  starred?: boolean;
+  trashed_at?: string | null;
+  color?: string | null;
+  fields?: Record<string, unknown>;
+  sensitive?: boolean;
+  review_state?: "raw" | "enriched" | "reviewed" | "final";
 }
 
 export interface Stats {

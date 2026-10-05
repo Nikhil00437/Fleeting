@@ -129,14 +129,79 @@ def toggle_archive(note_id: str, request: Request) -> NoteOut:
 
 
 @router.delete("/{note_id}")
-def delete_note(note_id: str, request: Request) -> dict:
+def trash_note(note_id: str, request: Request) -> dict:
+    """#274: DELETE trashes the note instead of destroying it.
+
+    The row (and its audio) survives until the retention purge or an explicit
+    purge, so Undo in the UI is a restore, not a resurrection ritual. The
+    vault mirror drops the file immediately — trashed notes must not linger
+    in Obsidian.
+    """
     st = request.app.state.st
-    note = st.db.delete_note(note_id, audio_root=st.cfg_audio_dir())
+    note = st.db.get_note(note_id)
     if not note:
         raise HTTPException(404, "note not found")
+    note = st.db.update_note(note_id, {"trashed_at": now_iso()})
+    assert note
+    markdown.remove_note(st.cfg.paths, note)
+    st.bus.publish("note.updated", note)
+    return {"ok": True, "id": note_id}
+
+
+@router.post("/{note_id}/restore")
+def restore_note(note_id: str, request: Request) -> NoteOut:
+    """Take a note back out of the trash."""
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, "note not found")
+    note = st.db.update_note(note_id, {"trashed_at": None})
+    assert note
+    # Re-mirror: trash removed the vault file, so restore must put it back.
+    markdown.sync_note(st.cfg.paths, note)
+    st.bus.publish("note.updated", note)
+    return _out(note)
+
+
+@router.post("/{note_id}/purge")
+def purge_note(note_id: str, request: Request) -> dict:
+    """Hard-delete a trashed note now, skipping the retention window."""
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, "note not found")
+    note = st.db.delete_note(note_id, audio_root=st.cfg_audio_dir())
+    assert note
     markdown.remove_note(st.cfg.paths, note)
     st.bus.publish("note.deleted", {"id": note_id})
     return {"ok": True, "id": note_id}
+
+
+trash_router = APIRouter(prefix="/api/trash", tags=["notes"])
+
+
+@trash_router.get("")
+def list_trash(request: Request) -> list[NoteOut]:
+    st = request.app.state.st
+    return [_out(n) for n in st.db.trashed_notes()]
+
+
+@trash_router.delete("/{note_id}")
+def trash_purge(note_id: str, request: Request) -> dict:
+    return purge_note(note_id, request)
+
+
+@trash_router.post("/empty")
+def trash_empty(request: Request) -> dict:
+    """Purge every trashed note immediately."""
+    st = request.app.state.st
+    purged = 0
+    for note in st.db.trashed_notes(limit=1000):
+        st.db.delete_note(note["id"], audio_root=st.cfg_audio_dir())
+        markdown.remove_note(st.cfg.paths, note)
+        st.bus.publish("note.deleted", {"id": note["id"]})
+        purged += 1
+    return {"ok": True, "purged": purged}
 
 
 @router.post("/{note_id}/reprocess")

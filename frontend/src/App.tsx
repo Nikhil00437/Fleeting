@@ -311,9 +311,12 @@ export default function App() {
 
  const selected = notes.find((n) => n.id === selectedId) ?? null;
 
- const failedCount = useMemo(() => notes.filter((n) => n.status === "failed").length, [notes]);
+ const failedCount = useMemo(
+  () => notes.filter((n) => n.status === "failed" && !n.trashed_at).length,
+  [notes],
+ );
  const inFlightCount = useMemo(
-  () => notes.filter((n) => n.status === "pending" || n.status === "processing").length,
+  () => notes.filter((n) => (n.status === "pending" || n.status === "processing") && !n.trashed_at).length,
   [notes],
  );
 
@@ -321,6 +324,7 @@ export default function App() {
   () =>
    notes.filter(
     (n) =>
+     !n.trashed_at &&
      !(
       n.status === "failed" &&
       !n.title.trim() &&

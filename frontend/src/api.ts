@@ -74,7 +74,16 @@ export const api = {
   updateNote: (id: string, changes: Partial<Note>) =>
     req<Note>(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
 
+  /** #274: DELETE trashes — reversible until purge or the retention window. */
   deleteNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}`, { method: "DELETE" }),
+
+  restoreNote: (id: string) => req<Note>(`/notes/${id}/restore`, { method: "POST" }),
+
+  purgeNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}/purge`, { method: "POST" }),
+
+  trash: () => req<Note[]>("/trash"),
+
+  emptyTrash: () => req<{ ok: boolean; purged: number }>("/trash/empty", { method: "POST" }),
 
   archiveNote: (id: string) => req<Note>(`/notes/${id}/archive`, { method: "POST" }),
   pinNote: (id: string) => req<Note>(`/notes/${id}/pin`, { method: "POST" }),

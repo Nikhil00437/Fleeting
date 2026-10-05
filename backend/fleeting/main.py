@@ -257,6 +257,20 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         except Exception:
             log.exception("activity prune failed")
 
+        # #274: auto-purge notes whose trash retention window has lapsed.
+        # Runs on boot like the activity prune — the app is a tray app, not a
+        # daemon with a scheduler, so boot is the reliable tick.
+        trash_days = int(getattr(cfg.notes, "trash_retention_days", 30) or 0)
+        if trash_days > 0:
+            from .services import markdown
+
+            try:
+                for purged in db.purge_expired_trash(trash_days, audio_root=st.cfg_audio_dir()):
+                    markdown.remove_note(cfg.paths, purged)
+                    bus.publish("note.deleted", {"id": purged["id"]})
+            except Exception:
+                log.exception("trash purge failed")
+
         # Migrate the embedding corpus if the model changed since last run.
         backfill_task = _maybe_backfill_embeddings(db, cfg, bus, st)
         if backfill_task is not None:
@@ -354,6 +368,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     from .routers import activity, assistant, capture, notes, processes, search, settings, system, tasks
 
     app.include_router(notes.router)
+    app.include_router(notes.trash_router)
     app.include_router(capture.router)
     app.include_router(tasks.router)
     app.include_router(search.router)

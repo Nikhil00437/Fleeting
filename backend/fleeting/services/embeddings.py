@@ -251,13 +251,13 @@ def backfill_embeddings(
             match += " AND dimensions = :dims"
             params["dims"] = dimensions
         where = (
-            "archived = 0 AND ("
+            "trashed_at IS NULL AND archived = 0 AND ("
             "id NOT IN (SELECT note_id FROM note_embeddings) OR "
             f"id NOT IN (SELECT note_id FROM note_embeddings WHERE {match})"
             ")"
         )
     else:
-        where = "archived = 0 AND id NOT IN (SELECT note_id FROM note_embeddings)"
+        where = "trashed_at IS NULL AND archived = 0 AND id NOT IN (SELECT note_id FROM note_embeddings)"
     rows = db.execute(f"SELECT * FROM notes WHERE {where}", params).fetchall()
 
     count = 0

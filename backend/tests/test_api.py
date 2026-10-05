@@ -73,7 +73,10 @@ def test_pin_archive_delete(client):
     assert client.post(f"/api/notes/{note['id']}/pin").json()["pinned"] is True
     assert client.post(f"/api/notes/{note['id']}/archive").json()["archived"] is True
     assert client.get("/api/notes", params={"archived": False}).json() == []
+    # #274: DELETE trashes; the row survives until purge
     assert client.delete(f"/api/notes/{note['id']}").json()["ok"] is True
+    assert client.get(f"/api/notes/{note['id']}").json()["trashed_at"] is not None
+    client.post(f"/api/notes/{note['id']}/purge")
     assert client.get(f"/api/notes/{note['id']}").status_code == 404
 
 

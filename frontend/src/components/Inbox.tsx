@@ -58,6 +58,10 @@ export default function Inbox({
   const [showFailed, setShowFailed] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // #274: trash panel with lazy fetch — only hits /api/trash once opened.
+  const [showTrash, setShowTrash] = useState(false);
+  const [trashNotes, setTrashNotes] = useState<Note[] | null>(null);
+  const [trashLoading, setTrashLoading] = useState(false);
   const togglePick = (id: string) =>
     setPicked((s) => {
       const next = new Set(s);
@@ -87,7 +91,7 @@ export default function Inbox({
     }
     setPicked(new Set());
     setSelectMode(false);
-    toast(`${kind === "delete" ? "Deleted" : kind === "archive" ? "Archived" : "Pinned"} ${ok} note${ok === 1 ? "" : "s"}`);
+    toast(`${kind === "delete" ? "Trashed" : kind === "archive" ? "Archived" : "Pinned"} ${ok} note${ok === 1 ? "" : "s"}`);
     void refreshStats();
   }
 
@@ -98,6 +102,52 @@ export default function Inbox({
     () => api.stats(rangeDays).then(setStats).catch(() => {}),
     [rangeDays],
   );
+
+  function loadTrash() {
+    setTrashLoading(true);
+    api
+      .trash()
+      .then(setTrashNotes)
+      .catch((e) => toast(e instanceof Error ? e.message : String(e), "err"))
+      .finally(() => setTrashLoading(false));
+  }
+
+  async function handleRestore(id: string) {
+    await runNoteAction({
+      api,
+      toast,
+      action: () => api.restoreNote(id),
+      success: "Note restored",
+      onDone: (restored) => {
+        setTrashNotes((list) => (list ?? []).filter((n) => n.id !== id));
+        onNoteUpdated?.(restored);
+        void refreshStats();
+      },
+    });
+  }
+
+  async function handlePurge(id: string) {
+    await runNoteAction({
+      api,
+      toast,
+      action: () => api.purgeNote(id),
+      success: "Note permanently deleted",
+      onDone: () => {
+        setTrashNotes((list) => (list ?? []).filter((n) => n.id !== id));
+        void refreshStats();
+      },
+    });
+  }
+
+  async function handleEmptyTrash() {
+    await runNoteAction({
+      api,
+      toast,
+      action: () => api.emptyTrash(),
+      success: "Trash emptied",
+      onDone: () => setTrashNotes([]),
+    });
+  }
 
   useEffect(() => {
     refreshStats();
@@ -134,7 +184,7 @@ export default function Inbox({
       api,
       toast,
       action: () => api.deleteNote(id),
-      success: "Note deleted",
+      success: "Note moved to trash",
       onDone: () => {
         onNoteDeleted?.(id);
         void refreshStats();
@@ -155,7 +205,11 @@ export default function Inbox({
     void refreshStats();
   }
 
-  const activeNotes = useMemo(() => notes.filter((n) => !n.archived), [notes]);
+  // #274: trashed notes leave the inbox immediately; they live in /api/trash.
+  const activeNotes = useMemo(
+    () => notes.filter((n) => !n.archived && !n.trashed_at),
+    [notes],
+  );
 
   // Separate empty failed captures (e.g. silent mic checks) so they don't clutter the primary workspace
   const { healthyNotes, emptyFailedNotes } = useMemo(() => {
@@ -333,6 +387,23 @@ export default function Inbox({
           >
             <ActivityIcon className="h-3 w-3" />
             <span className="hidden lg:inline">Overview</span>
+          </button>
+
+          <button
+            onClick={() => {
+              const next = !showTrash;
+              setShowTrash(next);
+              if (next) loadTrash();
+            }}
+            className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+              showTrash
+                ? "border-red-400/35 bg-red-500/15 text-red-200"
+                : "border-white/[0.07] bg-ink-950/80 text-ink-400 hover:text-ink-200"
+            }`}
+            title="Open trash — notes are kept here before auto-purge"
+          >
+            <TrashIcon className="h-3 w-3" />
+            <span className="hidden lg:inline">Trash</span>
           </button>
 
           <button
@@ -577,8 +648,65 @@ export default function Inbox({
           </div>
         )}
 
-        {/* Notes Feed */}
-        {notes.length === 0 ? (
+        {/* Notes Feed or Trash */}
+        {showTrash ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 px-1 pt-4">
+              <TrashIcon className="h-3.5 w-3.5 text-red-300" />
+              <h2 className="micro-label !text-ink-300">Trash</h2>
+              <span className="rounded-full bg-white/[0.05] px-2 py-0.2 font-mono text-[10px] text-ink-400">
+                {trashLoading ? "…" : (trashNotes?.length ?? 0)}
+              </span>
+              <div className="h-px flex-1 bg-gradient-to-r from-ink-500/20 via-ink-500/5 to-transparent" />
+              {trashNotes && trashNotes.length > 0 && (
+                <button
+                  onClick={() => void handleEmptyTrash()}
+                  className="rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-[11px] font-medium text-red-200 hover:bg-red-500/20"
+                >
+                  Empty trash
+                </button>
+              )}
+            </div>
+            {trashLoading ? (
+              <div className="shimmer h-16 rounded-2xl" />
+            ) : !trashNotes || trashNotes.length === 0 ? (
+              <div className="glass rounded-2xl py-10 text-center">
+                <p className="text-xs text-ink-400">Trash is empty. Deleted notes rest here until auto-purge.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {trashNotes.map((n) => (
+                  <div
+                    key={n.id}
+                    className="glass flex items-center gap-3 rounded-xl px-3.5 py-2.5"
+                  >
+                    <span className="micro-label w-14 shrink-0 !text-[9px]">{n.type}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-ink-200">
+                      {n.title || n.raw_text.slice(0, 60) || "Untitled capture"}
+                    </span>
+                    <span className="hidden shrink-0 font-mono text-[10px] text-ink-500 sm:inline">
+                      {n.trashed_at ? new Date(n.trashed_at).toLocaleDateString() : ""}
+                    </span>
+                    <button
+                      onClick={() => void handleRestore(n.id)}
+                      className="shrink-0 rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-[11px] text-ink-200 hover:border-emerald-400/40 hover:text-emerald-200"
+                      title="Restore this note to the inbox"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => void handlePurge(n.id)}
+                      className="shrink-0 rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-[11px] text-red-200 hover:bg-red-500/20"
+                      title="Delete permanently — this cannot be undone"
+                    >
+                      Delete forever
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : notes.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="glass-studio flex h-14 w-14 items-center justify-center rounded-2xl">
               <SparkIcon className="h-6 w-6 text-ember-400" />

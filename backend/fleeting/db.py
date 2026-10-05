@@ -443,8 +443,12 @@ class Database:
         note_type: str | None = None,
         archived: bool = False,
         pinned_first: bool = True,
+        trashed: bool = False,
     ) -> list[dict]:
         where = ["archived = :archived"]
+        # #274: trashed notes are hidden everywhere by default and only surface
+        # through the explicit trash listing.
+        where.append("trashed_at IS NULL" if not trashed else "trashed_at IS NOT NULL")
         params: dict = {"archived": 1 if archived else 0, "limit": limit, "offset": offset}
         if tag:
             where.append("EXISTS (SELECT 1 FROM json_each(notes.tags) je WHERE je.value = :tag)")
@@ -471,11 +475,11 @@ class Database:
         return int(row["c"])
 
     def delete_note(self, note_id: str, audio_root: str | Path | None = None) -> dict | None:
-        """Delete a note, its tasks, and its audio file.
+        """Hard-delete a note, its tasks, and its audio file.
 
-        The audio file used to be left on disk forever, so the data dir grew
-        monotonically. Only paths inside `audio_root` are unlinked, so a
-        hand-edited or imported row cannot delete something outside it.
+        This is now the *purge* path — the API's DELETE trashes first (#274).
+        Only paths inside `audio_root` are unlinked, so a hand-edited or
+        imported row cannot delete something outside it.
         """
         note = self.get_note(note_id)
         if note:
@@ -484,6 +488,38 @@ class Database:
             self.commit()
             self._unlink_audio(note.get("audio_path"), audio_root)
         return note
+
+    def trashed_notes(self, limit: int = 200) -> list[dict]:
+        """Notes in the trash, most recently trashed first."""
+        rows = self.execute(
+            "SELECT * FROM notes WHERE trashed_at IS NOT NULL "
+            "ORDER BY trashed_at DESC LIMIT :limit",
+            {"limit": limit},
+        ).fetchall()
+        return [_row_to_note(r) for r in rows]
+
+    def purge_expired_trash(self, retention_days: int, audio_root: str | Path | None = None) -> list[dict]:
+        """Hard-delete notes trashed more than `retention_days` ago.
+
+        Returns the purged notes so callers can publish `note.deleted` and
+        clean up vault mirrors. Timestamps are ISO-8601 strings written by
+        now_iso(), so string comparison with the cutoff is order-correct.
+        """
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=max(0, retention_days))
+        ).isoformat(timespec="seconds")
+        rows = self.execute(
+            "SELECT id FROM notes WHERE trashed_at IS NOT NULL AND trashed_at < ?",
+            (cutoff,),
+        ).fetchall()
+        purged = []
+        for r in rows:
+            note = self.delete_note(r["id"], audio_root=audio_root)
+            if note:
+                purged.append(note)
+        if purged:
+            log.info("purged %d trashed note(s) older than %d days", len(purged), retention_days)
+        return purged
 
     @staticmethod
     def _unlink_audio(audio_path: str | None, audio_root: str | Path | None) -> None:
@@ -790,7 +826,7 @@ class Database:
                    snippet(notes_fts, 1, '[[', ']]', '…', 24) AS snippet
             FROM notes_fts f
             JOIN notes n ON n.rowid = f.rowid
-            WHERE notes_fts MATCH :q
+            WHERE notes_fts MATCH :q AND n.trashed_at IS NULL
             ORDER BY rank
             LIMIT :limit
             """,
@@ -803,7 +839,7 @@ class Database:
             """
             SELECT je.value AS tag, COUNT(*) AS count
             FROM notes, json_each(notes.tags) je
-            WHERE notes.archived = 0
+            WHERE notes.archived = 0 AND notes.trashed_at IS NULL
             GROUP BY je.value
             ORDER BY count DESC, tag ASC
             """
@@ -823,6 +859,7 @@ class Database:
               SUM(CASE WHEN type = 'voice' THEN 1 ELSE 0 END) AS voice_count,
               SUM(CASE WHEN type = 'youtube' THEN 1 ELSE 0 END) AS youtube_count
             FROM notes
+            WHERE trashed_at IS NULL
             """
         ).fetchone()
         t_row = self.execute(
@@ -832,7 +869,7 @@ class Database:
               SUM(CASE WHEN t.done = 1 THEN 1 ELSE 0 END) AS done_tasks
             FROM tasks t
             LEFT JOIN notes n ON t.note_id = n.id
-            WHERE (n.archived = 0 OR n.id IS NULL)
+            WHERE ((n.archived = 0 AND n.trashed_at IS NULL) OR n.id IS NULL)
             """
         ).fetchone()
         open_tasks = int(t_row["open_tasks"] or 0)
@@ -1163,7 +1200,7 @@ class Database:
         limit: int = 200,
         offset: int = 0,
     ) -> list[dict]:
-        where = ["(n.archived = 0 OR n.id IS NULL)"]
+        where = ["((n.archived = 0 AND n.trashed_at IS NULL) OR n.id IS NULL)"]
         params: dict = {"limit": limit, "offset": offset}
 
         if status == "open":
@@ -1233,7 +1270,7 @@ class Database:
                 SUM(CASE WHEN t.done = 0 AND t.due_date = :today THEN 1 ELSE 0 END) AS due_today
             FROM tasks t
             LEFT JOIN notes n ON t.note_id = n.id
-            WHERE (n.archived = 0 OR n.id IS NULL)
+            WHERE ((n.archived = 0 AND n.trashed_at IS NULL) OR n.id IS NULL)
             """,
             {"today": today},
         ).fetchone()
@@ -1263,7 +1300,7 @@ class Database:
             SELECT t.repo, COUNT(*) AS count
             FROM tasks t
             LEFT JOIN notes n ON t.note_id = n.id
-            WHERE t.repo IS NOT NULL AND TRIM(t.repo) != '' AND (n.archived = 0 OR n.id IS NULL)
+            WHERE t.repo IS NOT NULL AND TRIM(t.repo) != '' AND ((n.archived = 0 AND n.trashed_at IS NULL) OR n.id IS NULL)
             GROUP BY t.repo
             ORDER BY count DESC, t.repo ASC
             """
