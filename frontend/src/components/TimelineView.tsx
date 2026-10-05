@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { appColor, appMonogram, fmtSecs, prettyAppName } from "../apps";
-import { renderMarkdown } from "../markdown";
 import { AreaTrend, Bars, Donut, SessionRibbon } from "./charts";
 import {
   ActivityIcon,
-  BotIcon,
   CalendarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ClockIcon,
-  CopyIcon,
   FileIcon,
   FilterIcon,
   FolderIcon,
@@ -20,8 +17,7 @@ import {
   SearchIcon,
   XIcon,
 } from "./Icons";
-import type { ActivityDay, ActivitySession, DailyLog, FilesActivity } from "../types";
-import WeeklyDigestCard from "./WeeklyDigestCard";
+import type { ActivityDay, ActivitySession, FilesActivity } from "../types";
 
 function todayLocal(): string {
   const d = new Date();
@@ -86,12 +82,6 @@ const shortDayLabel = (day: string, totalDays: number) => {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 };
 
-function cleanDigestMarkdown(md: string): string {
-  return md
-    .replace(/^#?\s*Daily Digest\s*[—-].*\n+/i, "")
-    .trim();
-}
-
 interface Props {
   onToast: (message: string, kind?: "ok" | "err") => void;
   refreshKey: number;
@@ -100,8 +90,6 @@ interface Props {
 export default function TimelineView({ onToast, refreshKey }: Props) {
   const [day, setDay] = useState(todayLocal());
   const [data, setData] = useState<ActivityDay | null>(null);
-  const [log, setLog] = useState<DailyLog | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [live, setLive] = useState<ActivitySession | null>(null);
   const [files, setFiles] = useState<FilesActivity | null>(null);
   const [filesLoading, setFilesLoading] = useState(true);
@@ -120,7 +108,6 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
 
   const load = useCallback(() => {
     api.activityDay(day).then(setData).catch(() => {});
-    api.dailyLog(day).then(setLog).catch(() => {});
   }, [day]);
 
   useEffect(load, [load, refreshKey]);
@@ -163,18 +150,6 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
       load();
     } catch (e) {
       onToast(e instanceof Error ? e.message : String(e), "err");
-    }
-  }
-
-  async function generate() {
-    setGenerating(true);
-    try {
-      setLog(await api.generateDailyLog(day, isToday));
-      onToast("daily report updated");
-    } catch (e) {
-      onToast(e instanceof Error ? e.message : String(e), "err");
-    } finally {
-      setGenerating(false);
     }
   }
 
@@ -619,88 +594,6 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
             </div>
           </div>
 
-          <div className="xl:col-span-2">
-            <WeeklyDigestCard onToast={onToast} refreshKey={refreshKey} />
-          </div>
-
-          {/* Daily AI Report */}
-          <div className="xl:col-span-2">
-            <div className="glass-studio glow-border flex h-full flex-col rounded-2xl p-4">
-              <div className="mb-3 flex items-center gap-2.5 border-b border-white/[0.06] pb-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-iris-500/25 to-ember-500/20 text-iris-300 ring-1 ring-white/10">
-                  <BotIcon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-ink-100">Daily AI Executive Digest</p>
-                  <p className="truncate font-mono text-[10px] text-ink-400">
-                    {log?.model === "fallback"
-                      ? "offline heuristics"
-                      : log?.model
-                        ? log.model
-                        : "local LLM"}
-                    {" · "}
-                    {isToday ? "rolling 24h" : prettyDay(day)}
-                  </p>
-                </div>
-                {log?.summary_md && (
-                  <button
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(log.summary_md!);
-                      onToast("report markdown copied");
-                    }}
-                    className="rounded-lg border border-white/10 bg-white/[0.03] p-1.5 text-ink-300 transition-colors hover:border-white/20 hover:text-ink-100"
-                    title="Copy report markdown"
-                  >
-                    <CopyIcon className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <button
-                  onClick={() => void generate()}
-                  disabled={generating}
-                  className="flex items-center gap-1.5 rounded-lg bg-gradient-to-br from-ember-400 to-ember-600 px-3 py-1.5 text-xs font-semibold text-ink-950 shadow-sm transition-all hover:brightness-110 disabled:opacity-60"
-                >
-                  {generating ? (
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-ink-950/30 border-t-ink-950" />
-                  ) : (
-                    <BotIcon className="h-3.5 w-3.5" />
-                  )}
-                  {log?.summary_md ? "Regen" : "Generate"}
-                </button>
-              </div>
-
-              {generating && (
-                <div className="space-y-2.5 py-4">
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <div
-                      key={i}
-                      className="shimmer h-3.5 rounded"
-                      style={{ width: `${92 - i * 12}%` }}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {!generating && log?.summary_md && (
-                <div
-                  className="md selectable max-h-60 min-h-0 flex-1 overflow-y-auto pr-1 text-xs"
-                  dangerouslySetInnerHTML={{
-                    __html: renderMarkdown(cleanDigestMarkdown(log.summary_md)),
-                  }}
-                />
-              )}
-
-              {!generating && !log?.summary_md && (
-                <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
-                  <ActivityIcon className="h-6 w-6 text-ink-600" />
-                  <p className="mt-2 max-w-xs text-xs leading-relaxed text-ink-400">
-                    Synthesizes window sessions, modified files, and git commits into a daily
-                    briefing automatically every 1h of screentime and at midnight — or click
-                    Generate anytime.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Row 3: Files & Git Activity + Interactive Session Feed */}

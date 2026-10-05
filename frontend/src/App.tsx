@@ -13,6 +13,7 @@ import SearchView from "./components/SearchView";
 import SettingsView from "./components/SettingsView";
 import TasksView from "./components/TasksView";
 import TimelineView from "./components/TimelineView";
+import ReportsView from "./components/ReportsView";
 import CaptureHud from "./components/CaptureHud";
 import AssistantView from "./components/AssistantView";
 import ProcessesView from "./components/ProcessesView";
@@ -23,6 +24,7 @@ import {
  CpuIcon,
  MicIcon,
  SearchIcon,
+ FileIcon,
  SettingsIcon,
  SparkIcon,
  TaskIcon,
@@ -32,7 +34,15 @@ import {
 } from "./components/Icons";
 import type { Note, Stats, WhisperProgress } from "./types";
 
-type View = "inbox" | "timeline" | "tasks" | "search" | "settings" | "assistant" | "processes";
+type View =
+  | "inbox"
+  | "timeline"
+  | "reports"
+  | "tasks"
+  | "search"
+  | "settings"
+  | "assistant"
+  | "processes";
 
 interface Toast {
  id: number;
@@ -137,6 +147,7 @@ export default function App() {
    } else if (
     target === "inbox" ||
     target === "timeline" ||
+    target === "reports" ||
     target === "tasks" ||
     target === "search" ||
     target === "settings" ||
@@ -271,6 +282,7 @@ export default function App() {
    else if (e.key === "t") setView("tasks");
    else if (e.key === "a") setView("assistant");
    else if (e.key === "l") setView("timeline");
+   else if (e.key === "r") setView("reports");
    else if (e.key === "s") setView("settings");
     else if (e.key === "p") setView("processes");
   }
@@ -323,6 +335,7 @@ export default function App() {
    icon: <BotIcon className="h-4 w-4 text-ember-400" />,
   },
   { id: "timeline", label: "Timeline", icon: <ActivityIcon className="h-4 w-4" />, hint: "l" },
+  { id: "reports", label: "Reports", icon: <FileIcon className="h-4 w-4" />, hint: "r" },
   {
    id: "tasks",
    label: "Tasks",
@@ -852,6 +865,7 @@ export default function App() {
        />
       ))}
      {view === "timeline" && <TimelineView onToast={toast} refreshKey={timelineKey} />}
+     {view === "reports" && <ReportsView onToast={toast} refreshKey={timelineKey} />}
      {view === "tasks" && (
       <TasksView
        refreshKey={tasksKey}

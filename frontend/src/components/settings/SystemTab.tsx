@@ -235,38 +235,56 @@ export default function SystemTab({
                   <div>
                     <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
                       n
-                    </kbd>{" "}
+                    </kbd> 
                     Focus Quick Capture
                   </div>
                   <div>
                     <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
                       i
-                    </kbd>{" "}
-                    Inbox Pane
+                    </kbd> 
+                    Inbox
                   </div>
                   <div>
                     <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
                       a
-                    </kbd>{" "}
-                    Timeline Pane
+                    </kbd> 
+                    Ask Fleeting
+                  </div>
+                  <div>
+                    <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
+                      l
+                    </kbd> 
+                    Timeline
+                  </div>
+                  <div>
+                    <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
+                      r
+                    </kbd> 
+                    Reports
                   </div>
                   <div>
                     <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
                       t
-                    </kbd>{" "}
-                    Tasks Pane
+                    </kbd> 
+                    Tasks
+                  </div>
+                  <div>
+                    <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
+                      p
+                    </kbd> 
+                    Processes
                   </div>
                   <div>
                     <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
                       /
-                    </kbd>{" "}
-                    Search Pane
+                    </kbd> 
+                    Search
                   </div>
                   <div>
                     <kbd className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[10px]">
                       s
-                    </kbd>{" "}
-                    Settings Pane
+                    </kbd> 
+                    Settings
                   </div>
                 </div>
               </div>
