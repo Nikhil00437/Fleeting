@@ -12,6 +12,7 @@ import type {
   PendingAction,
   RepoInfo,
   SourceRef,
+  AssistantChatOut,
 } from "../types";
 
 export interface Props {
@@ -171,7 +172,7 @@ export async function sendAssistantPromptAction(
   setMessages: React.Dispatch<React.SetStateAction<AssistantDisplayMessage[]>>,
   setLoading: React.Dispatch<React.SetStateAction<boolean>>,
   onToast: (msg: string, kind?: "ok" | "err") => void,
-  options?: { repo?: string | null; type?: string | null; confirm?: boolean }
+  options?: { repo?: string | null; type?: string | null; confirm?: boolean; signal?: AbortSignal }
 ) {
   const trimmed = prompt.trim();
   if (!trimmed) return;
@@ -195,7 +196,48 @@ export async function sendAssistantPromptAction(
         content: m.content,
       }));
 
-    const res = await api.assistantChat({
+    let res: AssistantChatOut;
+    if (typeof api.assistantChatStream === "function") {
+      // Stream into a placeholder bubble so the user sees text as it lands.
+      const pendingId = `asst-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setMessages((prev) => [
+        ...prev,
+        { id: pendingId, role: "assistant", content: "", timestamp: new Date().toISOString() },
+      ]);
+      try {
+        res = await api.assistantChatStream(
+          {
+            messages: payloadMessages,
+            repo: options?.repo && options.repo !== "all" ? options.repo : undefined,
+            type: options?.type && options.type !== "all" ? options.type : undefined,
+            ...(options?.confirm ? { confirm: true } : {}),
+          },
+          (text) =>
+            setMessages((prev) =>
+              prev.map((m) => (m.id === pendingId ? { ...m, content: m.content + text } : m)),
+            ),
+          options?.signal,
+        );
+      } catch (e) {
+        setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+        throw e;
+      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingId
+            ? {
+                ...m,
+                content: res.message.content,
+                sources: res.sources,
+                context_used: res.context_used,
+                pending_action: res.pending_action ?? null,
+              }
+            : m,
+        ),
+      );
+      return;
+    }
+    res = await api.assistantChat({
       messages: payloadMessages,
       repo: options?.repo && options.repo !== "all" ? options.repo : undefined,
       type: options?.type && options.type !== "all" ? options.type : undefined,
@@ -214,16 +256,24 @@ export async function sendAssistantPromptAction(
 
     setMessages((prev) => [...prev, assistantMsg]);
   } catch (err) {
+    const isAbort = err instanceof DOMException && err.name === "AbortError";
     const errorText = err instanceof Error ? err.message : String(err);
-    onToast(`Assistant query failed: ${errorText}`, "err");
-    const errorMsg: AssistantDisplayMessage = {
-      id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      role: "assistant",
-      isError: true,
-      content: `⚠️ Error fetching assistant response: ${errorText}. Please verify that your local LLM service is active or inspect settings.`,
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, errorMsg]);
+    if (isAbort) {
+      setMessages((prev) => [
+        ...prev,
+        { id: `sys-${Date.now()}`, role: "system", content: "⏹ Stopped generating.", timestamp: new Date().toISOString() },
+      ]);
+    } else {
+      onToast(`Assistant query failed: ${errorText}`, "err");
+      const errorMsg: AssistantDisplayMessage = {
+        id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role: "assistant",
+        isError: true,
+        content: `⚠️ Error fetching assistant response: ${errorText}. Please verify that your local LLM service is active or inspect settings.`,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    }
   } finally {
     setLoading(false);
   }
@@ -255,6 +305,7 @@ export default function AssistantView({
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Load starter suggestions if not provided
   useEffect(() => {
@@ -288,13 +339,14 @@ export default function AssistantView({
   const handleSendPrompt = (promptText: string) => {
     if (loading) return;
     setInput("");
+    abortRef.current = new AbortController();
     sendAssistantPromptAction(
       promptText,
       messages,
       setMessages,
       setLoading,
       onToast,
-      { repo: selectedRepo }
+      { repo: selectedRepo, signal: abortRef.current.signal }
     );
   };
 
@@ -634,8 +686,18 @@ export default function AssistantView({
             ) : (
               <SendIcon className="h-3.5 w-3.5 text-ember-300" />
             )}
-            <span className="hidden sm:inline">Ask</span>
+            <span className="hidden sm:inline">{loading ? "Asking…" : "Ask"}</span>
           </button>
+          {loading && (
+            <button
+              type="button"
+              onClick={() => abortRef.current?.abort()}
+              className="flex h-10 items-center justify-center rounded-xl border border-ink-700 bg-ink-900 px-3 text-xs font-semibold text-ink-300 transition-colors hover:bg-ink-800"
+              data-testid="stop-prompt-btn"
+            >
+              Stop
+            </button>
+          )}
         </form>
       </div>
     </div>

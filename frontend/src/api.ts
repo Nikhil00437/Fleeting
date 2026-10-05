@@ -218,6 +218,57 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** Streaming variant: onDelta fires per chunk, resolves with the final done event. */
+  assistantChatStream: async (
+    body: AssistantChatIn,
+    onDelta: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<AssistantChatOut> => {
+    const res = await fetch(BASE + "/assistant/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(res.statusText || "stream request failed");
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let final: AssistantChatOut | null = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const frames = buf.split("\n\n");
+      buf = frames.pop() ?? "";
+      for (const frame of frames) {
+        const line = frame.trim();
+        if (!line.startsWith("data:")) continue;
+        let evt: { type?: string; text?: string; detail?: string } & Partial<AssistantChatOut>;
+        try {
+          evt = JSON.parse(line.slice(5).trim());
+        } catch {
+          continue;
+        }
+        if (evt.type === "delta" && evt.text) onDelta(evt.text);
+        else if (evt.type === "done") {
+          final = {
+            message: evt.message!,
+            sources: evt.sources ?? [],
+            context_used: evt.context_used ?? { notes_count: 0, tasks_count: 0, logs_count: 0 },
+            pending_action: evt.pending_action ?? null,
+          };
+        } else if (evt.type === "error") {
+          throw new Error(evt.detail || "stream error");
+        }
+      }
+    }
+    if (!final) throw new Error("stream ended without a final event");
+    return final;
+  },
+
   assistantSuggestions: () =>
     req<AssistantSuggestionsOut>("/assistant/suggestions"),
 

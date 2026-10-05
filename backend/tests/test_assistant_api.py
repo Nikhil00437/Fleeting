@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -809,3 +810,22 @@ async def test_user_question_is_still_present(
 
     msgs = _captured(capturing_llm)
     assert any("kubernetes cluster migration" in m["content"] for m in msgs[1:])
+
+
+def test_api_chat_stream_endpoint(client: TestClient) -> None:
+    payload = {
+        "messages": [{"role": "user", "content": "What can you do?"}]
+    }
+    r = client.post("/api/assistant/chat/stream", json=payload)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    frames = [f for f in r.text.split("\n\n") if f.strip()]
+    assert frames, "expected at least one SSE frame"
+    events = []
+    for f in frames:
+        line = f.strip()
+        assert line.startswith("data:")
+        events.append(json.loads(line[5:]))
+    assert events[-1]["type"] == "done"
+    assert events[-1]["message"]["role"] == "assistant"
+    assert len(events[-1]["message"]["content"]) > 0

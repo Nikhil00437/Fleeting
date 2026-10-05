@@ -487,3 +487,56 @@ def heuristic_enrich(text: str, today: date | None = None) -> dict:
     action_items = deduped[:10]
 
     return {"title": title, "summary": summary, "tags": tags[:5], "action_items": action_items}
+
+
+async def stream_chat(
+    url: str,
+    payload: dict,
+    timeout_secs: int,
+    *,
+    provider: str = "ollama",
+    headers: dict[str, str] | None = None,
+):
+    """Async generator of content deltas from a streaming chat request.
+
+    Yields str chunks; raises LLMUnavailable on failure. Handles both Ollama
+    NDJSON and OpenAI-compatible SSE (LM Studio) framing.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=timeout_secs, headers=headers or None) as client:
+            async with client.stream("POST", url, json=payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line or line.startswith(":"):
+                        continue
+                    if provider == "lmstudio":
+                        if not line.startswith("data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        if data_str == "[DONE]":
+                            return
+                        try:
+                            data = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = (
+                            data.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content")
+                            or ""
+                        )
+                    else:
+                        try:
+                            data = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = (data.get("message") or {}).get("content") or ""
+                        if data.get("done"):
+                            if delta:
+                                yield delta
+                            return
+                    if delta:
+                        yield delta
+    except Exception as exc:
+        raise LLMUnavailable(f"request failed: {type(exc).__name__}: {exc}") from exc
