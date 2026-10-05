@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../markdown";
 import { fmtDuration, relTime, timeOfDay } from "../time";
@@ -17,6 +17,7 @@ import {
   XIcon,
 } from "./Icons";
 import { StatusBadge } from "./NoteCard";
+import { pipelineSteps, totalSecs } from "./pipeline";
 import { runNoteAction } from "./actionRunner";
 import { errorMessage } from "./settingsState";
 import type { Note } from "../types";
@@ -57,6 +58,45 @@ function toMarkdown(n: Note): string {
   if (n.raw_text) lines.push("", "## Content", "", n.raw_text);
   if (n.source?.url) lines.push("", `> ${n.source.url}`);
   return lines.join("\n");
+}
+
+function PipelineStepper({ note }: { note: Note }) {
+  const steps = pipelineSteps(note);
+  const interesting = note.status !== "done" || (note.source?.timings && Object.keys(note.source.timings).length > 0);
+  if (!interesting) return null;
+  return (
+    <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+      <div className="flex items-center gap-1.5">
+        {steps.map((s, i) => (
+          <Fragment key={s.key}>
+            {i > 0 && <span className="h-px w-3 bg-ink-700" />}
+            <span
+              className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
+                s.state === "done"
+                  ? "text-emerald-300"
+                  : s.state === "current"
+                    ? "animate-pulse text-ember-300"
+                    : s.state === "failed"
+                      ? "text-red-300"
+                      : "text-ink-500"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  s.state === "done" ? "bg-emerald-400" : s.state === "current" ? "bg-ember-400" : s.state === "failed" ? "bg-red-400" : "bg-ink-700"
+                }`}
+              />
+              {s.label}
+              {s.secs !== undefined && <span className="font-mono text-[9px] opacity-70">{s.secs}s</span>}
+            </span>
+          </Fragment>
+        ))}
+        {note.status === "done" && totalSecs(note) > 0 && (
+          <span className="ml-auto font-mono text-[9.5px] text-ink-500">{totalSecs(note)}s total</span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast }: Props) {
@@ -254,6 +294,8 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
             )}
           </div>
         </div>
+
+        <PipelineStepper note={note} />
 
         {note.status === "failed" && note.error && (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">

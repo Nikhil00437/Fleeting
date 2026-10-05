@@ -136,11 +136,10 @@ class Processor:
                 raw_text = result["text"]
                 if not raw_text:
                     raise TranscriptionError("transcription produced no text (silent audio?)")
-                source["transcription"] = {
-                    "duration": result["duration"],
-                    "language": result["language"],
-                }
-                note = self.db.update_note(note_id, {"raw_text": raw_text, "source": source})
+                self._patch_source(note_id, {
+                    "transcription": {"duration": result["duration"], "language": result["language"]}
+                })
+                note = self.db.update_note(note_id, {"raw_text": raw_text})
                 # #91 retention: drop the raw audio once it has served its
                 # purpose, unless the user asked to keep it.
                 if not self.cfg.transcribe.keep_audio and note["audio_path"]:
@@ -151,8 +150,8 @@ class Processor:
                 ingested = await asyncio.to_thread(
                     yt_ingest, source["url"], self.cfg.youtube, self.transcriber
                 )
-                source.update(ingested["source"])
-                note = self.db.update_note(note_id, {"raw_text": ingested["text"], "source": source})
+                self._patch_source(note_id, ingested["source"])
+                note = self.db.update_note(note_id, {"raw_text": ingested["text"]})
 
             note = note or self.db.get_note(note_id)
             if not note or not (note.get("raw_text") or "").strip():
@@ -160,7 +159,7 @@ class Processor:
                 return
 
             # 2) enrichment
-            await self._set_stage(note_id, "organizing")
+            await self._set_stage(note_id, "enriching")
             try:
                 enriched = await llm.enrich(note["raw_text"], self.cfg.llm)
                 source["enrichment"] = "local-llm"
@@ -174,7 +173,7 @@ class Processor:
                 "title": enriched["title"],
                 "summary": enriched["summary"],
                 "tags": enriched["tags"],
-                "source": source,
+                "source": self._patch_source(note_id, source),
                 "status": "done",
                 "error": None,
                 "processed_at": now_iso(),
@@ -249,6 +248,7 @@ class Processor:
             note = self.db.get_note(note_id)
 
             # 4) embedding + vault mirror + notify
+            await self._set_stage(note_id, "syncing")
             if note:
                 try:
                     embed_note(note, self.db, self.cfg)
@@ -256,7 +256,21 @@ class Processor:
                     log.warning("failed to embed note %s: %s", note_id, exc)
                 markdown.sync_note(self.cfg.paths, note)
                 self._maybe_notify(note)
+                # close out the syncing stage's timing before the final publish
+                fresh = self.db.get_note(note_id) or {}
+                src = dict(fresh.get("source") or {})
+                anchor = src.get("stage_started_at")
+                if anchor and src.get("stage") == "syncing":
+                    try:
+                        t = dict(src.get("timings") or {})
+                        t["syncing"] = round(
+                            (datetime.now(timezone.utc) - datetime.fromisoformat(anchor)).total_seconds(), 1
+                        )
+                        self._patch_source(note_id, {"timings": t})
+                    except (ValueError, TypeError):
+                        pass
             log.info("note %s processed in %.1fs", note_id, time.monotonic() - started)
+            note = self.db.get_note(note_id)
             self.bus.publish("note.updated", note)
         except (TranscriptionError, YouTubeError) as exc:
             self._fail(note_id, str(exc))
@@ -264,11 +278,39 @@ class Processor:
             log.exception("processing note %s failed", note_id)
             self._fail(note_id, f"{type(exc).__name__}: {exc}")
 
+    def _patch_source(self, note_id: str, patch: dict) -> dict:
+        """Merge `patch` into source without dropping keys another step wrote."""
+        note = self.db.get_note(note_id)
+        src = dict((note or {}).get("source") or {})
+        src.update(patch)
+        self.db.update_note(note_id, {"source": src})
+        return src
+
     async def _set_stage(self, note_id: str, stage: str) -> None:
         note = self.db.get_note(note_id)
         if note:
             source = dict(note.get("source") or {})
+            timings = dict(source.get("timings") or {})
+            prev = source.get("stage")
+            # #323: accumulate per-stage wall-clock seconds so the UI can
+            # render the stepper with timings.
+            anchor = source.get("stage_started_at")
+            if prev and anchor:
+                try:
+                    started = datetime.fromisoformat(anchor)
+                    timings[prev] = round((datetime.now(timezone.utc) - started).total_seconds(), 1)
+                except (ValueError, TypeError):
+                    pass
+            elif not prev:
+                # First real stage closes out the queue wait.
+                try:
+                    created = datetime.fromisoformat(note["created_at"])
+                    timings["queued"] = round((datetime.now(timezone.utc) - created).total_seconds(), 1)
+                except (ValueError, TypeError, KeyError):
+                    pass
+            source["timings"] = timings
             source["stage"] = stage
+            source["stage_started_at"] = now_iso()
             note = self.db.update_note(note_id, {"source": source})
             self.bus.publish("note.updated", note)
 

@@ -250,3 +250,33 @@ async def test_keep_audio_false_deletes_file_after_processing(tmp_path) -> None:
         assert done["raw_text"] == "hello world"
     finally:
         p.stop()
+
+
+@pytest.mark.anyio
+async def test_stage_timings_recorded(tmp_path) -> None:
+    """#323: each pipeline stage leaves wall-clock seconds on the note."""
+    db = Database(tmp_path / "p.db")
+    db.migrate()
+    cfg = Config()
+    cfg.llm.provider = "none"
+    t = FakeTranscriber()
+    p = Processor(db, cfg, EventBus(), t)
+
+    note = db.insert_note({"raw_text": "hello there", "type": "text", "source": {}})
+
+    p.start()
+    p.enqueue(note["id"])
+    try:
+        for _ in range(200):
+            done = db.get_note(note["id"])
+            if done and done["status"] in ("done", "failed"):
+                break
+            await asyncio.sleep(0.05)
+        done = db.get_note(note["id"])
+        assert done["status"] == "done"
+        timings = done["source"]["timings"]
+        assert timings["queued"] >= 0
+        assert "enriching" in timings
+        assert "syncing" in timings
+    finally:
+        p.stop()
