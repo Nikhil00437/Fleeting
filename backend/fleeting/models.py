@@ -150,16 +150,22 @@ class NoteOut(BaseModel):
     snippet: str | None = None  # only present on search results
     score: float | None = None
     match_type: str | None = None
+    capture_id: str | None = None
+    source_title: str | None = None
 
 
 class CaptureTextIn(BaseModel):
     text: str = Field(min_length=1, max_length=200_000)
     title: str = ""
     tags: list[str] = Field(default_factory=list)
+    capture_id: str | None = Field(default=None, max_length=64)
+    source_title: str | None = Field(default=None, max_length=300)
 
 
 class CaptureYouTubeIn(BaseModel):
     url: str = Field(min_length=5, max_length=2000)
+    capture_id: str | None = Field(default=None, max_length=64)
+    source_title: str | None = Field(default=None, max_length=300)
 
 
 class NoteUpdateIn(BaseModel):

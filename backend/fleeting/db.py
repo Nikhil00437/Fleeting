@@ -182,6 +182,14 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX IF NOT EXISTS idx_commits_when ON commits(committed_at);
     """,
+    # v9 — 0.3 capture ergonomics: idempotency key + source window title.
+    # Partial unique index: retries collide, ordinary NULLs don't.
+    """
+    ALTER TABLE notes ADD COLUMN capture_id TEXT;
+    ALTER TABLE notes ADD COLUMN source_title TEXT;
+    CREATE UNIQUE INDEX idx_notes_capture_id ON notes(capture_id) WHERE capture_id IS NOT NULL;
+    CREATE INDEX idx_notes_type ON notes(type);
+    """,
 ]
 
 
@@ -216,7 +224,7 @@ _ACTIVITY_FTS_TRIGGERS: tuple[tuple[str, str], ...] = (
 NOTE_COLUMNS = frozenset({
     "type", "title", "summary", "raw_text", "tags", "action_items", "source",
     "audio_path", "status", "error", "pinned", "archived",
-    "created_at", "updated_at", "processed_at",
+    "created_at", "updated_at", "processed_at", "capture_id", "source_title",
 })
 
 
@@ -341,14 +349,22 @@ class Database:
             "created_at": note.get("created_at") or now,
             "updated_at": note.get("updated_at") or now,
         }
+        # #332: a client retry with the same capture_id returns the original
+        # note instead of 500ing on the unique index.
+        if note.get("capture_id"):
+            row = self.execute(
+                "SELECT id FROM notes WHERE capture_id = ?", (note["capture_id"],)
+            ).fetchone()
+            if row:
+                return self.get_note(row["id"])  # type: ignore[return-value]
         self.execute(
             """
             INSERT INTO notes (id, type, title, summary, raw_text, tags, action_items,
                                source, audio_path, status, error, pinned, archived,
-                               created_at, updated_at, processed_at)
+                               created_at, updated_at, processed_at, capture_id, source_title)
             VALUES (:id, :type, :title, :summary, :raw_text, :tags, :action_items,
                     :source, :audio_path, :status, :error, :pinned, :archived,
-                    :created_at, :updated_at, :processed_at)
+                    :created_at, :updated_at, :processed_at, :capture_id, :source_title)
             """,
             _note_to_sql(note),
         )
@@ -388,6 +404,10 @@ class Database:
 
     def get_note(self, note_id: str) -> dict | None:
         row = self.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+        return _row_to_note(row) if row else None
+
+    def get_note_by_capture_id(self, capture_id: str) -> dict | None:
+        row = self.execute("SELECT * FROM notes WHERE capture_id = ?", (capture_id,)).fetchone()
         return _row_to_note(row) if row else None
 
     def list_notes(
@@ -1343,6 +1363,8 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "processed_at": row["processed_at"],
+        "capture_id": row["capture_id"] if "capture_id" in row.keys() else None,
+        "source_title": row["source_title"] if "source_title" in row.keys() else None,
     }
     for key in extra:
         if key in row.keys():
@@ -1375,6 +1397,8 @@ def _note_to_sql(note: dict) -> dict:
     out.setdefault("archived", 0)
     out.setdefault("audio_path", None)
     out.setdefault("processed_at", None)
+    out.setdefault("capture_id", None)
+    out.setdefault("source_title", None)
     now = now_iso()
     out.setdefault("created_at", now)
     out.setdefault("updated_at", now)

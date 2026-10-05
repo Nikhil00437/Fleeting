@@ -39,7 +39,12 @@ def capture_text(body: CaptureTextIn, request: Request) -> NoteOut:
     # pasting a youtube link into the text box routes to the youtube pipeline
     yt_match = YOUTUBE_RE.search(text)
     if yt_match and len(text) < 200 and text.strip().startswith(("http", "www.", "youtu")):
-        return _capture_youtube(request, f"https://youtu.be/{yt_match.group(1)}")
+        return _capture_youtube(request, f"https://youtu.be/{yt_match.group(1)}", body.capture_id, body.source_title)
+
+    if body.capture_id:
+        existing = st.db.get_note_by_capture_id(body.capture_id)
+        if existing:
+            return NoteOut(**existing)
 
     note = st.db.insert_note(
         {
@@ -50,6 +55,8 @@ def capture_text(body: CaptureTextIn, request: Request) -> NoteOut:
             "tags": body.tags[:6],
             "source": {},
             "status": "pending",
+            "capture_id": body.capture_id,
+            "source_title": body.source_title,
             "created_at": _now(),
             "updated_at": _now(),
         }
@@ -95,14 +102,18 @@ async def capture_audio(request: Request, file: UploadFile = File(...)) -> NoteO
 
 @router.post("/youtube")
 def capture_youtube(body: CaptureYouTubeIn, request: Request) -> NoteOut:
-    return _capture_youtube(request, body.url)
+    return _capture_youtube(request, body.url, body.capture_id, body.source_title)
 
 
-def _capture_youtube(request: Request, raw_url: str) -> NoteOut:
+def _capture_youtube(request: Request, raw_url: str, capture_id: str | None = None, source_title: str | None = None) -> NoteOut:
     st = request.app.state.st
     match = YOUTUBE_RE.search(raw_url)
     if not match:
         raise HTTPException(422, "that doesn't look like a YouTube URL")
+    if capture_id:
+        existing = st.db.get_note_by_capture_id(capture_id)
+        if existing:
+            return NoteOut(**existing)
     url = f"https://youtu.be/{match.group(1)}"
     note = st.db.insert_note(
         {
@@ -111,6 +122,8 @@ def _capture_youtube(request: Request, raw_url: str) -> NoteOut:
             "raw_text": "",
             "source": {"url": url},
             "status": "pending",
+            "capture_id": capture_id,
+            "source_title": source_title,
             "created_at": _now(),
             "updated_at": _now(),
         }

@@ -132,6 +132,11 @@ def test_upgrading_an_existing_db_indexes_its_history(tmp_path) -> None:
         "DROP TRIGGER IF EXISTS activity_au;"
         "DROP TABLE IF EXISTS activity_fts;"
         "DROP TABLE IF EXISTS commits;"
+        # rewind notes schema too, else re-running v9 fails on ADD COLUMN
+        "DROP INDEX IF EXISTS idx_notes_capture_id;"
+        "DROP INDEX IF EXISTS idx_notes_type;"
+        "ALTER TABLE notes DROP COLUMN capture_id;"
+        "ALTER TABLE notes DROP COLUMN source_title;"
         "DELETE FROM schema_version WHERE version >= 8;"
     )
     conn.commit()
@@ -176,6 +181,11 @@ def test_migration_v8_does_not_require_the_activity_table(tmp_path) -> None:
         "DROP TABLE IF EXISTS activity_fts;"
         "DROP TABLE IF EXISTS commits;"
         "DROP TABLE IF EXISTS activity;"
+        # rewind notes schema too, else re-running v9 fails on ADD COLUMN
+        "DROP INDEX IF EXISTS idx_notes_capture_id;"
+        "DROP INDEX IF EXISTS idx_notes_type;"
+        "ALTER TABLE notes DROP COLUMN capture_id;"
+        "ALTER TABLE notes DROP COLUMN source_title;"
         "DELETE FROM schema_version WHERE version >= 8;"
     )
     conn.commit()
