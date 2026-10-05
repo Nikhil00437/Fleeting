@@ -33,6 +33,12 @@ export default function CaptureHud({
     () => initialState || (audioError ? "error" : "listening")
   );
   const [mode, setMode] = useState<CaptureMode>(initialMode);
+  // #2: hold-to-talk — record only while the button is held, vs the default
+  // toggle that starts on mount and stops on Enter/check.
+  const [holdMode, setHoldMode] = useState(false);
+  const holdActiveRef = useRef(false);
+  const holdCommitRef = useRef(false);
+  const micReadyRef = useRef(false);
   const [previewText, setPreviewText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(() => audioError || null);
 
@@ -114,13 +120,16 @@ export default function CaptureHud({
     setState("listening");
     void getDesktop()?.resizeHud?.(72);
 
+    // Hold mode records only while the hold button is pressed.
+    if (holdMode) return;
+
     try {
       await start();
     } catch (err) {
       setState("error");
       setErrorMessage(err instanceof Error ? err.message : "Failed to access microphone");
     }
-  }, [start]);
+  }, [start, holdMode]);
 
   // Sync audio hook errors
   useEffect(() => {
@@ -212,6 +221,28 @@ export default function CaptureHud({
     return unsub;
   }, [handleCommit, handleRestart]);
 
+  const handleHoldDown = useCallback(() => {
+    if (isRecordingRef.current) return;
+    holdActiveRef.current = true;
+    holdCommitRef.current = false;
+    micReadyRef.current = false;
+    void start()
+      .then(() => {
+        micReadyRef.current = true;
+        if (holdCommitRef.current) void handleCommit();
+      })
+      .catch((err) => {
+        setState("error");
+        setErrorMessage(err instanceof Error ? err.message : "Microphone access denied");
+      });
+  }, [start, handleCommit]);
+
+  const handleHoldUp = useCallback(() => {
+    holdActiveRef.current = false;
+    if (micReadyRef.current) void handleCommit();
+    else holdCommitRef.current = true;
+  }, [handleCommit]);
+
   return (
     <div
       id="capture-hud-root"
@@ -220,6 +251,19 @@ export default function CaptureHud({
       <div className="w-full max-w-[500px]">
         {state === "listening" && (
           <div className="w-full h-[52px] hud-pill px-4 flex items-center justify-between gap-3 animate-in fade-in zoom-in-95 duration-150">
+            {holdMode && !isRecording ? (
+              <button
+                type="button"
+                onPointerDown={handleHoldDown}
+                onPointerUp={handleHoldUp}
+                onPointerLeave={handleHoldUp}
+                title="Hold to talk"
+                className="flex h-8 flex-1 items-center justify-center rounded-full border border-[#d8784c]/40 bg-[#d8784c]/15 text-xs font-semibold text-[#d8784c] active:scale-[0.98] transition-transform cursor-pointer"
+              >
+                Hold to talk
+              </button>
+            ) : (
+              <>
             {/* Left: Recording dot & 9-bar reactive wave */}
             <div className="flex items-center gap-3">
               <div className="sdot" title="Recording live" />
@@ -241,6 +285,8 @@ export default function CaptureHud({
             <div className="font-mono text-sm font-medium tracking-wider text-neutral-300">
               {formatElapsed(elapsed)}
             </div>
+              </>
+            )}
 
             {/* Right: Mode pill and commit/cancel controls */}
             <div className="flex items-center gap-2">
@@ -258,6 +304,18 @@ export default function CaptureHud({
                 <span className="text-[10px] opacity-60 font-mono">Tab</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => setHoldMode((h) => !h)}
+                title="Toggle hold-to-talk"
+                className={`px-2 py-1 text-[10px] font-semibold rounded-full border transition-colors cursor-pointer ${
+                  holdMode
+                    ? "bg-ember-500/20 text-ember-400 border-ember-400/40"
+                    : "border-white/10 text-neutral-500 hover:text-neutral-300"
+                }`}
+              >
+                Hold
+              </button>
               <button
                 type="button"
                 onClick={() => void handleCommit()}
