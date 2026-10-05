@@ -307,6 +307,12 @@ export default function App() {
 
  const selected = notes.find((n) => n.id === selectedId) ?? null;
 
+ const failedCount = useMemo(() => notes.filter((n) => n.status === "failed").length, [notes]);
+ const inFlightCount = useMemo(
+  () => notes.filter((n) => n.status === "pending" || n.status === "processing").length,
+  [notes],
+ );
+
  const nonEmptyNotesCount = useMemo(
   () =>
    notes.filter(
@@ -326,13 +332,15 @@ export default function App() {
   label: string;
   icon: React.ReactNode;
   badge?: number;
+  badgeWarn?: boolean;
   hint: string;
  }> = [
   {
    id: "inbox",
    label: "Inbox",
    icon: <TextIcon className="h-4 w-4" />,
-   badge: nonEmptyNotesCount || undefined,
+   badge: failedCount || nonEmptyNotesCount || undefined,
+   badgeWarn: failedCount > 0,
    hint: "i",
   },
   {
@@ -350,7 +358,7 @@ export default function App() {
    badge: stats?.open_tasks || undefined,
    hint: "t",
   },
-     { id: "processes", label: "Processes", icon: <CpuIcon className="h-4 w-4" />, hint: "p" },
+     { id: "processes", label: "Processes", icon: <CpuIcon className="h-4 w-4" />, badge: inFlightCount || undefined, hint: "p" },
    { id: "search", label: "Search", icon: <SearchIcon className="h-4 w-4" />, hint: "/" },
   { id: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" />, hint: "s" },
  ];
@@ -747,7 +755,7 @@ export default function App() {
            {sidebarCollapsed ? (
             item.badge !== undefined &&
             item.badge > 0 && (
-             <span className="absolute top-1 right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-ember-500 px-1 font-mono text-[8.5px] font-bold leading-none text-ink-100">
+             <span className={`absolute top-1 right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 font-mono text-[8.5px] font-bold leading-none text-ink-100 ${item.badgeWarn ? "bg-red-500" : "bg-ember-500"}`}>
               {item.badge > 99 ? "99+" : item.badge}
              </span>
             )
@@ -757,9 +765,11 @@ export default function App() {
              {item.badge !== undefined && item.badge > 0 && (
               <span
                className={`ml-auto rounded-md px-1.5 py-0.5 font-mono text-[10px] leading-none ${
-                active
-                 ? "bg-ember-500/30 font-semibold text-ember-300"
-                 : "bg-ink-900 text-ink-400"
+                item.badgeWarn
+                 ? "bg-red-500/20 font-semibold text-red-300"
+                 : active
+                   ? "bg-ember-500/30 font-semibold text-ember-300"
+                   : "bg-ink-900 text-ink-400"
                }`}
               >
                {item.badge}
