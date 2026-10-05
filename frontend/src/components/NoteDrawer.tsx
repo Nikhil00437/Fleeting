@@ -26,7 +26,7 @@ import { runNoteAction } from "./actionRunner";
 import { errorMessage } from "./settingsState";
 import { NOTE_COLORS, colorHex } from "./noteColors";
 import { diffStats, diffText } from "./textDiff";
-import type { Note } from "../types";
+import type { Collection, Note } from "../types";
 
 interface NoteVersion {
   id: number;
@@ -126,10 +126,13 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [regenOpen, setRegenOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [allCollections, setAllCollections] = useState<Collection[] | null>(null);
   const [regenModels, setRegenModels] = useState<string[] | null>(null);
   const [versions, setVersions] = useState<NoteVersion[] | null>(null);
   const [versionError, setVersionError] = useState<string | null>(null);
   const [links, setLinks] = useState<{ outgoing: Note[]; backlinks: Note[] } | null>(null);
+  const [noteCollections, setNoteCollections] = useState<Collection[] | null>(null);
 
   useEffect(() => {
     setTitle(note.title);
@@ -140,6 +143,8 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
     setVersions(null);
     setVersionError(null);
     setLinks(null);
+    setNoteCollections(null);
+    setPickerOpen(false);
     setNewTaskText("");
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -188,6 +193,21 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
       .catch(() => setLinks(null));
   }, [note.id, note.raw_text]);
 
+  async function toggleCollectionMembership(collId: string, member: boolean) {
+    try {
+      if (member) await api.removeFromCollection(collId, note.id);
+      else await api.addToCollection(collId, note.id);
+      setNoteCollections(await api.noteCollections(note.id));
+    } catch (e) {
+      onToast(errorMessage(e), "err");
+    }
+  }
+
+  // Membership chips load with the note; all collections fetched for the picker.
+  useEffect(() => {
+    api.noteCollections(note.id).then(setNoteCollections).catch(() => setNoteCollections([]));
+  }, [note.id]);
+
   function loadVersions() {
     setVersionError(null);
     api
@@ -215,6 +235,13 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
       success: model ? `Regenerated with ${model}` : "Regenerated title, summary and tags",
       onDone: (updated) => onUpdate(updated),
     });
+  }
+
+  function openCollectionPicker() {
+    setPickerOpen((v) => !v);
+    if (!allCollections) {
+      api.collections().then(setAllCollections).catch(() => setAllCollections([]));
+    }
   }
 
   async function openRegenMenu() {
@@ -733,6 +760,65 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
                 )}
               </div>
             )}
+
+            {/* #268: collection membership */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <p className="micro-label !text-[9.5px]">Collections</p>
+                <button
+                  onClick={openCollectionPicker}
+                  className="text-ink-500 transition-colors hover:text-ink-200"
+                  title="Add to a collection"
+                  aria-label="Add to collection"
+                >
+                  +
+                </button>
+              </div>
+              <div className="relative">
+                <div className="flex flex-wrap gap-1.5">
+                  {(noteCollections ?? []).length === 0 && (
+                    <span className="text-[11px] text-ink-500">Not in any collection</span>
+                  )}
+                  {(noteCollections ?? []).map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => void toggleCollectionMembership(c.id, true)}
+                      className="group flex items-center gap-1 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-0.5 font-mono text-[11px] text-ink-200 hover:border-red-400/40"
+                      title="Remove from collection"
+                    >
+                      {c.name}
+                      <XIcon className="h-2.5 w-2.5 text-ink-500 group-hover:text-red-300" />
+                    </button>
+                  ))}
+                </div>
+                {pickerOpen && (
+                  <div className="glass-studio absolute left-0 top-6 z-50 w-52 rounded-xl p-1.5">
+                    {(allCollections ?? []).length === 0 && (
+                      <p className="px-2.5 py-1.5 text-[10.5px] text-ink-500">
+                        No collections yet — create one in the Inbox.
+                      </p>
+                    )}
+                    {(allCollections ?? []).map((c) => {
+                      const member = (noteCollections ?? []).some((m) => m.id === c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => void toggleCollectionMembership(c.id, member)}
+                          className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[11px] hover:bg-white/[0.06] ${
+                            member ? "text-ember-200" : "text-ink-200"
+                          }`}
+                        >
+                          <span className="truncate">{c.name}</span>
+                          <span className="font-mono text-[9px] text-ink-500">
+                            {member ? "✓" : c.kind}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Raw Content / Transcript */}
             {note.raw_text && (

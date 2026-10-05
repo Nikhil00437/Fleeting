@@ -281,6 +281,15 @@ def trash_empty(request: Request) -> dict:
     return {"ok": True, "purged": purged}
 
 
+@router.get("/{note_id}/collections")
+def note_collections(note_id: str, request: Request) -> list[dict]:
+    """Collections this note belongs to (drawer membership chips)."""
+    st = request.app.state.st
+    if not st.db.get_note(note_id):
+        raise HTTPException(404, "note not found")
+    return st.db.collections_for_note(note_id)
+
+
 @router.get("/{note_id}/links")
 def get_note_links(note_id: str, request: Request) -> dict:
     """#22: outgoing wikilinks and backlinks for a note."""

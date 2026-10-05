@@ -6,6 +6,7 @@ const base = (): ServerState => ({
   whisper: null,
   timelineKey: 0,
   tasksKey: 0,
+  collectionsKey: 0,
   notes: [],
   embedding: null,
 });
@@ -188,8 +189,18 @@ describe("emptyServerState", () => {
       whisper: null,
       timelineKey: 0,
       tasksKey: 0,
+      collectionsKey: 0,
       notes: [],
       embedding: null,
     });
+  });
+});
+describe("collections events", () => {
+  it("bumps collectionsKey on collections.changed", () => {
+    const s = applyServerEvent(base(), {
+      type: "collections.changed",
+      data: { id: "c1", action: "updated" },
+    });
+    expect(s.collectionsKey).toBe(1);
   });
 });

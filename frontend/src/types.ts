@@ -266,6 +266,18 @@ declare global {
 
 export type SearchMode = "hybrid" | "keyword" | "semantic";
 
+export interface Collection {
+  id: string;
+  kind: "manual" | "saved_query" | "project";
+  name: string;
+  description: string;
+  status: string | null;
+  query: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  item_count?: number;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;

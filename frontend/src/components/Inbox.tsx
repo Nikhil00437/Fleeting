@@ -7,6 +7,7 @@ import { runNoteAction } from "./actionRunner";
 import {
   ActivityIcon,
   FilterIcon,
+  FolderIcon,
   GridIcon,
   LinkIcon,
   ListIcon,
@@ -20,7 +21,7 @@ import {
   TrashIcon,
   XIcon,
 } from "./Icons";
-import type { Note, Stats } from "../types";
+import type { Collection, Note, Stats } from "../types";
 
 interface Props {
   notes: Note[];
@@ -29,6 +30,8 @@ interface Props {
   onPin: (id: string) => void;
   onStar?: (id: string) => void;
   onQuickStart: () => void;
+  /** Bumped by collections.changed SSE events; triggers a refetch. */
+  collectionsKey?: number;
   onNoteUpdated?: (note: Note) => void;
   onNoteDeleted?: (id: string) => void;
   onToast?: (message: string, kind?: "ok" | "err") => void;
@@ -47,6 +50,7 @@ export default function Inbox({
   onPin,
   onStar,
   onQuickStart,
+  collectionsKey,
   onNoteUpdated,
   onNoteDeleted,
   onToast,
@@ -72,6 +76,10 @@ export default function Inbox({
   const [showTrash, setShowTrash] = useState(false);
   const [trashNotes, setTrashNotes] = useState<Note[] | null>(null);
   const [trashLoading, setTrashLoading] = useState(false);
+  // #267/#268/#269: collections dropdown + open collection view.
+  const [showCollections, setShowCollections] = useState(false);
+  const [collections, setCollections] = useState<Collection[] | null>(null);
+  const [activeCollection, setActiveCollection] = useState<(Collection & { notes: Note[] }) | null>(null);
   const togglePick = (id: string) =>
     setPicked((s) => {
       const next = new Set(s);
@@ -112,6 +120,65 @@ export default function Inbox({
     () => api.stats(rangeDays).then(setStats).catch(() => {}),
     [rangeDays],
   );
+
+  function loadCollections() {
+    api.collections().then(setCollections).catch(() => setCollections([]));
+  }
+
+  // Refetch whenever a collections.changed SSE lands while the dropdown is open,
+  // and refresh an open collection's notes so membership stays truthful.
+  useEffect(() => {
+    if (showCollections) loadCollections();
+    if (activeCollection) {
+      api
+        .collection(activeCollection.id)
+        .then(setActiveCollection)
+        .catch(() => setActiveCollection(null));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionsKey]);
+
+  async function openCollection(id: string) {
+    try {
+      const detail = await api.collection(id);
+      setActiveCollection(detail);
+      setShowCollections(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function saveCurrentFilters() {
+    const name =
+      tagFilter ||
+      (typeFilter !== "all" ? `${typeFilter} captures` : filterQuery.trim()) ||
+      `Saved ${new Date().toLocaleDateString()}`;
+    try {
+      await api.createCollection({
+        name,
+        kind: "saved_query",
+        query: {
+          text: filterQuery.trim() || undefined,
+          tag: tagFilter ?? undefined,
+          type: typeFilter !== "all" ? typeFilter : undefined,
+        },
+      });
+      toast(`Saved "${name}" as a collection`);
+      loadCollections();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function deleteCollection(id: string) {
+    try {
+      await api.deleteCollection(id);
+      if (activeCollection?.id === id) setActiveCollection(null);
+      loadCollections();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
 
   function loadTrash() {
     setTrashLoading(true);
@@ -447,6 +514,23 @@ export default function Inbox({
 
           <button
             onClick={() => {
+              const next = !showCollections;
+              setShowCollections(next);
+              if (next) loadCollections();
+            }}
+            className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+              showCollections || activeCollection
+                ? "border-iris-400/35 bg-iris-500/15 text-iris-200"
+                : "border-white/[0.07] bg-ink-950/80 text-ink-400 hover:text-ink-200"
+            }`}
+            title="Collections — projects, playlists and saved searches"
+          >
+            <FolderIcon className="h-3 w-3" />
+            <span className="hidden lg:inline">Collections</span>
+          </button>
+
+          <button
+            onClick={() => {
               const next = !showTrash;
               setShowTrash(next);
               if (next) loadTrash();
@@ -503,6 +587,58 @@ export default function Inbox({
           </div>
         </div>
       </div>
+
+      {/* Collections dropdown */}
+      {showCollections && (
+        <div className="relative z-30 shrink-0 border-b border-ink-800 bg-ink-950/95 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="micro-label">Collections</p>
+            <button
+              onClick={() => void saveCurrentFilters()}
+              className="rounded-lg border border-iris-400/30 bg-iris-500/10 px-2.5 py-1 text-[11px] font-medium text-iris-200 hover:bg-iris-500/20"
+              title="Create a saved query from the active filters"
+            >
+              Save current filters
+            </button>
+          </div>
+          {!collections ? (
+            <div className="shimmer h-10 rounded-xl" />
+          ) : collections.length === 0 ? (
+            <p className="py-2 text-xs text-ink-500">
+              No collections yet — save the current filters, or add one from a note in the drawer.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+              {collections.map((c) => (
+                <div
+                  key={c.id}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
+                    activeCollection?.id === c.id
+                      ? "border-iris-400/40 bg-iris-500/10"
+                      : "border-white/[0.06] bg-white/[0.02] hover:border-iris-400/30"
+                  }`}
+                >
+                  <button onClick={() => void openCollection(c.id)} className="min-w-0 flex-1 text-left">
+                    <p className="truncate text-xs font-medium text-ink-100">{c.name}</p>
+                    <p className="font-mono text-[9.5px] text-ink-500">
+                      {c.kind}
+                      {c.status ? ` · ${c.status}` : ""} · {c.item_count ?? 0}
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => void deleteCollection(c.id)}
+                    className="shrink-0 text-ink-500 transition-colors hover:text-red-300"
+                    title="Delete collection (notes are kept)"
+                    aria-label={`Delete collection ${c.name}`}
+                  >
+                    <XIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Scrollable Workspace Body */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-5">
@@ -704,8 +840,56 @@ export default function Inbox({
           </div>
         )}
 
-        {/* Notes Feed or Trash */}
-        {showTrash ? (
+        {/* Notes Feed, Collection, or Trash */}
+        {activeCollection ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 px-1 pt-4">
+              <FolderIcon className="h-3.5 w-3.5 text-iris-300" />
+              <h2 className="micro-label !text-iris-200">{activeCollection.name}</h2>
+              <span className="rounded-full bg-white/[0.05] px-2 py-0.2 font-mono text-[10px] text-ink-400">
+                {activeCollection.kind} · {activeCollection.notes.length}
+              </span>
+              {activeCollection.description && (
+                <span className="hidden truncate text-[11px] text-ink-500 md:inline">
+                  {activeCollection.description}
+                </span>
+              )}
+              <div className="h-px flex-1 bg-gradient-to-r from-ink-500/20 via-ink-500/5 to-transparent" />
+              <button
+                onClick={() => setActiveCollection(null)}
+                className="rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-[11px] text-ink-200 hover:text-ink-100"
+              >
+                Exit collection
+              </button>
+            </div>
+            {activeCollection.notes.length === 0 ? (
+              <div className="glass rounded-2xl py-10 text-center">
+                <p className="text-xs text-ink-400">
+                  {activeCollection.kind === "saved_query"
+                    ? "Nothing matches this saved query yet."
+                    : "No notes in this collection yet — add them from a note's drawer."}
+                </p>
+              </div>
+            ) : (
+              <div className={gridCls}>
+                {activeCollection.notes.map((n) => (
+                  <NoteCard
+                    key={n.id}
+                    note={n}
+                    highlight={selectedId === n.id}
+                    onOpen={onOpen}
+                    onPin={onPin}
+                    onStar={onStar}
+                    onUpdate={onNoteUpdated}
+                    onToggleTask={handleToggleTask}
+                    onRetry={handleRetry}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : showTrash ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 px-1 pt-4">
               <TrashIcon className="h-3.5 w-3.5 text-red-300" />

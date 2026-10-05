@@ -100,6 +100,7 @@ export default function App() {
  const toastSeq = useRef(0);
  const [tasksKey, setTasksKey] = useState(0);
  const [timelineKey, setTimelineKey] = useState(0);
+ const [collectionsKey, setCollectionsKey] = useState(0);
 
  const desktop = typeof window !== "undefined" ? window.fleetingDesktop : undefined;
  const isElectron = Boolean(desktop?.isElectron);
@@ -188,6 +189,7 @@ export default function App() {
   whisper: whisperProgress as unknown as Record<string, unknown> | null,
   timelineKey,
   tasksKey,
+  collectionsKey,
   embedding: null,
  });
  serverState.current = {
@@ -197,6 +199,7 @@ export default function App() {
   whisper: whisperProgress as unknown as Record<string, unknown> | null,
   timelineKey,
   tasksKey,
+  collectionsKey,
   embedding,
  };
 
@@ -218,6 +221,7 @@ export default function App() {
     setWhisperProgress(next.whisper as WhisperProgress | null);
    if (next.timelineKey !== before.timelineKey) setTimelineKey(next.timelineKey);
    if (next.tasksKey !== before.tasksKey) setTasksKey(next.tasksKey);
+   if (next.collectionsKey !== before.collectionsKey) setCollectionsKey(next.collectionsKey);
    if (next.embedding !== before.embedding) {
     setEmbedding(next.embedding);
     // the finished marker means the button should re-enable and health is stale
@@ -911,6 +915,7 @@ export default function App() {
         onPin={pin}
         onStar={star}
         onQuickStart={() => captureRef.current?.focus()}
+        collectionsKey={collectionsKey}
         onNoteUpdated={(n) => {
          mergeNote(n);
          refreshStats();

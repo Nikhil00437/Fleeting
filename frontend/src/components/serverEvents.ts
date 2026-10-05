@@ -20,6 +20,7 @@ export interface ServerState {
   whisper: Record<string, unknown> | null;
   timelineKey: number;
   tasksKey: number;
+  collectionsKey: number;
   notes: ServerNote[];
   /** Raw latest embedding-migration payload, if any. */
   embedding: Record<string, unknown> | null;
@@ -42,6 +43,7 @@ export function emptyServerState(): ServerState {
     whisper: null,
     timelineKey: 0,
     tasksKey: 0,
+    collectionsKey: 0,
     notes: [],
     embedding: null,
   };
@@ -118,6 +120,10 @@ export function applyServerEvent(
     case "embedding.backfill.progress":
       // Carried raw; backfill.ts turns it into display state.
       return { ...state, embedding: data, ...noEffects };
+
+    case "collections.changed":
+      // Collections view + drawer membership chips refetch on this key.
+      return { ...state, collectionsKey: state.collectionsKey + 1, ...noEffects };
 
     case "dailylog.updated":
       return {

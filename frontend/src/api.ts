@@ -1,5 +1,6 @@
 import type {
   Note,
+  Collection,
   Settings,
   Stats,
   TagCount,
@@ -78,6 +79,26 @@ export const api = {
   deleteNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}`, { method: "DELETE" }),
 
   restoreNote: (id: string) => req<Note>(`/notes/${id}/restore`, { method: "POST" }),
+
+  collections: () => req<Collection[]>("/collections"),
+
+  noteCollections: (id: string) => req<Collection[]>(`/notes/${id}/collections`),
+
+  collection: (id: string) => req<Collection & { notes: Note[] }>(`/collections/${id}`),
+
+  createCollection: (data: { name: string; kind?: string; description?: string; query?: Record<string, unknown> }) =>
+    req<Collection>("/collections", { method: "POST", body: JSON.stringify(data) }),
+
+  deleteCollection: (id: string) => req<{ ok: boolean }>(`/collections/${id}`, { method: "DELETE" }),
+
+  addToCollection: (id: string, noteId: string) =>
+    req<{ ok: boolean }>(`/collections/${id}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ note_id: noteId }),
+    }),
+
+  removeFromCollection: (id: string, noteId: string) =>
+    req<{ ok: boolean }>(`/collections/${id}/notes/${noteId}`, { method: "DELETE" }),
 
   noteLinks: (id: string) =>
     req<{ outgoing: Note[]; backlinks: Note[] }>(`/notes/${id}/links`),
