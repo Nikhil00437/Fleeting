@@ -435,6 +435,8 @@ class Database:
         if not changes:
             return self.get_note(note_id)
         self._snapshot_before_edit(note_id, changes)
+        if "raw_text" in changes:
+            self._sync_note_links(note_id, str(changes["raw_text"] or ""))
         changes = {**changes, "updated_at": changes.get("updated_at") or now_iso()}
         sets = ", ".join(f"{key} = :{key}" for key in changes)
         changes_sql = dict(changes)
@@ -499,6 +501,69 @@ class Database:
             )
             """,
             {"nid": note_id, "cap": self.VERSIONS_PER_NOTE},
+        )
+
+    _WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]")
+
+    def _sync_note_links(self, note_id: str, raw_text: str) -> None:
+        """#22: re-resolve [[wikilinks]] in the body into note_links rows.
+
+        Targets resolve by note title (case-insensitive, trashed excluded) and
+        are stored as note *ids* — so renaming either end keeps old links
+        working; only new mentions re-resolve. Replaces the src's rows
+        wholesale, matching the vault's render-on-write behaviour.
+        """
+        targets = []
+        for m in self._WIKILINK_RE.findall(raw_text or ""):
+            t = m.strip()
+            if t and t.lower() not in {x.lower() for x in targets}:
+                targets.append(t)
+        if not targets:
+            cur = self.execute("SELECT COUNT(*) AS c FROM note_links WHERE src = ?", (note_id,)).fetchone()
+            if cur["c"]:
+                self.execute("DELETE FROM note_links WHERE src = ?", (note_id,))
+                self.commit()
+            return
+        resolved: list[str] = []
+        for t in targets:
+            row = self.execute(
+                "SELECT id FROM notes WHERE lower(title) = lower(:t) AND trashed_at IS NULL "
+                "AND id != :src LIMIT 1",
+                {"t": t, "src": note_id},
+            ).fetchone()
+            if row:
+                resolved.append(row["id"])
+        self.execute("DELETE FROM note_links WHERE src = ?", (note_id,))
+        if resolved:
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO note_links (src, dst) VALUES (?, ?)",
+                [(note_id, dst) for dst in resolved],
+            )
+        self.commit()
+
+    def note_links(self, note_id: str) -> tuple[list[dict], list[dict]]:
+        """(outgoing, backlinks) for a note; both exclude trashed notes."""
+        out_rows = self.execute(
+            """
+            SELECT n.* FROM note_links l
+            JOIN notes n ON n.id = l.dst
+            WHERE l.src = :id AND n.trashed_at IS NULL
+            ORDER BY n.title COLLATE NOCASE
+            """,
+            {"id": note_id},
+        ).fetchall()
+        back_rows = self.execute(
+            """
+            SELECT n.* FROM note_links l
+            JOIN notes n ON n.id = l.src
+            WHERE l.dst = :id AND n.trashed_at IS NULL
+            ORDER BY n.title COLLATE NOCASE
+            """,
+            {"id": note_id},
+        ).fetchall()
+        return (
+            [_row_to_note(r) for r in out_rows],
+            [_row_to_note(r) for r in back_rows],
         )
 
     def note_versions(self, note_id: str) -> list[dict]:

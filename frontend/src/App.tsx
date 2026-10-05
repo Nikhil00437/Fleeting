@@ -974,6 +974,7 @@ export default function App() {
       onClose={() => setSelectedId(null)}
       onUpdate={mergeNote}
       onDelete={removeNote}
+      onOpenNote={setSelectedId}
       onToast={toast}
      />
     )}

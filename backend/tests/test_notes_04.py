@@ -193,3 +193,51 @@ def test_regenerate_requires_a_provider(client):
     r = client.post(f"/api/notes/{note['id']}/regenerate", json={})
     assert r.status_code == 400
     assert "no LLM provider" in r.json()["detail"]
+
+
+# ---- #22 wikilinks + backlinks -------------------------------------------
+
+def test_wikilinks_resolve_by_title_and_support_backlinks(client):
+    target = _note(client, "quarterly planning")
+    source = _note(client, "random thought")
+    other = _note(client, "unrelated")
+
+    body = f"see [[Quarterly Planning]] and [[quarterly planning|the plan]] plus [[nothing yet]]"
+    client.patch(f"/api/notes/{source['id']}", json={"raw_text": body})
+
+    links = client.get(f"/api/notes/{source['id']}/links").json()
+    assert [n["id"] for n in links["outgoing"]] == [target["id"]]
+    assert links["backlinks"] == []
+
+    # the reverse edge shows up on the target
+    links = client.get(f"/api/notes/{target['id']}/links").json()
+    assert [n["id"] for n in links["backlinks"]] == [source["id"]]
+    # and the unlinked note has neither
+    links = client.get(f"/api/notes/{other['id']}/links").json()
+    assert links == {"outgoing": [], "backlinks": []}
+
+
+def test_wikilinks_dont_link_to_self_or_trash(client):
+    source = _note(client, "self reference test")
+    client.patch(
+        f"/api/notes/{source['id']}",
+        json={"raw_text": "linking to [[Self Reference Test]] and [[Ghost Note]]"},
+    )
+    links = client.get(f"/api/notes/{source['id']}/links").json()
+    assert links["outgoing"] == []
+
+    # trashed targets drop out of resolution and of existing edges
+    target = _note(client, "doomed target")
+    client.patch(f"/api/notes/{source['id']}", json={"raw_text": "go [[Doomed Target]]"})
+    assert len(client.get(f"/api/notes/{source['id']}/links").json()["outgoing"]) == 1
+    client.delete(f"/api/notes/{target['id']}")
+    assert client.get(f"/api/notes/{source['id']}/links").json()["outgoing"] == []
+
+
+def test_removing_a_wikilink_removes_the_edge(client):
+    target = _note(client, "edge target")
+    source = _note(client, "edge source")
+    client.patch(f"/api/notes/{source['id']}", json={"raw_text": "to [[Edge Target]]"})
+    assert len(client.get(f"/api/notes/{source['id']}/links").json()["outgoing"]) == 1
+    client.patch(f"/api/notes/{source['id']}", json={"raw_text": "no more links"})
+    assert client.get(f"/api/notes/{source['id']}/links").json()["outgoing"] == []

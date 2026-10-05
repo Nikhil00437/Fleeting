@@ -281,6 +281,16 @@ def trash_empty(request: Request) -> dict:
     return {"ok": True, "purged": purged}
 
 
+@router.get("/{note_id}/links")
+def get_note_links(note_id: str, request: Request) -> dict:
+    """#22: outgoing wikilinks and backlinks for a note."""
+    st = request.app.state.st
+    if not st.db.get_note(note_id):
+        raise HTTPException(404, "note not found")
+    outgoing, backlinks = st.db.note_links(note_id)
+    return {"outgoing": [_out(n) for n in outgoing], "backlinks": [_out(n) for n in backlinks]}
+
+
 @router.get("/{note_id}/versions")
 def list_note_versions(note_id: str, request: Request) -> list[dict]:
     """#19: snapshots of title/summary/raw_text, oldest first."""

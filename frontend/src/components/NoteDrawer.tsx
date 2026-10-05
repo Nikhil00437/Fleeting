@@ -42,6 +42,7 @@ interface Props {
   onClose: () => void;
   onUpdate: (note: Note) => void;
   onDelete?: (id: string) => void;
+  onOpenNote?: (id: string) => void;
   onToast: (message: string, kind?: "ok" | "err") => void;
 }
 
@@ -114,7 +115,7 @@ function PipelineStepper({ note }: { note: Note }) {
   );
 }
 
-export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast }: Props) {
+export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNote, onToast }: Props) {
   const [title, setTitle] = useState(note.title);
   const [summary, setSummary] = useState(note.summary || "");
   const [tagInput, setTagInput] = useState("");
@@ -128,6 +129,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
   const [regenModels, setRegenModels] = useState<string[] | null>(null);
   const [versions, setVersions] = useState<NoteVersion[] | null>(null);
   const [versionError, setVersionError] = useState<string | null>(null);
+  const [links, setLinks] = useState<{ outgoing: Note[]; backlinks: Note[] } | null>(null);
 
   useEffect(() => {
     setTitle(note.title);
@@ -137,6 +139,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
     setRegenOpen(false);
     setVersions(null);
     setVersionError(null);
+    setLinks(null);
     setNewTaskText("");
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -176,6 +179,14 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
       onDone: (updated) => onUpdate(updated),
     });
   }
+
+  // #22: fetch links lazily but keep them fresh — raw_text is the link source.
+  useEffect(() => {
+    api
+      .noteLinks(note.id)
+      .then(setLinks)
+      .catch(() => setLinks(null));
+  }, [note.id, note.raw_text]);
 
   function loadVersions() {
     setVersionError(null);
@@ -654,6 +665,44 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
                 />
               </div>
             </div>
+
+            {/* #22: Wikilinks & Backlinks */}
+            {links && (links.outgoing.length > 0 || links.backlinks.length > 0) && (
+              <div className="space-y-2">
+                {links.outgoing.length > 0 && (
+                  <div>
+                    <p className="micro-label mb-1.5 !text-[9.5px]">Links out</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {links.outgoing.map((l) => (
+                        <button
+                          key={l.id}
+                          onClick={() => onOpenNote?.(l.id)}
+                          className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-0.5 font-mono text-[11px] text-ink-200 hover:border-ember-400/40 hover:text-ember-200"
+                        >
+                          → {l.title || l.raw_text.slice(0, 40)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {links.backlinks.length > 0 && (
+                  <div>
+                    <p className="micro-label mb-1.5 !text-[9.5px]">Backlinks</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {links.backlinks.map((l) => (
+                        <button
+                          key={l.id}
+                          onClick={() => onOpenNote?.(l.id)}
+                          className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-0.5 font-mono text-[11px] text-ink-200 hover:border-iris-400/40 hover:text-iris-200"
+                        >
+                          ← {l.title || l.raw_text.slice(0, 40)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Raw Content / Transcript */}
             {note.raw_text && (

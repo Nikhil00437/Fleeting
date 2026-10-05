@@ -79,6 +79,9 @@ export const api = {
 
   restoreNote: (id: string) => req<Note>(`/notes/${id}/restore`, { method: "POST" }),
 
+  noteLinks: (id: string) =>
+    req<{ outgoing: Note[]; backlinks: Note[] }>(`/notes/${id}/links`),
+
   noteVersions: (id: string) =>
     req<
       { id: number; title: string; summary: string; raw_text: string; origin: string; created_at: string }[]
