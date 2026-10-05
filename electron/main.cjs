@@ -12,7 +12,7 @@ const {
   Notification,
   screen,
 } = require("electron");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
 const fs = require("fs");
 const http = require("http");
 const os = require("os");
@@ -363,6 +363,44 @@ function fallbackCopy(text) {
   });
 }
 
+// #3: clipboard hotkey — primary selection if present, else clipboard,
+// tagged with the active window's title so Inbox knows where it came from.
+function runCmd(cmd, args) {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { timeout: 2000 }, (err, stdout) => resolve(err ? "" : String(stdout || "")));
+  });
+}
+
+async function captureClipboard() {
+  let text = (await runCmd("wl-paste", ["--primary", "--no-newline"])).trim();
+  if (!text) text = (clipboard.readText() || "").trim();
+  if (!text) {
+    new Notification({ title: "Fleeting", body: "Nothing on the clipboard to capture" }).show();
+    return;
+  }
+  let sourceTitle = null;
+  try {
+    const raw = await runCmd("hyprctl", ["activewindow", "-j"]);
+    sourceTitle = JSON.parse(raw)?.title || null;
+  } catch {
+    /* hyprctl missing or window has no title — fine */
+  }
+  try {
+    const resp = await fetch(`${BACKEND_URL}/api/capture/text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, source_title: sourceTitle, capture_id: `clip:${text.length}:${Date.now()}` }),
+    });
+    if (resp.ok) {
+      new Notification({ title: "Fleeting", body: `Captured${sourceTitle ? ` from ${sourceTitle}` : ""} (${text.length} chars)` }).show();
+    } else {
+      new Notification({ title: "Fleeting", body: `Capture failed: ${resp.status}` }).show();
+    }
+  } catch {
+    new Notification({ title: "Fleeting", body: "Backend not running — capture failed" }).show();
+  }
+}
+
 function alertFallback() {
   try {
     if (Notification.isSupported()) {
@@ -577,6 +615,9 @@ if (!gotLock) {
       });
       globalShortcut.register("CommandOrControl+Alt+Backspace", () => {
         void handleUndoLastType();
+      });
+      globalShortcut.register("CommandOrControl+Alt+C", () => {
+        void captureClipboard();
       });
     } catch {
       /* ignore shortcut registration failure */
