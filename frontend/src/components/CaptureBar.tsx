@@ -23,6 +23,8 @@ const TASK_RE = /\b(todo:|task:|remember to|need to|don't forget to)\b/i;
 export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // #79: drag audio/text/URL onto the bar to capture
+  const [dragOver, setDragOver] = useState(false);
   // brief green confirm flash on the bar after a capture lands
   const [sent, setSent] = useState(false);
 
@@ -49,6 +51,45 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
+
+  // Stop the browser navigating away when a drop misses the bar
+  useEffect(() => {
+    const block = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", block);
+    window.addEventListener("drop", block);
+    return () => {
+      window.removeEventListener("dragover", block);
+      window.removeEventListener("drop", block);
+    };
+  }, []);
+
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    if (busy) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      if (file.type.startsWith("audio/")) {
+        setBusy(true);
+        try {
+          const note = await api.captureAudio(file, file.name || "drop.webm");
+          onCaptured(note);
+          flashSent();
+        } catch (err) {
+          onError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      } else if (file.size < 200_000) {
+        await captureText(await file.text());
+      } else {
+        onError("dropped file is too large to read as text");
+      }
+      return;
+    }
+    const payload = (e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain")).trim();
+    if (payload) await captureText(payload);
+  }
 
   async function captureText(t: string) {
     const trimmed = t.trim();
@@ -142,7 +183,15 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
   const isTask = !isYT && TASK_RE.test(text);
 
   return (
-    <div className="flex w-full max-w-2xl items-center gap-1.5">
+    <div
+      className={`flex w-full max-w-2xl items-center gap-1.5 rounded-xl transition-shadow ${dragOver ? "ring-2 ring-ember-400/70" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => void handleDrop(e)}
+    >
       {recording ? (
         <div className="flex h-8 flex-1 items-center gap-2.5 rounded-xl border border-ember-500/45 bg-ink-950/95 px-3 shadow-[0_0_20px_rgb(245_158_11/0.12)]">
           <button
