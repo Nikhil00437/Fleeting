@@ -44,6 +44,8 @@ export default function CaptureHud({
   const holdCommitRef = useRef(false);
   const micReadyRef = useRef(false);
   const [previewText, setPreviewText] = useState("");
+  const [awaitingType, setAwaitingType] = useState(false);
+  const pendingNoteIdRef = useRef<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(() => audioError || null);
 
   const closeTimerRef = useRef<number | null>(null);
@@ -59,6 +61,8 @@ export default function CaptureHud({
 
   const handleCancel = useCallback(() => {
     isCancelledRef.current = true;
+    setAwaitingType(false);
+    pendingNoteIdRef.current = null;
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
@@ -92,22 +96,24 @@ export default function CaptureHud({
       setPreviewText(text);
 
       const desktop = getDesktop();
-      if (modeRef.current === "dictate" && text) {
-        if (desktop?.typeText) {
-          await desktop.typeText(text);
-        }
-      }
+      // #436: dictate mode shows a preview first — the user confirms before
+      // anything is typed into the target app.
+      const awaiting = modeRef.current === "dictate" && Boolean(text) && Boolean(desktop?.typeText);
+      setAwaitingType(awaiting);
+      pendingNoteIdRef.current = awaiting ? note["id"] : null;
       if (isCancelledRef.current) return;
 
       setState("preview");
       void desktop?.resizeHud?.(140);
 
-      closeTimerRef.current = window.setTimeout(() => {
-        const d = getDesktop();
-        void d?.hideHud?.();
-        void d?.resizeHud?.(72);
-        onDone?.();
-      }, 1200);
+      if (!awaiting) {
+        closeTimerRef.current = window.setTimeout(() => {
+          const d = getDesktop();
+          void d?.hideHud?.();
+          void d?.resizeHud?.(72);
+          onDone?.();
+        }, 1200);
+      }
     } catch (err) {
       if (isCancelledRef.current) return;
       setState("error");
@@ -124,6 +130,8 @@ export default function CaptureHud({
     }
     setPreviewText("");
     setErrorMessage(null);
+    setAwaitingType(false);
+    pendingNoteIdRef.current = null;
     setState("listening");
     void getDesktop()?.resizeHud?.(72);
 
@@ -426,10 +434,42 @@ export default function CaptureHud({
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
                 <span>
-                  {mode === "dictate" ? "Typed at cursor" : "Saved to Fleeting vault"}
+                  {awaitingType ? "Preview — confirm before typing" : mode === "dictate" ? "Typed at cursor" : "Saved to Fleeting vault"}
                 </span>
               </div>
-              <span className="text-[10px] text-neutral-400 font-mono">Closing…</span>
+              {awaitingType ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const desktop = getDesktop();
+                      void desktop?.typeText?.(previewText);
+                      setAwaitingType(false);
+                      closeTimerRef.current = window.setTimeout(() => {
+                        void desktop?.hideHud?.();
+                        void desktop?.resizeHud?.(72);
+                        onDone?.();
+                      }, 1200);
+                    }}
+                    className="rounded-md bg-[#d8784c] px-2.5 py-1 text-[11px] font-semibold text-[#23382e] cursor-pointer"
+                  >
+                    Type it
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pendingNoteIdRef.current) void api.deleteNote(pendingNoteIdRef.current).catch(() => {});
+                      setAwaitingType(false);
+                      handleCancel();
+                    }}
+                    className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] text-neutral-300 cursor-pointer"
+                  >
+                    Discard
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[10px] text-neutral-400 font-mono">Closing…</span>
+              )}
             </div>
             {previewText ? (
               <p className="text-xs text-neutral-200 line-clamp-3 italic bg-black/25 p-2 rounded-lg border border-white/5 font-sans leading-relaxed">
