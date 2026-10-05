@@ -456,6 +456,7 @@ class Database:
         trashed: bool = False,
         starred: bool = False,
         include_snoozed: bool = False,
+        review_state: str | None = None,
     ) -> list[dict]:
         where = ["archived = :archived"]
         # #274: trashed notes are hidden everywhere by default and only surface
@@ -464,6 +465,9 @@ class Database:
         params: dict = {"archived": 1 if archived else 0, "limit": limit, "offset": offset}
         if starred:
             where.append("starred = 1")
+        if review_state:
+            where.append("review_state = :review_state")
+            params["review_state"] = review_state
         if not include_snoozed:
             # #14: snoozed notes reappear on their own once the stamp passes —
             # ISO strings share one UTC offset, so string comparison is safe.

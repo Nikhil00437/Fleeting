@@ -202,6 +202,14 @@ class Processor:
                 "error": None,
                 "processed_at": now_iso(),
             }
+            # #474/#424: heuristic enrichment is the low-confidence path — drop
+            # the note into the review queue instead of claiming it is done.
+            # A real LLM pass starts at 'enriched'; human PATCHes move it to
+            # 'reviewed'/'final'.
+            if source.get("enrichment") in ("heuristic", "heuristic-sensitive"):
+                changes["review_state"] = "raw"
+            else:
+                changes["review_state"] = "enriched"
             note = self.db.update_note(note_id, changes)
 
             # Fetch existing tasks for this note to preserve state on reprocessing

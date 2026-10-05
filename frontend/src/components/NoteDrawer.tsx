@@ -23,6 +23,7 @@ import { pipelineSteps, totalSecs } from "./pipeline";
 import AudioPlayer from "./AudioPlayer";
 import { runNoteAction } from "./actionRunner";
 import { errorMessage } from "./settingsState";
+import { NOTE_COLORS, colorHex } from "./noteColors";
 import type { Note } from "../types";
 
 interface Props {
@@ -374,6 +375,44 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
                   ? ` · ${String(meta.transcription.language).toUpperCase()}`
                   : ""}
               </span>
+            )}
+
+            {/* #474: review lifecycle raw -> enriched -> reviewed -> final */}
+            <select
+              value={note.review_state ?? "enriched"}
+              onChange={(e) => void patch({ review_state: e.target.value } as Partial<Note>)}
+              className="rounded-md border border-white/[0.08] bg-ink-950 px-1.5 py-0.5 text-[10.5px] text-ink-200 outline-none"
+              title="Review state — 'raw' means heuristic-only enrichment"
+              aria-label="Review state"
+            >
+              <option value="raw">needs review</option>
+              <option value="enriched">enriched</option>
+              <option value="reviewed">reviewed</option>
+              <option value="final">final</option>
+            </select>
+          </div>
+
+          {/* #25: colour chips */}
+          <div className="mt-2 flex items-center gap-1.5">
+            {NOTE_COLORS.map((c) => (
+              <button
+                key={c.name}
+                onClick={() => void patch({ color: note.color === c.name ? "" : c.name } as Partial<Note>)}
+                className={`h-3.5 w-3.5 rounded-full transition-transform hover:scale-125 ${
+                  note.color === c.name ? "ring-2 ring-white/70 ring-offset-1 ring-offset-ink-950" : ""
+                }`}
+                style={{ backgroundColor: c.hex }}
+                title={`Colour: ${c.name}`}
+                aria-label={`Set note colour ${c.name}`}
+              />
+            ))}
+            {note.color && !colorHex(note.color) && (
+              <button
+                onClick={() => void patch({ color: "" } as Partial<Note>)}
+                className="text-[10px] text-ink-400 underline"
+              >
+                clear unknown colour
+              </button>
             )}
           </div>
         </div>

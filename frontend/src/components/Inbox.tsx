@@ -13,6 +13,7 @@ import {
   MicIcon,
   PinIcon,
   SearchIcon,
+  ShieldIcon,
   SparkIcon,
   StarIcon,
   TextIcon,
@@ -57,6 +58,8 @@ export default function Inbox({
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   // #273: dedicated starred view — a filter over the same feed, not a fetch.
   const [starredOnly, setStarredOnly] = useState(false);
+  // #424: review queue — notes whose enrichment used the heuristic fallback.
+  const [reviewOnly, setReviewOnly] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [showMetrics, setShowMetrics] = useState(true);
@@ -243,6 +246,7 @@ export default function Inbox({
     const pool = showFailed ? activeNotes : healthyNotes;
     return pool.filter((n) => {
       if (starredOnly && !n.starred) return false;
+      if (reviewOnly && n.review_state !== "raw") return false;
       if (typeFilter !== "all" && n.type !== typeFilter) return false;
       if (tagFilter && !n.tags.includes(tagFilter)) return false;
       if (q) {
@@ -255,7 +259,7 @@ export default function Inbox({
       }
       return true;
     });
-  }, [activeNotes, healthyNotes, showFailed, starredOnly, typeFilter, tagFilter, filterQuery]);
+  }, [activeNotes, healthyNotes, showFailed, starredOnly, reviewOnly, typeFilter, tagFilter, filterQuery]);
 
   const pinned = filteredNotes.filter((n) => n.pinned);
   const rest = filteredNotes.filter((n) => !n.pinned);
@@ -267,6 +271,11 @@ export default function Inbox({
     if (last && last[0] === label) last[1].push(note);
     else groups.push([label, [note]]);
   }
+
+  const reviewQueueCount = useMemo(
+    () => healthyNotes.filter((n) => n.review_state === "raw").length,
+    [healthyNotes],
+  );
 
   const completion =
     stats && stats.done_tasks + stats.open_tasks > 0
@@ -375,6 +384,21 @@ export default function Inbox({
           >
             <StarIcon filled={starredOnly} className="h-3 w-3" />
           </button>
+
+          {reviewQueueCount > 0 && (
+            <button
+              onClick={() => setReviewOnly((v) => !v)}
+              className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+                reviewOnly
+                  ? "border-amber-400/40 bg-amber-500/15 text-amber-200"
+                  : "border-amber-400/20 bg-ink-950/80 text-amber-300/80 hover:text-amber-200"
+              }`}
+              title="Show notes enriched offline that need review"
+            >
+              <ShieldIcon className="h-3 w-3" />
+              <span className="font-mono">{reviewQueueCount}</span>
+            </button>
+          )}
 
           <div className="relative w-36 lg:w-48">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />

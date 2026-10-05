@@ -129,3 +129,18 @@ def test_sensitive_note_excluded_from_assistant_context(client):
     _ctx_text, sources, _used = build_assistant_context("hedgehog", st.db, st.cfg)
     ids = {s["id"] for s in sources if s.get("kind") == "note"}
     assert note["id"] not in ids
+
+
+# ---- #474 review state + #424 review queue -------------------------------
+
+def test_heuristic_enrichment_lands_in_the_review_queue(client):
+    """No LLM in tests, so every capture enriches heuristically -> 'raw'."""
+    note = _note(client, "queue me for review")
+    assert note["review_state"] == "raw"
+    assert [n["id"] for n in client.get("/api/notes", params={"review_state": "raw"}).json()] == [
+        note["id"]
+    ]
+    # a human review promotes it and empties the queue
+    r = client.patch(f"/api/notes/{note['id']}", json={"review_state": "reviewed"})
+    assert r.json()["review_state"] == "reviewed"
+    assert client.get("/api/notes", params={"review_state": "raw"}).json() == []

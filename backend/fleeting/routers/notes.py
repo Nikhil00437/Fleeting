@@ -72,6 +72,7 @@ def list_notes(
     type: str | None = None,
     archived: bool = False,
     starred: bool = False,
+    review_state: str | None = None,
 ) -> list[NoteOut]:
     st = request.app.state.st
     notes = st.db.list_notes(
@@ -82,6 +83,7 @@ def list_notes(
         note_type=type,
         archived=archived,
         starred=starred,
+        review_state=review_state,
     )
     return [_out(n) for n in notes]
 

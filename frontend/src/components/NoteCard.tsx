@@ -12,6 +12,7 @@ import {
   TrashIcon,
 } from "./Icons";
 import { activationProps } from "./a11y";
+import { colorHex } from "./noteColors";
 import type { Note } from "../types";
 
 const TYPE_META: Record<
@@ -113,6 +114,9 @@ export default function NoteCard({
 
   const openTasks = note.action_items.filter((it) => !it.done);
   const doneTasks = note.action_items.filter((it) => it.done);
+  // #25: a chosen colour outranks the type accent; #474: 'raw' review state
+  // means heuristic-only enrichment — surface it so nothing silently unreviewed.
+  const accent = colorHex(note.color) ?? meta.accent;
 
   const isNew = Date.now() - new Date(note.created_at).getTime() < 5 * 60 * 1000;
 
@@ -130,7 +134,7 @@ export default function NoteCard({
           ? "!border-ember-400/50 ring-1 ring-ember-400/25"
           : ""
       } ${selected ? "!border-ember-400/60 ring-2 ring-ember-400/30" : ""}`}
-      style={{ backgroundImage: meta.glow, borderLeftWidth: '3px', borderLeftColor: meta.accent }}
+      style={{ backgroundImage: meta.glow, borderLeftWidth: '3px', borderLeftColor: accent }}
     >
       <div>
         {selectMode && (
@@ -188,6 +192,15 @@ export default function NoteCard({
               title={`Snoozed until ${new Date(note.snoozed_until).toLocaleString()}`}
             >
               zzz {new Date(note.snoozed_until).toLocaleDateString([], { month: "short", day: "numeric" })}
+            </span>
+          )}
+
+          {note.review_state === "raw" && note.status === "done" && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-medium text-amber-300"
+              title="Enriched offline (heuristic) — review recommended"
+            >
+              needs review
             </span>
           )}
 
@@ -405,7 +418,7 @@ export default function NoteCard({
                 onTagClick(t);
               }}
               className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10.5px] text-ink-300 transition-all duration-200 hover:scale-105 hover:border-ember-400/40 hover:bg-ember-500/10 hover:text-ember-200"
-              style={{ borderLeftColor: meta.accent, borderLeftWidth: '2px' }}
+              style={{ borderLeftColor: accent, borderLeftWidth: '2px' }}
             >
               #{t}
             </button>
