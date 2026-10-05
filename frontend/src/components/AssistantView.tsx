@@ -578,7 +578,7 @@ export default function AssistantView({
             {/* In-Flight Thinking Indicator */}
             {loading && (
               <div
-                className="flex items-start"
+                className="rise flex items-start"
                 data-testid="assistant-loading"
               >
                 <div className="w-full max-w-xl rounded-2xl border border-ink-800 bg-white glass p-4 text-ink-100 rounded-tl-xs space-y-2">
