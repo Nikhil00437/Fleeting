@@ -1097,13 +1097,14 @@ export default function App() {
      {toasts.map((t) => (
       <div
        key={t.id}
-       className={`rise rounded-xl border px-3.5 py-1.5 text-xs shadow-xl backdrop-blur ${
+       className={`rise relative overflow-hidden rounded-xl border px-3.5 py-1.5 text-xs shadow-xl backdrop-blur ${
         t.kind === "err"
          ? "border-red-500/40 bg-red-950/90 text-red-200"
          : "border-ink-700 bg-ink-900/95 text-ink-100"
        }`}
       >
        {t.message}
+       <span className="toast-timer absolute bottom-0 left-0 h-0.5 bg-current opacity-40" />
       </div>
      ))}
     </div>
