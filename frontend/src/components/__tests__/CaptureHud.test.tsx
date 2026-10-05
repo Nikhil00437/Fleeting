@@ -6,6 +6,7 @@ import CaptureHud, { formatElapsed, calculateBarHeight } from "../CaptureHud";
 vi.mock("../../api", () => ({
   api: {
     captureAudio: vi.fn(),
+    templates: vi.fn().mockResolvedValue({}),
   },
 }));
 

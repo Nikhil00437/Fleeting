@@ -10,10 +10,11 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from ..db import new_id, now_iso
 from ..models import CaptureTextIn, CaptureYouTubeIn, NoteOut
+from ..services import templates as tmpl
 
 router = APIRouter(prefix="/api/capture", tags=["capture"])
 
@@ -29,6 +30,24 @@ def _now() -> str:
     return now_iso()
 
 
+def _resolve_template(body: CaptureTextIn | CaptureYouTubeIn | None = None, *, template: str | None = None, mode: str | None = None) -> tuple[dict, str | None, str | None]:
+    """Template lookup + mode validation shared by all capture paths."""
+    template = template if template is not None else (body.template if body else None)
+    mode = mode if mode is not None else (body.mode if body else None)
+    if mode is not None and mode not in tmpl.OUTPUT_MODES:
+        raise HTTPException(422, f"unknown output mode '{mode}' (want one of {', '.join(tmpl.OUTPUT_MODES)})")
+    if not template:
+        return {}, None, mode
+    t = tmpl.get_template(template)
+    if t is None:
+        raise HTTPException(422, f"unknown template '{template}'")
+    if mode is None and isinstance(t.get("mode"), str):
+        mode = t["mode"]
+        if mode not in tmpl.OUTPUT_MODES:
+            raise HTTPException(422, f"template '{template}' has bad mode '{mode}'")
+    return t, template, mode
+
+
 @router.post("/text")
 def capture_text(body: CaptureTextIn, request: Request) -> NoteOut:
     st = request.app.state.st
@@ -39,21 +58,25 @@ def capture_text(body: CaptureTextIn, request: Request) -> NoteOut:
     # pasting a youtube link into the text box routes to the youtube pipeline
     yt_match = YOUTUBE_RE.search(text)
     if yt_match and len(text) < 200 and text.strip().startswith(("http", "www.", "youtu")):
-        return _capture_youtube(request, f"https://youtu.be/{yt_match.group(1)}", body.capture_id, body.source_title)
+        return _capture_youtube(request, f"https://youtu.be/{yt_match.group(1)}", body.capture_id, body.source_title, body.template, body.mode)
 
     if body.capture_id:
         existing = st.db.get_note_by_capture_id(body.capture_id)
         if existing:
             return NoteOut(**existing)
 
+    template, tname, mode = _resolve_template(body)
+    if mode and mode != "raw":
+        text = tmpl.apply_output_mode(text, mode)
+    merged_tags = list(dict.fromkeys([*(template.get("tags") or []), *body.tags]))[:6]
     note = st.db.insert_note(
         {
             "id": new_id(),
-            "type": "text",
+            "type": template.get("type") or "text",
             "title": body.title.strip()[:120],
             "raw_text": text,
-            "tags": body.tags[:6],
-            "source": {},
+            "tags": merged_tags,
+            "source": {"template": {"name": tname, "prompt": template.get("prompt"), "mode": mode}} if tname else {},
             "status": "pending",
             "capture_id": body.capture_id,
             "source_title": body.source_title,
@@ -67,7 +90,12 @@ def capture_text(body: CaptureTextIn, request: Request) -> NoteOut:
 
 
 @router.post("/audio")
-async def capture_audio(request: Request, file: UploadFile = File(...)) -> NoteOut:
+async def capture_audio(
+    request: Request,
+    file: UploadFile = File(...),
+    template: str | None = Form(default=None),
+    mode: str | None = Form(default=None),
+) -> NoteOut:
     st = request.app.state.st
     data = await file.read()
     if not data:
@@ -79,6 +107,8 @@ async def capture_audio(request: Request, file: UploadFile = File(...)) -> NoteO
     if ext not in ALLOWED_AUDIO_EXT:
         ext = ".webm"
 
+    tmeta, tname, mode = _resolve_template(template=template, mode=mode)
+
     note_id = new_id()
     audio_path = st.cfg_audio_dir() / f"{note_id}{ext}"
     audio_path.write_bytes(data)
@@ -86,10 +116,15 @@ async def capture_audio(request: Request, file: UploadFile = File(...)) -> NoteO
     note = st.db.insert_note(
         {
             "id": note_id,
-            "type": "voice",
+            "type": tmeta.get("type") or "voice",
+            "tags": list(tmeta.get("tags") or [])[:6],
             "audio_path": str(audio_path),
             "raw_text": "",
-            "source": {"bytes": len(data), "filename": file.filename},
+            "source": {
+                "bytes": len(data),
+                "filename": file.filename,
+                **({"template": {"name": tname, "prompt": tmeta.get("prompt"), "mode": mode}} if tname or mode else {}),
+            },
             "status": "pending",
             "created_at": _now(),
             "updated_at": _now(),
@@ -102,10 +137,10 @@ async def capture_audio(request: Request, file: UploadFile = File(...)) -> NoteO
 
 @router.post("/youtube")
 def capture_youtube(body: CaptureYouTubeIn, request: Request) -> NoteOut:
-    return _capture_youtube(request, body.url, body.capture_id, body.source_title)
+    return _capture_youtube(request, body.url, body.capture_id, body.source_title, body.template, body.mode)
 
 
-def _capture_youtube(request: Request, raw_url: str, capture_id: str | None = None, source_title: str | None = None) -> NoteOut:
+def _capture_youtube(request: Request, raw_url: str, capture_id: str | None = None, source_title: str | None = None, template: str | None = None, mode: str | None = None) -> NoteOut:
     st = request.app.state.st
     match = YOUTUBE_RE.search(raw_url)
     if not match:
@@ -115,12 +150,14 @@ def _capture_youtube(request: Request, raw_url: str, capture_id: str | None = No
         if existing:
             return NoteOut(**existing)
     url = f"https://youtu.be/{match.group(1)}"
+    tmeta, tname, mode = _resolve_template(template=template, mode=mode)
     note = st.db.insert_note(
         {
             "id": new_id(),
             "type": "youtube",
             "raw_text": "",
-            "source": {"url": url},
+            "tags": list(tmeta.get("tags") or [])[:6],
+            "source": {"url": url, **({"template": {"name": tname, "prompt": tmeta.get("prompt"), "mode": mode}} if tname or mode else {})},
             "status": "pending",
             "capture_id": capture_id,
             "source_title": source_title,

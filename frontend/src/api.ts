@@ -84,17 +84,21 @@ export const api = {
   exportNote: (id: string) =>
     req<{ ok: boolean; path: string }>(`/notes/${id}/export`, { method: "POST" }),
 
-  captureText: (text: string) =>
-    req<Note>("/capture/text", { method: "POST", body: JSON.stringify({ text }) }),
+  captureText: (text: string, opts?: { template?: string; mode?: string }) =>
+    req<Note>("/capture/text", { method: "POST", body: JSON.stringify({ text, ...opts }) }),
 
-  captureYouTube: (url: string) =>
-    req<Note>("/capture/youtube", { method: "POST", body: JSON.stringify({ url }) }),
+  captureYouTube: (url: string, opts?: { template?: string; mode?: string }) =>
+    req<Note>("/capture/youtube", { method: "POST", body: JSON.stringify({ url, ...opts }) }),
 
-  captureAudio: (blob: Blob, filename = "memo.webm") => {
+  captureAudio: (blob: Blob, filename = "memo.webm", opts?: { template?: string; mode?: string }) => {
     const fd = new FormData();
     fd.append("file", blob, filename);
+    if (opts?.template) fd.append("template", opts.template);
+    if (opts?.mode) fd.append("mode", opts.mode);
     return req<Note>("/capture/audio", { method: "POST", body: fd });
   },
+
+  templates: () => req<Record<string, { type?: string; tags?: string[]; prompt?: string; mode?: string }>>("/templates"),
 
   search: (
     q: string,

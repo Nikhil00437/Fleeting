@@ -160,12 +160,17 @@ class CaptureTextIn(BaseModel):
     tags: list[str] = Field(default_factory=list)
     capture_id: str | None = Field(default=None, max_length=64)
     source_title: str | None = Field(default=None, max_length=300)
+    # #1/#427: capture template name + HUD output mode
+    template: str | None = Field(default=None, max_length=64)
+    mode: str | None = Field(default=None, max_length=16)
 
 
 class CaptureYouTubeIn(BaseModel):
     url: str = Field(min_length=5, max_length=2000)
     capture_id: str | None = Field(default=None, max_length=64)
     source_title: str | None = Field(default=None, max_length=300)
+    template: str | None = Field(default=None, max_length=64)
+    mode: str | None = Field(default=None, max_length=16)
 
 
 class NoteUpdateIn(BaseModel):

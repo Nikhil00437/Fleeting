@@ -145,13 +145,26 @@ class Processor:
                 if not self.cfg.transcribe.keep_audio and note["audio_path"]:
                     Path(note["audio_path"]).unlink(missing_ok=True)
                     note = self.db.update_note(note_id, {"audio_path": None})
+                # #427: HUD output mode shapes the transcript
+                mode = (source.get("template") or {}).get("mode")
+                if mode and mode != "raw":
+                    from .services.templates import apply_output_mode
+
+                    raw_text = apply_output_mode(raw_text, mode)
+                    note = self.db.update_note(note_id, {"raw_text": raw_text})
             elif note["type"] == "youtube" and source.get("url"):
                 await self._set_stage(note_id, "fetching video")
                 ingested = await asyncio.to_thread(
                     yt_ingest, source["url"], self.cfg.youtube, self.transcriber
                 )
                 self._patch_source(note_id, ingested["source"])
-                note = self.db.update_note(note_id, {"raw_text": ingested["text"]})
+                raw_text = ingested["text"]
+                mode = (source.get("template") or {}).get("mode")
+                if mode and mode != "raw":
+                    from .services.templates import apply_output_mode
+
+                    raw_text = apply_output_mode(raw_text, mode)
+                note = self.db.update_note(note_id, {"raw_text": raw_text})
 
             note = note or self.db.get_note(note_id)
             if not note or not (note.get("raw_text") or "").strip():
@@ -161,7 +174,8 @@ class Processor:
             # 2) enrichment
             await self._set_stage(note_id, "enriching")
             try:
-                enriched = await llm.enrich(note["raw_text"], self.cfg.llm)
+                template_prompt = (note.get("source") or {}).get("template", {}).get("prompt")
+                enriched = await llm.enrich(note["raw_text"], self.cfg.llm, prompt=template_prompt)
                 source["enrichment"] = "local-llm"
             except llm.LLMUnavailable as exc:
                 log.info("LLM unavailable (%s) — heuristic fallback for %s", exc, note_id)

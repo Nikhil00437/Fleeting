@@ -33,6 +33,10 @@ export default function CaptureHud({
     () => initialState || (audioError ? "error" : "listening")
   );
   const [mode, setMode] = useState<CaptureMode>(initialMode);
+  // #1/#427: template + output mode for this capture
+  const [templates, setTemplates] = useState<Record<string, { tags?: string[]; mode?: string }>>({});
+  const [templateName, setTemplateName] = useState<string>("");
+  const [outputMode, setOutputMode] = useState<"raw" | "cleaned" | "bullets">("raw");
   // #2: hold-to-talk — record only while the button is held, vs the default
   // toggle that starts on mount and stops on Enter/check.
   const [holdMode, setHoldMode] = useState(false);
@@ -78,7 +82,10 @@ export default function CaptureHud({
         throw new Error("No audio recorded");
       }
 
-      const note = await api.captureAudio(blob);
+      const note = await api.captureAudio(blob, "memo.webm", {
+        template: templateName || undefined,
+        mode: outputMode !== "raw" ? outputMode : undefined,
+      });
       if (isCancelledRef.current) return;
 
       const text = (note.raw_text || note.title || "").trim();
@@ -107,7 +114,7 @@ export default function CaptureHud({
       setErrorMessage(err instanceof Error ? err.message : "Transcription failed");
       void getDesktop()?.resizeHud?.(72);
     }
-  }, [stop, onDone]);
+  }, [stop, onDone, templateName, outputMode]);
 
   const handleRestart = useCallback(async () => {
     isCancelledRef.current = false;
@@ -205,6 +212,11 @@ export default function CaptureHud({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleCommit, handleCancel, handleRestart]);
+
+  // Load capture templates once (#1)
+  useEffect(() => {
+    api.templates().then((t) => setTemplates(t)).catch(() => {});
+  }, []);
 
   // Listen to desktop global shortcut or second-instance trigger
   useEffect(() => {
@@ -315,6 +327,32 @@ export default function CaptureHud({
                 }`}
               >
                 Hold
+              </button>
+              {Object.keys(templates).length > 0 && (
+                <select
+                  value={templateName}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setTemplateName(name);
+                    const t = templates[name];
+                    if (t?.mode === "raw" || t?.mode === "cleaned" || t?.mode === "bullets") setOutputMode(t.mode);
+                  }}
+                  title="Capture template"
+                  className="h-6 max-w-[90px] rounded-md border border-white/10 bg-black/40 px-1 text-[10px] text-neutral-300"
+                >
+                  <option value="">No template</option>
+                  {Object.keys(templates).map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                onClick={() => setOutputMode((m) => (m === "raw" ? "cleaned" : m === "cleaned" ? "bullets" : "raw"))}
+                title="Cycle output mode (raw/cleaned/bullets)"
+                className="px-2 py-1 text-[10px] font-semibold rounded-full border border-white/10 text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
+              >
+                {outputMode}
               </button>
               <button
                 type="button"

@@ -181,10 +181,11 @@ async def request_chat(
     return content
 
 
-async def enrich(text: str, cfg: LLMConfig) -> dict:
+async def enrich(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
     """Return {title, summary, tags, action_items} from the local LLM.
 
-    Raises LLMUnavailable on any failure — callers must fall back.
+    #1: `prompt` carries the capture template's extra instruction, appended
+    to the system prompt. Raises LLMUnavailable on any failure — fall back.
     """
     if cfg.provider == "none" or not text.strip():
         raise LLMUnavailable("llm disabled or empty text")
@@ -194,6 +195,8 @@ async def enrich(text: str, cfg: LLMConfig) -> dict:
 
     today_iso = datetime.now(timezone.utc).date().isoformat()
     system_prompt = ENRICH_SYSTEM_TEMPLATE.format(today_iso=today_iso)
+    if prompt:
+        system_prompt += f"\n\nCapture-template instruction: {prompt}"
 
     if cfg.provider in ("lmstudio", "custom"):
         payload = {

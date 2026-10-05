@@ -10,7 +10,7 @@ import CaptureHud from "../CaptureHud";
 import { api } from "../../api";
 
 vi.mock("../../api", () => ({
-  api: { captureAudio: vi.fn() },
+  api: { captureAudio: vi.fn(), templates: vi.fn().mockResolvedValue({}) },
 }));
 
 const start = vi.fn().mockResolvedValue(undefined);
