@@ -99,6 +99,12 @@ wheels = [
 ]
 
 [[package]]
+name = "evdev"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/07/eb30593524303d1367f0dc00c1c66582c994dba412a47751e34bad9fa29b/evdev-2.0.0.tar.gz", hash = "sha256:442fb3f4c8dfc9e61e901133c356220c02d663eca8f34722e0cecdd637eba504", size = 33766, upload-time = "2026-08-23T10:31:26.835Z" }
+
+[[package]]
 name = "fastapi"
 version = "0.142.0"
 source = { registry = "https://pypi.org/simple" }
@@ -153,6 +159,7 @@ name = "fleeting"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "evdev" },
     { name = "fastapi" },
     { name = "faster-whisper" },
     { name = "httpx" },
@@ -171,6 +178,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "evdev", specifier = ">=2.0.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "faster-whisper", specifier = ">=1.1" },
     { name = "httpx", specifier = ">=0.27" },

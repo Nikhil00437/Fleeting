@@ -172,3 +172,69 @@ def test_correction_loop_extends_vocabulary(client, tmp_path, monkeypatch):
 
     text = (tmp_path / "config.toml").read_text()
     assert "Nikhil" in text and "Omarchy" in text
+
+
+def test_diarization_merges_speaker_into_words(tmp_path, monkeypatch):
+    """#87: diarize segments label each word's speaker."""
+    import fleeting.services.transcribe as tr
+
+    cfg = Config().transcribe
+    cfg.diarize = True
+    cfg.hf_token = "hf_test"
+    t = Transcriber(cfg)
+
+    class FakeWord:
+        def __init__(self, word, start, end):
+            self.word, self.start, self.end = word, start, end
+
+    class FakeSeg:
+        text = "hello there friend"
+        words = [FakeWord("hello", 0.0, 0.5), FakeWord("there", 0.5, 1.0), FakeWord("friend", 1.2, 1.8)]
+
+    class FakeInfo:
+        duration = 2.0
+        language = "en"
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            return ([FakeSeg()], FakeInfo())
+
+    monkeypatch.setattr(t, "_get_model", lambda: FakeModel())
+    monkeypatch.setattr(t, "_load_wav16k", lambda path: b"")
+    monkeypatch.setattr(
+        tr,
+        "_diarize_wav",
+        lambda path, token: [{"start": 0.0, "end": 1.0, "speaker": "A"}, {"start": 1.0, "end": 2.0, "speaker": "B"}],
+    )
+
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"x")
+    out = t.transcribe_wav(wav)
+    assert out["speakers"] == ["A", "B"]
+    speakers = [w["speaker"] for w in out["words"]]
+    assert speakers == ["A", "A", "B"]
+
+
+def test_diarization_failure_still_returns_transcript(tmp_path, monkeypatch):
+    """#87: no pyannote installed → transcript survives, just no speakers."""
+    cfg = Config().transcribe
+    cfg.diarize = True
+    cfg.hf_token = "hf_test"
+    t = Transcriber(cfg)
+
+    class FakeInfo:
+        duration = 1.0
+        language = "en"
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            return ([type("S", (), {"text": "hi", "words": []})()], FakeInfo())
+
+    monkeypatch.setattr(t, "_get_model", lambda: FakeModel())
+    monkeypatch.setattr(t, "_load_wav16k", lambda path: b"")
+
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"x")
+    out = t.transcribe_wav(wav)
+    assert out["text"] == "hi"
+    assert out["speakers"] == []

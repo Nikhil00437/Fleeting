@@ -25,6 +25,8 @@ const base: Settings = {
   transcribe_voice_punctuation: false,
   transcribe_auto_format: false,
   transcribe_replacements: "",
+  transcribe_diarize: false,
+  transcribe_hf_token_set: false,
   transcribe_loaded: false,
   transcribe_cached_models: [],
   yt_transcribe_fallback: true,

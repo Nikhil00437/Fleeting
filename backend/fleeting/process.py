@@ -139,6 +139,8 @@ class Processor:
                 transcription = {"duration": result["duration"], "language": result["language"]}
                 if result.get("words"):
                     transcription["words"] = result["words"]  # #88
+                if result.get("speakers"):
+                    transcription["speakers"] = result["speakers"]  # #87
                 self._patch_source(note_id, {"transcription": transcription})
                 note = self.db.update_note(note_id, {"raw_text": raw_text})
                 # #91 retention: drop the raw audio once it has served its

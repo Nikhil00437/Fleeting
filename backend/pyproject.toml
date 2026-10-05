@@ -12,6 +12,7 @@ dependencies = [
     "psutil>=7.0",
     "watchdog>=4.0",
     "pyyaml>=6.0",
+    "evdev>=2.0.0",
 ]
 
 [dependency-groups]

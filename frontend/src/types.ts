@@ -138,6 +138,8 @@ export interface Settings {
   transcribe_voice_punctuation?: boolean;
   transcribe_auto_format?: boolean;
   transcribe_replacements?: string;
+  transcribe_diarize?: boolean;
+  transcribe_hf_token_set?: boolean;
   transcribe_loaded: boolean;
   transcribe_cached_models?: string[];
   transcribe_progress?: WhisperProgress;

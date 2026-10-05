@@ -71,6 +71,10 @@ class TranscribeConfig:
     # #91: loudness-normalise before transcription, and keep raw audio?
     cleanup_audio: bool = False
     keep_audio: bool = True
+    # #87: speaker labels via pyannote-audio (optional heavy dep, lazy-imported;
+    # pyannote's models are gated on Hugging Face, so this needs a token)
+    diarize: bool = False
+    hf_token: str = ""
     # #429: spoken punctuation commands ("comma" -> ",", "new line" -> "\n")
     voice_punctuation: bool = False
     # #434: sentence-case the transcript and capitalise bare "i"

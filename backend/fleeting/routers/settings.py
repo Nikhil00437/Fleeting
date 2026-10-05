@@ -40,6 +40,8 @@ def _settings_payload(request: Request) -> dict:
         "transcribe_voice_punctuation": cfg.transcribe.voice_punctuation,
         "transcribe_auto_format": cfg.transcribe.auto_format,
         "transcribe_replacements": cfg.transcribe.replacements,
+        "transcribe_diarize": cfg.transcribe.diarize,
+        "transcribe_hf_token_set": bool(cfg.transcribe.hf_token),
         "transcribe_loaded": st.transcriber.is_ready(),
         "transcribe_cached_models": st.transcriber.cached_models(),
         "transcribe_progress": st.transcriber.progress,
@@ -126,6 +128,11 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.transcribe.auto_format = body.transcribe_auto_format
     if body.transcribe_replacements is not None:
         cfg.transcribe.replacements = body.transcribe_replacements.strip()
+    if body.transcribe_diarize is not None:
+        cfg.transcribe.diarize = body.transcribe_diarize
+    if body.transcribe_hf_token is not None:
+        # Never returned by GET (only `hf_token_set`), so an explicit "" clears it.
+        cfg.transcribe.hf_token = body.transcribe_hf_token.strip()
     if body.yt_transcribe_fallback is not None:
         cfg.youtube.transcribe_fallback = body.yt_transcribe_fallback
     if body.yt_max_duration_min is not None:

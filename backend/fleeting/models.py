@@ -205,6 +205,8 @@ class SettingsIn(BaseModel):
     transcribe_voice_punctuation: bool | None = None
     transcribe_auto_format: bool | None = None
     transcribe_replacements: str | None = None
+    transcribe_diarize: bool | None = None
+    transcribe_hf_token: str | None = None
     yt_transcribe_fallback: bool | None = None
     yt_max_duration_min: int | None = Field(default=None, ge=5, le=240)
     desktop_notifications: bool | None = None

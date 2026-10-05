@@ -285,6 +285,11 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
                 {meta.enrichment === "heuristic" ? "offline heuristics" : "local LLM"}
               </span>
             )}
+            {Array.isArray(meta.transcription?.speakers) && meta.transcription.speakers.length > 0 && (
+              <span className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-violet-300">
+                {meta.transcription.speakers.length} speakers
+              </span>
+            )}
             {meta.transcription?.duration && (
               <span className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-iris-300">
                 {fmtDuration(meta.transcription.duration)}

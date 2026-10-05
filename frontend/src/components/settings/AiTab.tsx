@@ -465,6 +465,7 @@ export default function AiTab({
                       ["transcribe_keep_audio", "Keep original audio files", "When off, the raw audio file is deleted once transcription succeeds."],
                       ["transcribe_voice_punctuation", "Voice punctuation commands", "Spoken words like \"comma\" or \"new line\" become symbols in the transcript."],
                       ["transcribe_auto_format", "Auto-capitalisation", "Sentence-case the transcript and capitalise bare \"i\"."],
+                      ["transcribe_diarize", "Speaker labels (diarization)", "Label transcript words by speaker with pyannote-audio. Needs pyannote-audio installed and an HF token set."],
                     ] as const
                   ).map(([key, title, sub]) => (
                     <label key={key} className="flex cursor-pointer items-center justify-between gap-3">
@@ -481,6 +482,19 @@ export default function AiTab({
                       />
                     </label>
                   ))}
+                </div>
+
+                <div>
+                  <label className={labelCls}>Hugging Face Token</label>
+                  <input
+                    type="password"
+                    placeholder={s.transcribe_hf_token_set ? "•••••••• (set — type to replace)" : "hf_..."}
+                    onBlur={(e) => {
+                      if (e.target.value.trim()) void save({ transcribe_hf_token: e.target.value.trim() }, "HF token saved");
+                    }}
+                    className={inputCls}
+                  />
+                  <p className="text-[10px] text-ink-500">Used to download gated pyannote models. Never shown again after saving.</p>
                 </div>
 
                 <div>

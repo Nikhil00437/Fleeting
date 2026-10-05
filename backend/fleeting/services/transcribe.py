@@ -74,6 +74,23 @@ _VOICE_PUNCTUATION: tuple[tuple[str, str], ...] = (
 )
 
 
+def _diarize_wav(wav_path: Path, token: str) -> list[dict]:
+    """#87 speaker turns via pyannote.audio — lazy import because it's a heavy
+    optional dependency (torch + gated HF model). Returns [{start,end,speaker}]."""
+    try:
+        from pyannote.audio import Pipeline
+    except ImportError as exc:
+        raise TranscriptionError("diarization needs pyannote-audio: `uv add pyannote-audio`") from exc
+    try:
+        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
+    except TypeError:  # newer pyannote renamed the kwarg
+        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=token)
+    turns = []
+    for turn, _, speaker in pipeline(str(wav_path)).itertracks(yield_label=True):
+        turns.append({"start": round(turn.start, 2), "end": round(turn.end, 2), "speaker": str(speaker)})
+    return turns
+
+
 def apply_voice_punctuation(text: str) -> str:
     for spoken, symbol in _VOICE_PUNCTUATION:
         text = re.sub(rf"\b{re.escape(spoken)}\b", symbol, text, flags=re.IGNORECASE)
@@ -413,6 +430,15 @@ class Transcriber:
         except Exception as exc:
             raise TranscriptionError(f"whisper failed: {exc}") from exc
         text = " ".join(p for p in parts if p).strip()
+        speakers: list[str] = []
+        if self.cfg.diarize and self.cfg.hf_token:
+            try:
+                turns = _diarize_wav(wav_path, self.cfg.hf_token)
+                for w in words:
+                    w["speaker"] = next((t["speaker"] for t in turns if t["start"] <= w["s"] < t["end"]), None)
+                speakers = sorted({t["speaker"] for t in turns})
+            except TranscriptionError as exc:
+                log.warning("diarization skipped: %s", exc)
         if self.cfg.replacements:
             text = apply_replacements(text, self.cfg.replacements)
         if self.cfg.voice_punctuation:
@@ -423,7 +449,13 @@ class Transcriber:
             "transcribed %.1fs audio -> %d chars in %.1fs",
             info.duration or 0, len(text), time.monotonic() - started,
         )
-        return {"text": text, "duration": info.duration or 0.0, "language": info.language or "", "words": words}
+        return {
+            "text": text,
+            "duration": info.duration or 0.0,
+            "language": info.language or "",
+            "words": words,
+            "speakers": speakers,
+        }
 
     @staticmethod
     def _load_wav16k(path: Path):
