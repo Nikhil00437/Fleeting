@@ -587,6 +587,11 @@ export default function App() {
      <div className="titlebar-nodrag min-w-0 flex-1 max-w-2xl">
       <CaptureBar
        inputRef={captureRef}
+       onCapturedTask={() => {
+        refreshStats();
+        setTasksKey((k) => k + 1);
+        toast("task captured", "ok", [{ label: "View", run: () => setView("tasks") }]);
+       }}
        onCaptured={(n) => {
         mergeNote(n);
         refreshStats();

@@ -8,6 +8,7 @@ interface Props {
   inputRef: React.RefObject<HTMLInputElement | null>;
   onCaptured: (note: Note) => void;
   onError: (message: string) => void;
+  onCapturedTask?: (text: string) => void;
 }
 
 function pickMime(): string {
@@ -21,7 +22,10 @@ function pickMime(): string {
 const YT_RE = /(youtube\.com\/(watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{6,})/;
 const TASK_RE = /\b(todo:|task:|remember to|need to|don't forget to)\b/i;
 
-export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
+export default function CaptureBar({ inputRef, onCaptured, onError, onCapturedTask }: Props) {
+  // #5: send this capture straight to Tasks instead of the Inbox
+  const [destination, setDestination] = useState<"inbox" | "task">("inbox");
+  const [repo, setRepo] = useState("");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   // #79: drag audio/text/URL onto the bar to capture
@@ -97,6 +101,13 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
     if (!trimmed || busy) return;
     setBusy(true);
     try {
+      if (destination === "task") {
+        await api.createTask({ text: trimmed, repo: repo.trim() || undefined });
+        onCapturedTask?.(trimmed);
+        setText("");
+        flashSent();
+        return;
+      }
       const yt = trimmed.match(YT_RE);
       const note = yt
         ? await api.captureYouTube(`https://youtu.be/${yt[3]}`)
@@ -185,7 +196,7 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
 
   return (
     <div
-      className={`flex w-full max-w-2xl items-center gap-1.5 rounded-xl transition-shadow ${dragOver ? "ring-2 ring-ember-400/70" : ""}`}
+      className={`flex w-full max-w-2xl flex-col gap-1 rounded-xl transition-shadow ${dragOver ? "ring-2 ring-ember-400/70" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -193,6 +204,7 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => void handleDrop(e)}
     >
+      <div className="flex w-full items-center gap-1.5">
       {recording ? (
         <div className="flex h-8 flex-1 items-center gap-2.5 rounded-xl border border-ember-500/45 bg-ink-950/95 px-3 shadow-[0_0_20px_rgb(245_158_11/0.12)]">
           <button
@@ -291,6 +303,28 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
           <MicIcon className="h-3.5 w-3.5" />
         </button>
       )}
+      </div>
+      <div className="flex items-center gap-2 px-1">
+        <div className="flex overflow-hidden rounded-md border border-ink-800 text-[9.5px] font-semibold">
+          {(["inbox", "task"] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDestination(d)}
+              className={`px-2 py-0.5 capitalize transition-colors ${destination === d ? "bg-ember-500/25 text-ember-300" : "text-ink-500 hover:text-ink-300"}`}
+            >
+              {d === "inbox" ? "Inbox" : "Task"}
+            </button>
+          ))}
+        </div>
+        {destination === "task" && (
+          <input
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+            placeholder="repo (optional)"
+            className="w-28 rounded-md border border-ink-800 bg-ink-950/90 px-2 py-0.5 text-[10px] text-ink-300 placeholder-ink-500 outline-none focus:border-ember-500/40"
+          />
+        )}
+      </div>
     </div>
   );
 }
