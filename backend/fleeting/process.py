@@ -13,6 +13,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .config import Config
 from .db import Database, now_iso
@@ -140,6 +141,11 @@ class Processor:
                     "language": result["language"],
                 }
                 note = self.db.update_note(note_id, {"raw_text": raw_text, "source": source})
+                # #91 retention: drop the raw audio once it has served its
+                # purpose, unless the user asked to keep it.
+                if not self.cfg.transcribe.keep_audio and note["audio_path"]:
+                    Path(note["audio_path"]).unlink(missing_ok=True)
+                    note = self.db.update_note(note_id, {"audio_path": None})
             elif note["type"] == "youtube" and source.get("url"):
                 await self._set_stage(note_id, "fetching video")
                 ingested = await asyncio.to_thread(

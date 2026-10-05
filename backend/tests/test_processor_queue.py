@@ -217,3 +217,36 @@ async def test_active_ids_reflects_in_flight_notes(proc) -> None:
     finally:
         t.gate.set()
         proc.stop()
+
+@pytest.mark.anyio
+async def test_keep_audio_false_deletes_file_after_processing(tmp_path) -> None:
+    """#91: with keep_audio off the raw audio file is removed once transcribed."""
+    from pathlib import Path
+
+    db = Database(tmp_path / "p.db")
+    db.migrate()
+    cfg = Config()
+    cfg.llm.provider = "none"
+    cfg.transcribe.keep_audio = False
+    t = FakeTranscriber()
+    p = Processor(db, cfg, EventBus(), t)
+
+    audio = tmp_path / "memo.wav"
+    audio.write_bytes(b"RIFF0000WAVE")
+    note = db.insert_note({"raw_text": "", "type": "voice", "audio_path": str(audio), "source": {}})
+
+    p.start()
+    p.enqueue(note["id"])
+    try:
+        for _ in range(200):
+            done = db.get_note(note["id"])
+            if done and done["status"] in ("done", "failed"):
+                break
+            await asyncio.sleep(0.05)
+        done = db.get_note(note["id"])
+        assert done["status"] == "done"
+        assert not audio.exists()
+        assert done["audio_path"] is None
+        assert done["raw_text"] == "hello world"
+    finally:
+        p.stop()

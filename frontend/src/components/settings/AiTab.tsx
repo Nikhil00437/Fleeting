@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../../api";
 import { BotIcon, CpuIcon, MicIcon, SparkIcon } from "../Icons";
-import { fmtMB, inputCls, labelCls, type FormProps } from "./shared";
+import { fmtMB, inputCls, labelCls, Toggle, type FormProps } from "./shared";
 import type { WhisperProgress } from "../../types";
 
 interface Props extends FormProps {
@@ -454,6 +454,30 @@ export default function AiTab({
                       </button>
                     ))}
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  {(
+                    [
+                      ["transcribe_translate", "Translate to English (whisper)", "Recordings in other languages are transcribed into English."],
+                      ["transcribe_cleanup_audio", "Audio cleanup before transcription", "Normalise loudness with ffmpeg loudnorm before sending to whisper."],
+                      ["transcribe_keep_audio", "Keep original audio files", "When off, the raw audio file is deleted once transcription succeeds."],
+                    ] as const
+                  ).map(([key, title, sub]) => (
+                    <label key={key} className="flex cursor-pointer items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-medium text-ink-200">{title}</div>
+                        <p className="text-[11px] text-ink-500">{sub}</p>
+                      </div>
+                      <Toggle
+                        checked={Boolean(s[key as keyof typeof s])}
+                        onChange={(v) => {
+                          patch({ [key]: v });
+                          void save({ [key]: v }, `${title} ${v ? "on" : "off"}`);
+                        }}
+                      />
+                    </label>
+                  ))}
                 </div>
 
                 <div>

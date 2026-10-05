@@ -331,7 +331,11 @@ class Transcriber:
         started = time.monotonic()
         try:
             segments, info = model.transcribe(
-                audio, language=lang, vad_filter=True, initial_prompt=self.cfg.vocabulary or None
+                audio,
+                language=lang,
+                vad_filter=True,
+                initial_prompt=self.cfg.vocabulary or None,
+                task="translate" if self.cfg.translate else "transcribe",
             )
             parts = [seg.text.strip() for seg in segments]
         except Exception as exc:
@@ -363,8 +367,10 @@ class Transcriber:
             raise TranscriptionError("ffmpeg not found on PATH — required for audio conversion")
         out = Path(tempfile.mkstemp(suffix=".wav", prefix="fleeting-")[1])
         out.unlink(missing_ok=True)
-        cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(path),
-               "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", str(out)]
+        cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(path)]
+        if self.cfg.cleanup_audio:
+            cmd += ["-af", "loudnorm"]
+        cmd += ["-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", str(out)]
         try:
             proc = subprocess.run(cmd, capture_output=True, timeout=600)
         except subprocess.TimeoutExpired as exc:

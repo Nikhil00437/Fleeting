@@ -65,6 +65,12 @@ class TranscribeConfig:
     language: str = "auto"  # "auto" or ISO-639-1 code
     # #89: names/terms whisper should expect, passed as initial_prompt
     vocabulary: str = ""
+    # #90: whisper's task="translate" targets English; auto-detection
+    # already happens per memo when language is "auto"
+    translate: bool = False
+    # #91: loudness-normalise before transcription, and keep raw audio?
+    cleanup_audio: bool = False
+    keep_audio: bool = True
 
 
 @dataclass

@@ -192,6 +192,9 @@ class SettingsIn(BaseModel):
     transcribe_model: str | None = Field(default=None, pattern="^(tiny|base|small|medium)$")
     transcribe_language: str | None = None
     transcribe_vocabulary: str | None = None
+    transcribe_translate: bool | None = None
+    transcribe_cleanup_audio: bool | None = None
+    transcribe_keep_audio: bool | None = None
     yt_transcribe_fallback: bool | None = None
     yt_max_duration_min: int | None = Field(default=None, ge=5, le=240)
     desktop_notifications: bool | None = None
