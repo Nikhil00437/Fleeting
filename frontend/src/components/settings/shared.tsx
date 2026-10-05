@@ -19,7 +19,8 @@ export type SaveFn = (
   label?: string,
 ) => Promise<void>;
 
-export type ToastFn = (message: string, kind?: "ok" | "err") => void;
+export type ToastAction = { label: string; run: () => void };
+export type ToastFn = (message: string, kind?: "ok" | "err", actions?: ToastAction[]) => void;
 
 export interface FormProps {
   /** Current settings; may be null only while the first load is in flight. */

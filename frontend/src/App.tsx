@@ -44,10 +44,16 @@ type View =
   | "assistant"
   | "processes";
 
+interface ToastAction {
+ label: string;
+ run: () => void;
+}
+
 interface Toast {
  id: number;
  message: string;
  kind: "ok" | "err";
+ actions?: ToastAction[];
 }
 
 export default function App() {
@@ -96,10 +102,11 @@ export default function App() {
  const desktop = typeof window !== "undefined" ? window.fleetingDesktop : undefined;
  const isElectron = Boolean(desktop?.isElectron);
 
- const toast = useCallback((message: string, kind: "ok" | "err" = "ok") => {
+ const toast = useCallback((message: string, kind: "ok" | "err" = "ok", actions?: ToastAction[]) => {
   const id = ++toastSeq.current;
-  setToasts((t) => [...t, { id, message, kind }]);
-  window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+  // #84: stacking limit — oldest toast drops first
+  setToasts((t) => [...t.slice(-3), { id, message, kind, actions }]);
+  window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), actions ? 5000 : 4200);
  }, []);
 
  const refreshStats = useCallback(() => {
@@ -571,7 +578,21 @@ export default function App() {
         mergeNote(n);
         refreshStats();
         setSelectedId(n.id);
-        toast("captured — enriching in background");
+        toast("captured — enriching in background", "ok", [
+         { label: "View", run: () => setSelectedId(n.id) },
+         {
+          label: "Undo",
+          run: () => {
+           void api.deleteNote(n.id).then(
+            () => {
+             removeNote(n.id);
+             toast("undone");
+            },
+            (e) => toast(e instanceof Error ? e.message : String(e), "err"),
+           );
+          },
+         },
+        ]);
        }}
        onError={(m) => toast(m, "err")}
       />
@@ -1097,13 +1118,25 @@ export default function App() {
      {toasts.map((t) => (
       <div
        key={t.id}
-       className={`rise relative overflow-hidden rounded-xl border px-3.5 py-1.5 text-xs shadow-xl backdrop-blur ${
+       className={`rise pointer-events-auto relative overflow-hidden rounded-xl border px-3.5 py-1.5 text-xs shadow-xl backdrop-blur ${
         t.kind === "err"
          ? "border-red-500/40 bg-red-950/90 text-red-200"
          : "border-ink-700 bg-ink-900/95 text-ink-100"
        }`}
       >
        {t.message}
+       {t.actions?.map((a) => (
+        <button
+         key={a.label}
+         onClick={() => {
+          a.run();
+          setToasts((list) => list.filter((x) => x.id !== t.id));
+         }}
+         className="ml-2 rounded border border-current/30 px-1.5 py-0.5 text-[11px] font-medium hover:opacity-80"
+        >
+         {a.label}
+        </button>
+       ))}
        <span className="toast-timer absolute bottom-0 left-0 h-0.5 bg-current opacity-40" />
       </div>
      ))}
