@@ -33,6 +33,7 @@ def _settings_payload(request: Request) -> dict:
         "llm_api_key_set": bool(cfg.llm.api_key),
         "transcribe_model": cfg.transcribe.model,
         "transcribe_language": cfg.transcribe.language,
+        "transcribe_vocabulary": cfg.transcribe.vocabulary,
         "transcribe_loaded": st.transcriber.is_ready(),
         "transcribe_cached_models": st.transcriber.cached_models(),
         "transcribe_progress": st.transcriber.progress,
@@ -105,6 +106,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
             st.transcriber.set_model(body.transcribe_model)
     if body.transcribe_language is not None:
         cfg.transcribe.language = body.transcribe_language.strip().lower() or "auto"
+    if body.transcribe_vocabulary is not None:
+        cfg.transcribe.vocabulary = body.transcribe_vocabulary.strip()
     if body.yt_transcribe_fallback is not None:
         cfg.youtube.transcribe_fallback = body.yt_transcribe_fallback
     if body.yt_max_duration_min is not None:

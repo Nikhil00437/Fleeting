@@ -63,6 +63,8 @@ class LLMConfig:
 class TranscribeConfig:
     model: str = "base"  # tiny | base | small | medium
     language: str = "auto"  # "auto" or ISO-639-1 code
+    # #89: names/terms whisper should expect, passed as initial_prompt
+    vocabulary: str = ""
 
 
 @dataclass

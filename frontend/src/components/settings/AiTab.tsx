@@ -455,6 +455,22 @@ export default function AiTab({
                     ))}
                   </div>
                 </div>
+
+                <div>
+                  <label className={labelCls}>Custom Vocabulary</label>
+                  <input
+                    value={s.transcribe_vocabulary ?? ""}
+                    onChange={(e) => patch({ transcribe_vocabulary: e.target.value })}
+                    onBlur={() =>
+                      void save(
+                        { transcribe_vocabulary: s.transcribe_vocabulary },
+                        "vocabulary updated",
+                      )
+                    }
+                    className={`${inputCls} font-mono`}
+                    placeholder="Names and terms whisper should expect, e.g. Nikhil, FastAPI, Omarchy"
+                  />
+                </div>
               </div>
 
               <div className="mt-5 space-y-3 border-t border-ink-800/80 pt-4">

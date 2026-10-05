@@ -131,6 +131,7 @@ export interface Settings {
   llm_api_key_set?: boolean;
   transcribe_model: string;
   transcribe_language: string;
+  transcribe_vocabulary?: string;
   transcribe_loaded: boolean;
   transcribe_cached_models?: string[];
   transcribe_progress?: WhisperProgress;

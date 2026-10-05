@@ -18,6 +18,7 @@ const base: Settings = {
   llm_timeout_secs: 120,
   transcribe_model: "base",
   transcribe_language: "auto",
+  transcribe_vocabulary: "",
   transcribe_loaded: false,
   transcribe_cached_models: [],
   yt_transcribe_fallback: true,

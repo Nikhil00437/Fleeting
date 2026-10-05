@@ -330,7 +330,9 @@ class Transcriber:
         audio = self._load_wav16k(wav_path)
         started = time.monotonic()
         try:
-            segments, info = model.transcribe(audio, language=lang, vad_filter=True)
+            segments, info = model.transcribe(
+                audio, language=lang, vad_filter=True, initial_prompt=self.cfg.vocabulary or None
+            )
             parts = [seg.text.strip() for seg in segments]
         except Exception as exc:
             raise TranscriptionError(f"whisper failed: {exc}") from exc
