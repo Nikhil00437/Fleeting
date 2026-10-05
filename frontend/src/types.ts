@@ -295,6 +295,8 @@ export interface ProcessApp {
   memory_mb: number;
   status: string;
   window_title: string | null;
+  /** Owner, as returned by the API; decides whether End is offered. */
+  username: string;
 }
 
 export interface ProcessInfo {

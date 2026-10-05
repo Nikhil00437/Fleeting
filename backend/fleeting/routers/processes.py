@@ -212,6 +212,16 @@ def get_process_info_fallback(pid: int, cpu_map: Optional[Dict[int, float]] = No
         return None
 
 
+@router.get("/whoami")
+def whoami() -> Dict[str, str]:
+    """The user this server runs as.
+
+    The client needs this to decide which processes it can even offer to end,
+    rather than letting the OS refuse with a bare 403 after the click.
+    """
+    return {"user": _current_user()}
+
+
 @router.get("/apps")
 def list_apps() -> List[Dict[str, Any]]:
     """List active user-facing applications."""
@@ -302,6 +312,48 @@ def list_processes(
     return procs[:limit]
 
 
+def _current_user() -> str:
+    """Who this server runs as. Used to explain permission refusals."""
+    try:
+        import getpass
+
+        return getpass.getuser()
+    except Exception:
+        return ""
+
+
+def _owner_of(pid: int) -> str:
+    """Username owning `pid`, best effort. Empty when unknown."""
+    if HAS_PSUTIL:
+        try:
+            return psutil.Process(pid).username() or ""
+        except Exception:
+            return ""
+    try:
+        import pwd
+
+        with open(f"/proc/{pid}/status", encoding="utf-8") as fh:
+            uid = next(
+                (int(l.split()[1]) for l in fh if l.startswith("Uid:")), None
+            )
+        return pwd.getpwuid(uid).pw_name if uid is not None else ""
+    except Exception:
+        return ""
+
+
+def _denied(pid: int) -> HTTPException:
+    """A 403 that says why, instead of a bare 'Access denied'."""
+    owner = _owner_of(pid) or "another user"
+    me = _current_user() or "this user"
+    return HTTPException(
+        status_code=403,
+        detail=(
+            f"Process is owned by {owner}, and Fleeting runs as {me}. "
+            "Use sudo from a terminal to end it."
+        ),
+    )
+
+
 @router.post("/{pid}/kill")
 def kill_process(pid: int, force: bool = Query(False)) -> Dict[str, Any]:
     """Terminate or kill a process by PID."""
@@ -319,7 +371,7 @@ def kill_process(pid: int, force: bool = Query(False)) -> Dict[str, Any]:
         except psutil.NoSuchProcess:
             raise HTTPException(status_code=404, detail="Process not found")
         except psutil.AccessDenied:
-            raise HTTPException(status_code=403, detail="Access denied")
+            raise _denied(pid)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
     else:
@@ -330,7 +382,7 @@ def kill_process(pid: int, force: bool = Query(False)) -> Dict[str, Any]:
         except ProcessLookupError:
             raise HTTPException(status_code=404, detail="Process not found")
         except PermissionError:
-            raise HTTPException(status_code=403, detail="Access denied")
+            raise _denied(pid)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 

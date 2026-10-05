@@ -235,4 +235,7 @@ export const api = {
     req<{ ok: boolean; pid: number }>(`/processes/${pid}/kill${force ? "?force=true" : ""}`, { method: "POST" }),
 
   processDetails: (pid: number) => req<ProcessDetails>(`/processes/${pid}/details`),
+
+  /** The user the backend runs as; decides which rows can be ended. */
+  whoami: () => req<{ user: string }>("/processes/whoami"),
 };
