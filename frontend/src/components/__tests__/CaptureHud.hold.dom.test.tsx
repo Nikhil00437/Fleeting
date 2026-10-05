@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import CaptureHud from "../CaptureHud";
 import { api } from "../../api";
-import { useAudioVisualizer } from "../../hooks/useAudioVisualizer";
 
 vi.mock("../../api", () => ({
   api: { captureAudio: vi.fn() },
