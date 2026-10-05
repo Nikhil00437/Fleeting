@@ -717,7 +717,7 @@ export default function App() {
           >
            {active && (
             <span
-             className={`absolute top-2 bottom-2 left-0 w-[3px] rounded-r bg-ember-400 shadow-[0_0_8px_rgb(240_157_115/0.5)]`}
+             className={`nav-bar-in absolute top-2 bottom-2 left-0 w-[3px] rounded-r bg-ember-400 shadow-[0_0_8px_rgb(240_157_115/0.5)]`}
             />
            )}
            <span className="shrink-0">

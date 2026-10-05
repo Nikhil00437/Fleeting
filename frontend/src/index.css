@@ -163,6 +163,18 @@ pre,
   color: #6b7280;
 }
 
+@keyframes nav-bar-in {
+  from { transform: scaleY(0.2); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+.nav-bar-in {
+  transform-origin: center;
+  animation: nav-bar-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-bar-in { animation: none; }
+}
+
 @keyframes toast-timer {
   from { width: 100%; }
   to { width: 0%; }
