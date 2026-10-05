@@ -24,6 +24,7 @@ import {
 import type { Collection, Note, Stats } from "../types";
 
 interface Props {
+  refreshNotes?: () => void;
   notes: Note[];
   selectedId?: string | null;
   onOpen: (id: string) => void;
@@ -44,6 +45,7 @@ function dayLabel(d: string, total: number) {
 }
 
 export default function Inbox({
+  refreshNotes,
   notes,
   selectedId,
   onOpen,
@@ -956,12 +958,33 @@ export default function Inbox({
               Use the top command bar (<kbd className="font-mono text-ember-300">n</kbd>) to capture
               a note, voice memo, or YouTube video.
             </p>
-            <button
-              onClick={onQuickStart}
-              className="mt-4 rounded-lg border border-white/10 bg-ink-900 px-3.5 py-1.5 text-xs font-medium text-ink-200 hover:border-ember-400/40"
-            >
-              Focus capture bar
-            </button>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                onClick={onQuickStart}
+                className="rounded-lg border border-white/10 bg-ink-900 px-3.5 py-1.5 text-xs font-medium text-ink-200 hover:border-ember-400/40"
+              >
+                Focus capture bar
+              </button>
+              {/* #488: deletable sample notes so a first run has something to poke */}
+              <button
+                onClick={async () => {
+                  try {
+                    const r = await api.createSamples();
+                    if (r.ok) {
+                      refreshNotes?.();
+                      toast(`Created ${r.created} sample notes — trash them whenever`);
+                    } else {
+                      toast("Vault already has notes");
+                    }
+                  } catch (e) {
+                    toast(e instanceof Error ? e.message : String(e), "err");
+                  }
+                }}
+                className="rounded-lg border border-ember-400/30 bg-ember-500/10 px-3.5 py-1.5 text-xs font-medium text-ember-200 hover:bg-ember-500/20"
+              >
+                Create sample notes
+              </button>
+            </div>
           </div>
         ) : filteredNotes.length === 0 ? (
           <div className="glass rounded-2xl py-12 text-center">

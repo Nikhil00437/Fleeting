@@ -84,6 +84,8 @@ export const api = {
 
   noteCollections: (id: string) => req<Collection[]>(`/notes/${id}/collections`),
 
+  createSamples: () => req<{ ok: boolean; created: number }>("/samples", { method: "POST" }),
+
   collection: (id: string) => req<Collection & { notes: Note[] }>(`/collections/${id}`),
 
   createCollection: (data: { name: string; kind?: string; description?: string; query?: Record<string, unknown> }) =>

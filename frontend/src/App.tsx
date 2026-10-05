@@ -137,6 +137,13 @@ export default function App() {
   [refreshStats],
  );
 
+ const refetchNotes = useCallback(() => {
+  api
+   .notes({ limit: "200" })
+   .then(setNotes)
+   .catch(() => {});
+ }, []);
+
  useEffect(() => {
   api
    .notes({ limit: "200" })
@@ -909,6 +916,7 @@ export default function App() {
        </div>
       ) : (
        <Inbox
+        refreshNotes={refetchNotes}
         notes={notes}
         selectedId={selectedId}
         onOpen={setSelectedId}

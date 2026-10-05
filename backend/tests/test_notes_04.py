@@ -241,3 +241,20 @@ def test_removing_a_wikilink_removes_the_edge(client):
     assert len(client.get(f"/api/notes/{source['id']}/links").json()["outgoing"]) == 1
     client.patch(f"/api/notes/{source['id']}", json={"raw_text": "no more links"})
     assert client.get(f"/api/notes/{source['id']}/links").json()["outgoing"] == []
+
+
+# ---- #488 first-run sample notes -----------------------------------------
+
+def test_sample_notes_fill_an_empty_vault_and_are_trashable(client):
+    assert client.get("/api/notes").json() == []
+    r = client.post("/api/samples")
+    assert r.json() == {"ok": True, "created": 4}
+    notes = client.get("/api/notes").json()
+    assert len(notes) == 4
+
+    # a non-empty vault refuses more samples
+    assert client.post("/api/samples").json()["ok"] is False
+
+    # samples are ordinary notes: trash one and it is gone from the inbox
+    client.delete(f"/api/notes/{notes[0]['id']}")
+    assert len(client.get("/api/notes").json()) == 3

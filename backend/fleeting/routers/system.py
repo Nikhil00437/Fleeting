@@ -105,3 +105,69 @@ async def events(request: Request) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+SAMPLE_NOTES = [
+    {
+        "type": "text",
+        "title": "Welcome to Fleeting",
+        "summary": "Everything you capture lands here. This note is yours to trash.",
+        "raw_text": (
+            "Captures arrive unsorted and get enriched automatically: a title, "
+            "a summary and tags. Try selecting this card and pressing Delete — "
+            "it goes to the trash, not into the void."
+        ),
+        "tags": ["welcome"],
+    },
+    {
+        "type": "text",
+        "title": "Wikilinks connect thoughts",
+        "summary": "Type [[Welcome to Fleeting]] inside any note to link it.",
+        "raw_text": (
+            "This note links to [[Welcome to Fleeting]]. Open the other note "
+            "and check its backlinks. Links resolve by title and keep working "
+            "when notes are renamed."
+        ),
+        "tags": ["welcome", "howto"],
+    },
+    {
+        "type": "voice",
+        "title": "Voice memos transcribe themselves",
+        "summary": "Captured audio is transcribed, timestamped and enriched locally.",
+        "raw_text": (
+            "If you had recorded this, whisper would have turned your speech "
+            "into this text — then cleaned it up, added tags and extracted "
+            "action items. Click a card's pencil icon to edit inline."
+        ),
+        "tags": ["welcome", "voice"],
+    },
+    {
+        "type": "text",
+        "title": "Mark private things as sensitive",
+        "summary": "Sensitive notes never leave the database: no vault mirror, no LLM, no embeddings.",
+        "raw_text": (
+            "Open the shield icon in a note's drawer to toggle sensitivity. "
+            "Also worth knowing: the zzz button snoozes a note until tomorrow "
+            "or next Monday, and the star keeps important notes easy to find."
+        ),
+        "tags": ["welcome", "privacy"],
+    },
+]
+
+
+@router.post("/samples")
+def create_samples(request: Request) -> dict:
+    """#488: fill an empty vault with deletable sample notes.
+
+    Idempotent-ish by design: only runs when the vault holds no real notes,
+    so a stray double-click cannot litter a working inbox.
+    """
+    st = request.app.state.st
+    if st.db.count_notes() > 0:
+        return {"ok": False, "created": 0, "reason": "vault not empty"}
+    created = []
+    for sample in SAMPLE_NOTES:
+        note = st.db.insert_note({**sample, "status": "done"})
+        st.bus.publish("note.created", note)
+        created.append(note["id"])
+    return {"ok": True, "created": len(created)}
