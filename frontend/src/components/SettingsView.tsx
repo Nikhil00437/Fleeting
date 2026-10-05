@@ -408,6 +408,7 @@ export default function SettingsView({
             </button>
           </div>
 
+          <div key={tab} className="rise">
           {tab === "ai" && (
             <AiTab
               s={s}
@@ -451,6 +452,7 @@ export default function SettingsView({
               backfillBusy={backfillBusy}
             />
           )}
+          </div>
         </div>
       </div>
     </div>
