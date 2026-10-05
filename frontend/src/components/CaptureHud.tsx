@@ -59,6 +59,15 @@ export default function CaptureHud({
 
   const getDesktop = () => (typeof window !== "undefined" ? window.fleetingDesktop : undefined);
 
+  const saveDraft = useCallback(() => {
+    // #7: dismissing mid-dictation must not drop the audio — save it as a
+    // normal voice capture and let the pipeline transcribe it.
+    if (!isRecordingRef.current) return;
+    void stop()
+      .then((blob) => (blob && blob.size > 1200 ? api.captureAudio(blob, "draft.webm").catch(() => {}) : null))
+      .catch(() => {});
+  }, [stop]);
+
   const handleCancel = useCallback(() => {
     isCancelledRef.current = true;
     setAwaitingType(false);
@@ -67,12 +76,13 @@ export default function CaptureHud({
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
+    saveDraft();
     cancel();
     const desktop = getDesktop();
     void desktop?.hideHud?.();
     void desktop?.resizeHud?.(72);
     onDone?.();
-  }, [cancel, onDone]);
+  }, [cancel, onDone, saveDraft]);
 
   const handleCommit = useCallback(async () => {
     if (stateRef.current !== "listening") return;
@@ -186,7 +196,7 @@ export default function CaptureHud({
       if (document.visibilityState === "hidden") {
         // Only cancel if actively listening/recording; do not abort if processing or preview
         if (stateRef.current === "listening" && isRecordingRef.current) {
-          cancel();
+          saveDraft();
         }
       }
     };
