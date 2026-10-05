@@ -98,6 +98,12 @@ export const api = {
     return req<Note>("/capture/audio", { method: "POST", body: fd });
   },
 
+  transcribePreview: (blob: Blob) => {
+    const fd = new FormData();
+    fd.append("file", blob, "snapshot.webm");
+    return req<{ text: string }>("/capture/preview", { method: "POST", body: fd });
+  },
+
   templates: () => req<Record<string, { type?: string; tags?: string[]; prompt?: string; mode?: string }>>("/templates"),
 
   search: (

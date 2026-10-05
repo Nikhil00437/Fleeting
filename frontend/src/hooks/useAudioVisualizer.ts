@@ -11,6 +11,8 @@ export interface AudioVisualizerState {
   start: () => Promise<void>;
   stop: () => Promise<Blob | null>;
   cancel: () => void;
+  /** #8: blob of everything recorded so far — valid WebM since it starts at byte 0. */
+  snapshot: () => Blob | null;
 }
 
 export function smoothLevels(prev: number[], target: number[], smoothing = 0.7): number[] {
@@ -160,6 +162,12 @@ export function useAudioVisualizer(): AudioVisualizerState {
     });
   }, [cleanup]);
 
+  const snapshot = useCallback((): Blob | null => {
+    if (!chunksRef.current.length) return null;
+    const recorder = mediaRecorderRef.current;
+    return new Blob(chunksRef.current, { type: recorder?.mimeType || "audio/webm" });
+  }, []);
+
   const cancel = useCallback(() => {
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
@@ -175,5 +183,5 @@ export function useAudioVisualizer(): AudioVisualizerState {
     return cleanup;
   }, [cleanup]);
 
-  return { isRecording, levels, elapsed, error, start, stop, cancel };
+  return { isRecording, levels, elapsed, error, start, stop, cancel, snapshot };
 }

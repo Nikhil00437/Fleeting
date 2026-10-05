@@ -20,6 +20,7 @@ vi.mock("../../hooks/useAudioVisualizer", () => ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(new Blob(["mock-audio"], { type: "audio/webm" })),
     cancel: vi.fn(),
+    snapshot: vi.fn(() => null),
   })),
 }));
 
@@ -154,6 +155,7 @@ describe("CaptureHud Component & Helpers", () => {
         start: vi.fn().mockRejectedValue(new Error("Microphone permission denied")),
         stop: vi.fn().mockResolvedValue(null),
         cancel: vi.fn(),
+        snapshot: vi.fn(() => null),
       });
 
       const html = renderToStaticMarkup(<CaptureHud />);

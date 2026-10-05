@@ -135,6 +135,37 @@ async def capture_audio(
     return NoteOut(**note)
 
 
+@router.post("/preview")
+async def preview_transcription(request: Request, file: UploadFile = File(...)) -> dict:
+    """#8: transcribe the audio-so-far while the user is still talking.
+
+    Full-blob-so-far re-transcription on a timer — with faster-whisper on a
+    decent CPU it's near-realtime for short clips; the ponytail ceiling is
+    that segment streaming would be more efficient if latency matters.
+    """
+    import asyncio
+    import tempfile
+
+    st = request.app.state.st
+    data = await file.read()
+    if not data:
+        return {"text": ""}
+    if len(data) > AUDIO_MAX_BYTES:
+        raise HTTPException(413, "preview audio too large")
+    ext = Path(file.filename or "preview.webm").suffix.lower()
+    if ext not in ALLOWED_AUDIO_EXT:
+        ext = ".webm"
+    tmp = Path(tempfile.mkstemp(suffix=ext, prefix="fleeting-preview-")[1])
+    try:
+        tmp.write_bytes(data)
+        result = await asyncio.to_thread(st.transcriber.transcribe_file, tmp)
+        return {"text": result.get("text", "")}
+    except Exception as exc:
+        raise HTTPException(502, f"preview transcription failed: {exc}")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 @router.post("/youtube")
 def capture_youtube(body: CaptureYouTubeIn, request: Request) -> NoteOut:
     return _capture_youtube(request, body.url, body.capture_id, body.source_title, body.template, body.mode)

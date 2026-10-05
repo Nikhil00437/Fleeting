@@ -27,7 +27,9 @@ export default function CaptureHud({
   initialMode = "dictate",
   initialState,
 }: CaptureHudProps = {}): React.JSX.Element {
-  const { levels, elapsed, error: audioError, isRecording, start, stop, cancel } = useAudioVisualizer();
+  const { levels, elapsed, error: audioError, isRecording, start, stop, cancel, snapshot } = useAudioVisualizer();
+  const [partialText, setPartialText] = useState("");
+  const previewBusyRef = useRef(false);
 
   const [state, setState] = useState<CaptureHudState>(
     () => initialState || (audioError ? "error" : "listening")
@@ -231,6 +233,25 @@ export default function CaptureHud({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleCommit, handleCancel, handleRestart]);
 
+  // #8: live partial transcription while still recording.
+  useEffect(() => {
+    if (state !== "listening" || !isRecording) return;
+    const id = window.setInterval(() => {
+      if (previewBusyRef.current) return;
+      const blob = snapshot();
+      if (!blob || blob.size < 2000) return;
+      previewBusyRef.current = true;
+      api
+        .transcribePreview(blob)
+        .then((r) => setPartialText(r.text))
+        .catch(() => {})
+        .finally(() => {
+          previewBusyRef.current = false;
+        });
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [state, isRecording, snapshot]);
+
   // Load capture templates once (#1)
   useEffect(() => {
     api.templates().then((t) => setTemplates(t)).catch(() => {});
@@ -311,9 +332,14 @@ export default function CaptureHud({
               </div>
             </div>
 
-            {/* Center: Elapsed timer */}
-            <div className="font-mono text-sm font-medium tracking-wider text-neutral-300">
-              {formatElapsed(elapsed)}
+            {/* Center: Elapsed timer + live partial (#8) */}
+            <div className="flex min-w-0 flex-col items-center">
+              <div className="font-mono text-sm font-medium tracking-wider text-neutral-300">
+                {formatElapsed(elapsed)}
+              </div>
+              {partialText && (
+                <div className="max-w-[180px] truncate text-[9.5px] text-neutral-500">{partialText}</div>
+              )}
             </div>
               </>
             )}

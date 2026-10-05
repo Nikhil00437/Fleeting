@@ -25,6 +25,7 @@ vi.mock("../../hooks/useAudioVisualizer", () => ({
     start,
     stop,
     cancel: vi.fn(),
+    snapshot: vi.fn(() => null),
   })),
 }));
 
