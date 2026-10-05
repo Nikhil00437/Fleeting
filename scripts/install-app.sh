@@ -6,10 +6,14 @@ ROOT=$(pwd)
 
 echo "==> app icon (hicolor)"
 ICON_DIR="$HOME/.local/share/icons/hicolor"
-mkdir -p "$ICON_DIR/scalable/apps" "$ICON_DIR/512x512/apps"
+mkdir -p "$ICON_DIR/scalable/apps" "$ICON_DIR/512x512/apps" "$ICON_DIR/256x256/apps" "$ICON_DIR/48x48/apps" "$ICON_DIR/32x32/apps" "$ICON_DIR/16x16/apps"
 cp deploy/fleeting.svg "$ICON_DIR/scalable/apps/fleeting.svg"
 if command -v rsvg-convert > /dev/null 2>&1; then
   rsvg-convert -w 512 -h 512 deploy/fleeting.svg -o "$ICON_DIR/512x512/apps/fleeting.png"
+  rsvg-convert -w 256 -h 256 deploy/fleeting.svg -o "$ICON_DIR/256x256/apps/fleeting.png"
+  rsvg-convert -w 48 -h 48 deploy/fleeting.svg -o "$ICON_DIR/48x48/apps/fleeting.png"
+  rsvg-convert -w 32 -h 32 deploy/fleeting.svg -o "$ICON_DIR/32x32/apps/fleeting.png"
+  rsvg-convert -w 16 -h 16 deploy/fleeting.svg -o "$ICON_DIR/16x16/apps/fleeting.png"
 fi
 
 echo "==> desktop entry"

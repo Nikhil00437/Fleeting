@@ -264,3 +264,17 @@ export const EditIcon = ({ className = base }: IconProps) => (
   </svg>
 );
 
+
+/** Fleeting mark: a thought that lifts off and fades into trailing dots. */
+export function FleetingMark({ className = "h-7 w-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      <rect width="64" height="64" rx="16" fill="#e9e2d0" />
+      <path d="M14 46c0-14 9-24 24-24h8" fill="none" stroke="#23382e" strokeWidth="7" strokeLinecap="round" />
+      <path d="M14 46c0-6 2-10 5-13" fill="none" stroke="#23382e" strokeWidth="7" strokeLinecap="round" />
+      <circle cx="46" cy="22" r="5" fill="#d8784c" />
+      <circle cx="53" cy="14" r="3" fill="#d8784c" opacity=".6" />
+      <circle cx="57" cy="8" r="1.8" fill="#d8784c" opacity=".3" />
+    </svg>
+  );
+}

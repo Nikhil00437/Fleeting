@@ -880,7 +880,7 @@ export default function TasksView({
     return (
       <div
         key={t.id}
-        className={`glass card-hover group relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5 transition-all ${
+        className={`glass card-hover rise group relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5 transition-all ${
           isDone ? "opacity-75" : ""
         }`}
       >

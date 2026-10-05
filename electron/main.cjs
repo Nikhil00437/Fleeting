@@ -165,6 +165,13 @@ const SPLASH_HTML = `<!doctype html>
 </html>`;
 
 async function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return mainWindow;
+  }
+
   const state = loadWindowState();
 
   mainWindow = new BrowserWindow({
@@ -193,16 +200,29 @@ async function createWindow() {
   }
 
   mainWindow.on("maximize", () => {
-    mainWindow?.webContents.send("window:maximized", true);
-    saveWindowState(mainWindow);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("window:maximized", true);
+      saveWindowState(mainWindow);
+    }
   });
   mainWindow.on("unmaximize", () => {
-    mainWindow?.webContents.send("window:maximized", false);
-    saveWindowState(mainWindow);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("window:maximized", false);
+      saveWindowState(mainWindow);
+    }
   });
-  mainWindow.on("resize", () => saveWindowState(mainWindow));
-  mainWindow.on("move", () => saveWindowState(mainWindow));
-  mainWindow.on("close", () => saveWindowState(mainWindow));
+  mainWindow.on("resize", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(mainWindow);
+  });
+  mainWindow.on("move", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(mainWindow);
+  });
+  mainWindow.on("close", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(mainWindow);
+  });
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 
   // Open external links in default system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -230,6 +250,20 @@ async function createWindow() {
     await ensureBackend();
   }
   await mainWindow.loadURL(BACKEND_URL);
+  return mainWindow;
+}
+
+async function showMainWindow(navigateTarget) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    await createWindow();
+  } else {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  if (navigateTarget && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("app:navigate", navigateTarget);
+  }
 }
 
 async function createHudWindow() {
@@ -405,18 +439,13 @@ function setupTray() {
       {
         label: "Open Fleeting",
         click: () => {
-          if (!mainWindow) return;
-          mainWindow.show();
-          mainWindow.focus();
+          void showMainWindow();
         },
       },
       {
         label: "Quick Capture",
         click: () => {
-          if (!mainWindow) return;
-          mainWindow.show();
-          mainWindow.focus();
-          mainWindow.webContents.send("app:navigate", "capture");
+          void showMainWindow("capture");
         },
       },
       {
@@ -430,25 +459,19 @@ function setupTray() {
       {
         label: "Inbox",
         click: () => {
-          mainWindow?.show();
-          mainWindow?.focus();
-          mainWindow?.webContents.send("app:navigate", "inbox");
+          void showMainWindow("inbox");
         },
       },
       {
         label: "Activity Timeline",
         click: () => {
-          mainWindow?.show();
-          mainWindow?.focus();
-          mainWindow?.webContents.send("app:navigate", "timeline");
+          void showMainWindow("timeline");
         },
       },
       {
         label: "Tasks",
         click: () => {
-          mainWindow?.show();
-          mainWindow?.focus();
-          mainWindow?.webContents.send("app:navigate", "tasks");
+          void showMainWindow("tasks");
         },
       },
       { type: "separator" },
@@ -462,12 +485,14 @@ function setupTray() {
     ]);
     tray.setContextMenu(menu);
     tray.on("click", () => {
-      if (!mainWindow) return;
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        void showMainWindow();
+        return;
+      }
       if (mainWindow.isVisible() && mainWindow.isFocused()) {
         mainWindow.hide();
       } else {
-        mainWindow.show();
-        mainWindow.focus();
+        void showMainWindow();
       }
     });
   } catch {
@@ -482,17 +507,15 @@ if (!gotLock) {
 } else {
   app.on("second-instance", (_event, argv) => {
     if (argv.includes("--hud")) {
-      toggleHud();
+      void toggleHud();
       return;
     }
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-      if (argv.includes("--capture")) {
-        mainWindow.webContents.send("app:navigate", "capture");
-      }
-    }
+    const target = argv.includes("--capture") ? "capture" : undefined;
+    void showMainWindow(target);
+  });
+
+  app.on("activate", () => {
+    void showMainWindow();
   });
 
   app.whenReady().then(async () => {
@@ -502,9 +525,13 @@ if (!gotLock) {
       callback(allowed.includes(permission));
     });
 
-    ipcMain.handle("window:minimize", () => mainWindow?.minimize());
+    ipcMain.handle("window:minimize", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.minimize();
+      }
+    });
     ipcMain.handle("window:toggle-maximize", () => {
-      if (!mainWindow) return false;
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
       if (mainWindow.isMaximized()) {
         mainWindow.unmaximize();
         return false;
@@ -512,8 +539,15 @@ if (!gotLock) {
       mainWindow.maximize();
       return true;
     });
-    ipcMain.handle("window:close", () => mainWindow?.close());
-    ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+    ipcMain.handle("window:close", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.close();
+      }
+    });
+    ipcMain.handle("window:is-maximized", () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
+      return mainWindow.isMaximized();
+    });
     ipcMain.handle("shell:open-external", (_e, url) => {
       if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"))) {
         return shell.openExternal(url);
@@ -547,8 +581,10 @@ if (!gotLock) {
     await createHudWindow();
 
     if (process.argv.includes("--hud")) {
-      mainWindow?.hide();
-      toggleHud();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+      }
+      void toggleHud();
     }
   });
 }

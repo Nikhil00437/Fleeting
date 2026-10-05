@@ -746,7 +746,7 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                   return (
                     <div
                       key={s.id}
-                      className="group flex items-center gap-2.5 rounded-xl border border-transparent bg-white/[0.015] px-2.5 py-1.5 transition-colors hover:border-white/[0.06] hover:bg-white/[0.04]"
+                      className="group flex items-center gap-2.5 rounded-xl border border-transparent bg-white/[0.015] rise px-2.5 py-1.5 transition-colors hover:border-white/[0.06] hover:bg-white/[0.04]"
                     >
                       <span className="w-16 shrink-0 font-mono text-[10.5px] tabular-nums text-ink-400">
                         {hhmm(s.first_seen)}

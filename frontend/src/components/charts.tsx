@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { appColor, fmtSecs, prettyAppName } from "../apps";
+import { activationProps } from "./a11y";
 import type { ActivitySession } from "../types";
 
 /** Hook to measure container pixel width for 1:1 crisp SVG rendering without viewBox distortion. */
@@ -26,6 +27,30 @@ function useChartWidth(defaultW = 680): [React.RefObject<HTMLDivElement | null>,
   }, []);
 
   return [ref, width];
+}
+
+
+function smoothPath(points: {x: number, y: number}[]): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M${points[0].x},${points[0].y}`;
+  if (points.length === 2) return `M${points[0].x},${points[0].y} L${points[1].x},${points[1].y}`;
+  
+  let path = `M${points[0].x},${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = i > 0 ? points[i - 1] : points[0];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = i !== points.length - 2 ? points[i + 2] : p2;
+    
+    const tension = 0.15;
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+    
+    path += ` C${cp1x.toFixed(2)},${cp1y.toFixed(2)} ${cp2x.toFixed(2)},${cp2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+  }
+  return path;
 }
 
 /* ---------------- Bars (architectural columns, clean tracks, value labels, avg line) ---------------- */
@@ -95,6 +120,33 @@ export function Bars({
         aria-label="Bar chart"
       >
         <defs>
+          <style>{`
+            @keyframes bar-grow {
+              0% { transform: scaleY(0); }
+              100% { transform: scaleY(1); }
+            }
+            .bar-animate {
+              animation: bar-grow 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+              transform-origin: bottom;
+              transform-box: fill-box;
+            }
+            @keyframes fade-in {
+              0% { opacity: 0; }
+              100% { opacity: 1; }
+            }
+            .fade-in { animation: fade-in 0.4s ease-out forwards; }
+          `}</style>
+          <linearGradient id={`bar-grad-overlay-${uid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0.15" />
+          </linearGradient>
+          <filter id={`bar-glow-${uid}`}>
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
           {data.map((_, i) => {
             const x = pad.left + i * slot + (slot - barW) / 2;
             return (
@@ -115,15 +167,15 @@ export function Bars({
                 x2={W - pad.right}
                 y1={y}
                 y2={y}
-                stroke="#e5dfd4"
-                strokeWidth="1"
-                strokeDasharray={p === 0.5 ? "2 3" : undefined}
+                stroke="#e2e8f0"
+                strokeWidth="1.5"
+                strokeDasharray="1 4" strokeLinecap="round"
               />
               <text
                 x={pad.left - 6}
                 y={y + 3.5}
                 textAnchor="end"
-                fill="#8f877a"
+                fill="#64748b"
                 fontSize="9"
                 fontFamily="var(--font-mono)"
               >
@@ -210,8 +262,8 @@ export function Bars({
                 width={barW}
                 height={plotH}
                 rx={rx}
-                fill={isSelected ? "#e5ded2" : "#f1ede4"}
-                stroke={isSelected ? "#bd5d38" : "transparent"}
+                fill={isSelected ? "#e2e8f0" : "#f1f5f9"}
+                stroke={isSelected ? "#2563eb" : "transparent"}
                 strokeWidth={isSelected ? 1.5 : 0}
               />
 
@@ -222,33 +274,43 @@ export function Bars({
                   x2={x + barW - 3}
                   y1={pad.top + plotH - 1}
                   y2={pad.top + plotH - 1}
-                  stroke="#cfc7b7"
+                  stroke="#cbd5e1"
                   strokeWidth="1.5"
                   strokeLinecap="round"
                 />
               )}
 
+              {n <= 7 && isHovered && (
+                <rect x={pad.left + i * slot + slot/2 - Math.max(barW + 12, 32)/2} y={pad.top - 6} width={Math.max(barW + 12, 32)} height={plotH + 12} rx="8" fill="rgba(15,23,42,0.04)" className="fade-in" />
+              )}
               {/* Filled bar clipped inside track rounded bounds */}
               {hasVal && (
-                <rect
-                  x={x}
-                  y={y}
-                  width={barW}
-                  height={barH}
-                  rx={rx}
-                  clipPath={`url(#bar-clip-${uid}-${i})`}
-                  fill={barColor}
-                  opacity={
-                    selectedIndex !== null && selectedIndex !== i
-                      ? 0.35
-                      : active
-                        ? 1
-                        : 0.8
-                  }
-                  style={{
-                    transition: "y 0.3s ease, height 0.3s ease, opacity 0.16s ease",
-                  }}
-                />
+                <g className="bar-animate" style={{
+                  transition: "opacity 0.16s ease",
+                  opacity: selectedIndex !== null && selectedIndex !== i ? 0.35 : active ? 1 : 0.8
+                }}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={barH}
+                    rx={rx}
+                    clipPath={`url(#bar-clip-${uid}-${i})`}
+                    fill={barColor}
+                    filter={isHovered ? `url(#bar-glow-${uid})` : undefined}
+                    style={{ transition: "y 0.3s ease, height 0.3s ease" }}
+                  />
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={barH}
+                    rx={rx}
+                    clipPath={`url(#bar-clip-${uid}-${i})`}
+                    fill={`url(#bar-grad-overlay-${uid})`}
+                    style={{ transition: "y 0.3s ease, height 0.3s ease" }}
+                  />
+                </g>
               )}
 
               {/* Direct formatted value label above bar for immediate glanceability */}
@@ -257,9 +319,9 @@ export function Bars({
                   x={x + barW / 2}
                   y={Math.max(11, y - 4)}
                   textAnchor="middle"
-                  fill={isSelected ? "#8c3b20" : active ? "#2d3c33" : "#6f6759"}
+                  fill={isSelected ? "#2563eb" : active ? "#0f172a" : "#475569"}
                   fontSize="9.5"
-                  fontWeight={active ? "700" : "500"}
+                  fontWeight={active ? "700" : "600"}
                   fontFamily="var(--font-mono)"
                 >
                   {fmt(d.value)}
@@ -268,26 +330,37 @@ export function Bars({
 
               {/* Floating tooltip on hover when bar label isn't already explicit */}
               {isHovered && (
-                <g className="pointer-events-none">
+                <g className="pointer-events-none fade-in">
                   <rect
                     x={Math.min(W - 82, Math.max(pad.left, x + barW / 2 - 40))}
-                    y={Math.max(0, y - 28)}
+                    y={Math.max(0, y - 36)}
                     width="80"
-                    height="22"
-                    rx="6"
-                    fill="#23382e"
-                    filter="drop-shadow(0 2px 5px rgb(0 0 0 / 0.18))"
+                    height="32"
+                    rx="8"
+                    fill="#0f172ae6"
+                    filter="drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15))"
                   />
                   <text
                     x={Math.min(W - 42, Math.max(pad.left + 40, x + barW / 2))}
-                    y={Math.max(14, y - 13)}
+                    y={Math.max(12, y - 24)}
                     textAnchor="middle"
-                    fill="#fffdf8"
+                    fill="#ffffff"
                     fontSize="10"
                     fontWeight="600"
                     fontFamily="var(--font-mono)"
                   >
                     {fmt(d.value)}
+                  </text>
+                  <text
+                    x={Math.min(W - 42, Math.max(pad.left + 40, x + barW / 2))}
+                    y={Math.max(24, y - 12)}
+                    textAnchor="middle"
+                    fill="#94a3b8"
+                    fontSize="8.5"
+                    fontWeight="500"
+                    fontFamily="var(--font-sans)"
+                  >
+                    {d.label}
                   </text>
                 </g>
               )}
@@ -298,7 +371,7 @@ export function Bars({
                   x={x + barW / 2}
                   y={H - 5}
                   textAnchor="middle"
-                  fill={isSelected ? "#98452d" : "#70695d"}
+                  fill={isSelected ? "#2563eb" : "#475569"}
                   fontSize="10"
                   fontWeight={isSelected ? "700" : "500"}
                   fontFamily="var(--font-sans)"
@@ -365,7 +438,7 @@ export function AreaTrend({
     return { x, y, d, i };
   });
 
-  const linePath = pts.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ");
+  const linePath = smoothPath(pts);
   const areaPath = `${linePath} L${pts[n - 1].x},${H - padBot} L${pts[0].x},${H - padBot} Z`;
   const activeIdx = hoverIdx ?? selectedIndex;
   const activePt = activeIdx !== null && pts[activeIdx] ? pts[activeIdx] : null;
@@ -382,6 +455,33 @@ export function AreaTrend({
         aria-label="Area trend chart"
       >
         <defs>
+          <style>{`
+            @keyframes bar-grow {
+              0% { transform: scaleY(0); }
+              100% { transform: scaleY(1); }
+            }
+            .bar-animate {
+              animation: bar-grow 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+              transform-origin: bottom;
+              transform-box: fill-box;
+            }
+            @keyframes fade-in {
+              0% { opacity: 0; }
+              100% { opacity: 1; }
+            }
+            .fade-in { animation: fade-in 0.4s ease-out forwards; }
+          `}</style>
+          <linearGradient id={`bar-grad-overlay-${uid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0.15" />
+          </linearGradient>
+          <filter id={`bar-glow-${uid}`}>
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
           <linearGradient id={`area-${uid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.28" />
             <stop offset="100%" stopColor={color} stopOpacity="0.02" />
@@ -398,15 +498,15 @@ export function AreaTrend({
                 x2={W - padX}
                 y1={y}
                 y2={y}
-                stroke="#e5dfd4"
-                strokeWidth="1"
-                strokeDasharray={p === 0.5 ? "2 3" : undefined}
+                stroke="#e2e8f0"
+                strokeWidth="1.5"
+                strokeDasharray="1 4" strokeLinecap="round"
               />
               <text
                 x={padX - 7}
                 y={y + 3.5}
                 textAnchor="end"
-                fill="#8f877a"
+                fill="#64748b"
                 fontSize="9"
                 fontFamily="var(--font-mono)"
               >
@@ -424,7 +524,7 @@ export function AreaTrend({
               x2={W - padX}
               y1={yAvg}
               y2={yAvg}
-              stroke="#b55c3c"
+              stroke="#2563eb"
               strokeDasharray="4 3"
               strokeWidth="1.2"
               opacity="0.85"
@@ -433,7 +533,7 @@ export function AreaTrend({
               x={W - padX}
               y={yAvg - 4}
               textAnchor="end"
-              fill="#98452d"
+              fill="#1e40af"
               fontSize="8.5"
               fontFamily="var(--font-mono)"
               fontWeight="600"
@@ -443,7 +543,7 @@ export function AreaTrend({
           </g>
         )}
 
-        <path d={areaPath} fill={`url(#area-${uid})`} />
+        <path d={areaPath} fill={`url(#area-${uid})`} className="fade-in" />
         <path
           d={linePath}
           fill="none"
@@ -451,6 +551,8 @@ export function AreaTrend({
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          className="area-line-animate"
+          filter={`url(#line-glow-${uid})`}
         />
 
         {activePt && (
@@ -495,6 +597,8 @@ export function AreaTrend({
                 fill="#fffdf8"
                 stroke={color}
                 strokeWidth={isAct ? 2.5 : 1.8}
+                className={isAct ? "dot-pulse" : ""}
+                style={{ transition: "r 0.2s ease, stroke-width 0.2s ease" }}
               />
               {activePt?.i === p.i && (
                 <g className="pointer-events-none">
@@ -504,14 +608,14 @@ export function AreaTrend({
                     width="84"
                     height="22"
                     rx="6"
-                    fill="#23382e"
+                    fill="#0f172ae6"
                     filter="drop-shadow(0 2px 5px rgb(0 0 0 / 0.18))"
                   />
                   <text
                     x={Math.min(W - 44, Math.max(padX + 42, p.x))}
                     y={Math.max(14, p.y - 15)}
                     textAnchor="middle"
-                    fill="#fffdf8"
+                    fill="#ffffff"
                     fontSize="10"
                     fontWeight="600"
                     fontFamily="var(--font-mono)"
@@ -533,7 +637,7 @@ export function AreaTrend({
                 x={p.x}
                 y={H - 5}
                 textAnchor="middle"
-                fill={selectedIndex === p.i ? "#98452d" : "#70695d"}
+                fill={selectedIndex === p.i ? "#2563eb" : "#475569"}
                 fontSize="10"
                 fontFamily="var(--font-sans)"
               >
@@ -600,6 +704,16 @@ export function Donut({
   return (
     <div className="relative shrink-0 select-none" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90 overflow-visible">
+        <defs>
+          <filter id="inner-shadow">
+            <feOffset dx="0" dy="1"/>
+            <feGaussianBlur stdDeviation="1" result="offset-blur"/>
+            <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse"/>
+            <feFlood floodColor="black" floodOpacity="0.15" result="color"/>
+            <feComposite operator="in" in="color" in2="inverse" result="shadow"/>
+            <feComposite operator="over" in="shadow" in2="SourceGraphic"/>
+          </filter>
+        </defs>
         {/* Outer & inner subtle dial rings */}
         <circle
           cx={size / 2}
@@ -608,13 +722,14 @@ export function Donut({
           fill="none"
           stroke="rgba(64,59,47,0.12)"
           strokeWidth={thickness}
+          filter="url(#inner-shadow)"
         />
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r - thickness / 2 - 2}
           fill="none"
-          stroke="rgba(64,59,47,0.10)"
+          stroke="rgba(64,59,47,0.06)"
           strokeWidth={1}
         />
         {drawn &&
@@ -644,7 +759,7 @@ export function Donut({
                   opacity: isDim ? 0.3 : 1,
                   filter: isAct ? `drop-shadow(0 0 8px ${seg.color}88)` : "none",
                   transition:
-                    "stroke-dasharray 0.65s cubic-bezier(0.2,0.7,0.3,1), stroke-width 0.18s ease, opacity 0.18s ease",
+                    "stroke-dasharray 0.65s cubic-bezier(0.2,0.7,0.3,1), stroke-dashoffset 0.65s cubic-bezier(0.2,0.7,0.3,1), stroke-width 0.18s ease, opacity 0.18s ease",
                 }}
               >
                 <title>{seg.label}</title>
@@ -703,13 +818,40 @@ export function Ring({
   const c = 2 * Math.PI * r;
   const clamped = Math.min(Math.max(progress, 0), 1);
   const [drawn, setDrawn] = useState(false);
+  const [dispProgress, setDispProgress] = useState(0);
   useEffect(() => {
     const t = setTimeout(() => setDrawn(true), 40);
     return () => clearTimeout(t);
   }, []);
+  useEffect(() => {
+    let start = performance.now();
+    let frame: number;
+    const animate = (now: number) => {
+      const p = Math.min((now - start) / 800, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setDispProgress(ease * clamped);
+      if (p < 1) frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [clamped]);
   return (
     <div className="relative shrink-0 select-none" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90 overflow-visible">
+        <defs>
+          <linearGradient id={`ring-grad-overlay`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0.1" />
+          </linearGradient>
+          <filter id="ring-inner-shadow">
+            <feOffset dx="0" dy="1"/>
+            <feGaussianBlur stdDeviation="1" result="offset-blur"/>
+            <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse"/>
+            <feFlood floodColor="black" floodOpacity="0.15" result="color"/>
+            <feComposite operator="in" in="color" in2="inverse" result="shadow"/>
+            <feComposite operator="over" in="shadow" in2="SourceGraphic"/>
+          </filter>
+        </defs>
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -717,6 +859,7 @@ export function Ring({
           fill="none"
           stroke="rgba(64,59,47,0.12)"
           strokeWidth={thickness}
+          filter="url(#ring-inner-shadow)"
         />
         <circle
           cx={size / 2}
@@ -729,14 +872,29 @@ export function Ring({
           strokeDasharray={`${clamped * c} ${c}`}
           strokeDashoffset={drawn ? 0 : c}
           style={{
-            filter: clamped > 0 ? `drop-shadow(0 0 6px ${color}55)` : "none",
+            filter: clamped > 0 ? `drop-shadow(0 0 6px ${color}66)` : "none",
+            transition:
+              "stroke-dasharray 0.85s cubic-bezier(0.2,0.7,0.3,1), stroke-dashoffset 0.4s",
+          }}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="url(#ring-grad-overlay)"
+          strokeWidth={thickness}
+          strokeLinecap="round"
+          strokeDasharray={`${clamped * c} ${c}`}
+          strokeDashoffset={drawn ? 0 : c}
+          style={{
             transition:
               "stroke-dasharray 0.85s cubic-bezier(0.2,0.7,0.3,1), stroke-dashoffset 0.4s",
           }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        {label && <span className="font-mono text-sm font-bold tabular-nums text-ink-100">{label}</span>}
+        {label ? <span className="font-mono text-sm font-bold tabular-nums text-ink-100">{label}</span> : <span className="font-mono text-sm font-bold tabular-nums text-ink-100">{Math.round(dispProgress * 100)}%</span>}
         {sub && <span className="text-[9px] font-medium uppercase tracking-wider text-ink-400">{sub}</span>}
       </div>
     </div>
@@ -765,20 +923,45 @@ export function Spark({
     const y = height - 4 - (v / max) * (height - 10);
     return [x, y] as const;
   });
-  const line = pts
-    .map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`)
-    .join(" ");
+  const line = smoothPath(pts.map(([x, y]) => ({x, y})));
   const area = `${line} L${pts[n - 1][0].toFixed(1)},${height} L${pts[0][0].toFixed(1)},${height} Z`;
   const gid = `sg-${uid}`;
   return (
     <svg width={width} height={height} className="overflow-visible">
       <defs>
+          <style>{`
+            @keyframes bar-grow {
+              0% { transform: scaleY(0); }
+              100% { transform: scaleY(1); }
+            }
+            .bar-animate {
+              animation: bar-grow 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+              transform-origin: bottom;
+              transform-box: fill-box;
+            }
+            @keyframes fade-in {
+              0% { opacity: 0; }
+              100% { opacity: 1; }
+            }
+            .fade-in { animation: fade-in 0.4s ease-out forwards; }
+          `}</style>
+          <linearGradient id={`bar-grad-overlay-${uid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0.15" />
+          </linearGradient>
+          <filter id={`bar-glow-${uid}`}>
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.38" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={area} fill={`url(#${gid})`} />
+      <path d={area} fill={`url(#${gid})`} style={{ animation: "fade-in 0.8s ease-out forwards" }} />
       <path
         d={line}
         fill="none"
@@ -786,13 +969,14 @@ export function Spark({
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
+        className={`spark-line-${uid}`}
       />
       <circle
         cx={pts[n - 1][0]}
         cy={pts[n - 1][1]}
         r="2.8"
         fill={color}
-        style={{ filter: `drop-shadow(0 0 5px ${color})` }}
+        className={`spark-dot-${uid}`}
       />
     </svg>
   );
@@ -831,8 +1015,8 @@ export function StackBar({
             key={segKey}
             onClick={onSelect && s.key ? () => onSelect(s.key!) : undefined}
             onKeyDown={onSelect && s.key ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(s.key!); } } : undefined}
-            className={`bar-grow h-full transition-all first:rounded-l-full last:rounded-r-full ${
-              onSelect && s.key ? "cursor-pointer hover:brightness-125" : ""
+            className={`group relative h-full transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] rounded-full ${
+              onSelect && s.key ? "cursor-pointer hover:brightness-125 hover:z-10" : ""
             }`}
             role={onSelect && s.key ? "button" : undefined}
             tabIndex={onSelect && s.key ? 0 : undefined}
@@ -843,8 +1027,11 @@ export function StackBar({
               opacity: isDim ? 0.28 : 1,
               boxShadow: isSel ? `0 0 10px ${s.color}` : "none",
             }}
-            title={`${s.title ?? segKey} · ${Math.round((s.value / total) * 100)}%`}
-          />
+          >
+            <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100 z-50 whitespace-nowrap rounded-md bg-[#0f172ae6] px-2.5 py-1 text-[10px] font-semibold text-white shadow-md backdrop-blur-sm">
+              {s.title ?? segKey} · {Math.round((s.value / total) * 100)}%
+            </div>
+          </div>
         );
       })}
     </div>
@@ -884,15 +1071,15 @@ export function SessionRibbon({
 
   return (
     <div className="select-none">
-      <div className="relative h-12 w-full overflow-hidden rounded-xl border border-ink-800 bg-[#f3efe6] shadow-inner">
+      <div className="relative h-12 w-full overflow-hidden rounded-xl border border-ink-800 bg-ink-900 shadow-inner">
         {/* Subtle 1-hour bottom tick marks */}
         {Array.from({ length: 23 }, (_, idx) => idx + 1).map((h) => (
           <div
             key={h}
             className={`pointer-events-none absolute bottom-0 ${
               h % 4 === 0
-                ? "top-0 border-l border-dashed border-ink-700/70"
-                : "h-1.5 border-l border-ink-700/50"
+                ? "top-0 border-l border-dotted border-ink-700/40"
+                : "h-1.5 border-l border-ink-700/30"
             }`}
             style={{ left: `${(h / 24) * 100}%` }}
           />
@@ -922,17 +1109,29 @@ export function SessionRibbon({
               onMouseEnter={() => setHovered(s)}
               onMouseLeave={() => setHovered(null)}
               onClick={onSelectApp ? () => onSelectApp(s.app_class) : undefined}
-              className={`absolute top-2 bottom-2 rounded-md transition-all ${
+              {...(onSelectApp
+                ? activationProps(
+                    `${prettyAppName(s.app_class)}, ${fmtSecs(s.seconds)} active`,
+                    () => onSelectApp(s.app_class),
+                  )
+                : {})}
+              className={`group absolute top-2 bottom-2 rounded-md transition-all ${
                 onSelectApp ? "cursor-pointer hover:brightness-125 hover:z-20" : ""
               }`}
               style={{
                 left: `${leftPct}%`,
                 width: `${Math.max(widthPct, 0.42)}%`,
-                background: `linear-gradient(180deg, ${color} 0%, ${color}bb 100%)`,
+                background: `linear-gradient(180deg, ${color}e6 0%, ${color} 100%)`,
                 opacity: isDim ? 0.18 : 0.94,
-                boxShadow: isSel ? `0 2px 9px ${color}66` : "0 1px 2px rgba(38,57,47,.16)",
+                boxShadow: isSel ? `0 2px 9px ${color}66` : "inset 0 1px 0 rgba(255,255,255,0.2), 0 1px 2px rgba(38,57,47,.16)",
               }}
-            />
+            >
+              <div className="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100 z-50 whitespace-nowrap rounded-md bg-[#0f172af2] px-2.5 py-1.5 text-[10px] text-white shadow-lg backdrop-blur-sm">
+                <div className="font-semibold" style={{ color: color }}>{prettyAppName(s.app_class)}</div>
+                <div className="max-w-[200px] truncate text-slate-300 my-0.5">{s.title || "(untitled window)"}</div>
+                <div className="font-mono text-[9px] text-blue-300">{hhmm(s.first_seen)} · {fmtSecs(s.seconds)} active</div>
+              </div>
+            </div>
           );
         })}
 
