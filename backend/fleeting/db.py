@@ -232,6 +232,29 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_note_versions_note ON note_versions(note_id, created_at);
     """,
+    # v13 — #267/#268/#269 collections. One table with a kind column serves
+    # manual playlists, saved queries and projects (the bundle's cut/merge
+    # note), so one CRUD and one sidebar section cover all three.
+    """
+    CREATE TABLE collections (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'manual',
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT,
+      query TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE collection_items (
+      collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+      note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL DEFAULT 0,
+      added_at TEXT NOT NULL,
+      PRIMARY KEY (collection_id, note_id)
+    );
+    CREATE INDEX idx_collection_items_note ON collection_items(note_id);
+    """,
 ]
 
 
@@ -1490,6 +1513,151 @@ class Database:
             for r in rows
         ]
 
+    # ---- collections (#267 manual | #269 saved_query | #268 playlist) ----
+
+    def insert_collection(self, data: dict) -> dict:
+        now = now_iso()
+        coll = {
+            "id": data.get("id") or new_id(),
+            "kind": data.get("kind") or "manual",
+            "name": data["name"],
+            "description": data.get("description") or "",
+            "status": data.get("status"),
+            "query": data.get("query"),
+            "created_at": now,
+            "updated_at": now,
+        }
+        if coll["kind"] not in ("manual", "saved_query", "project"):
+            raise ValueError(f"unknown collection kind {coll['kind']!r}")
+        self.execute(
+            """
+            INSERT INTO collections (id, kind, name, description, status, query, created_at, updated_at)
+            VALUES (:id, :kind, :name, :description, :status, :query, :created_at, :updated_at)
+            """,
+            {
+                **coll,
+                "query": json.dumps(coll["query"], ensure_ascii=False) if coll["query"] else None,
+            },
+        )
+        self.commit()
+        return coll
+
+    def update_collection(self, coll_id: str, changes: dict) -> dict | None:
+        row = self.execute("SELECT * FROM collections WHERE id = ?", (coll_id,)).fetchone()
+        if not row:
+            return None
+        allowed = {"name", "description", "status", "query", "kind"}
+        updates = {k: v for k, v in changes.items() if k in allowed and v is not None}
+        if "query" in updates and not isinstance(updates["query"], str):
+            updates["query"] = json.dumps(updates["query"], ensure_ascii=False)
+        if not updates:
+            return self.get_collection(coll_id)
+        updates["updated_at"] = now_iso()
+        sets = ", ".join(f"{k} = :{k}" for k in updates)
+        self.execute(f"UPDATE collections SET {sets} WHERE id = :cid", {**updates, "cid": coll_id})
+        self.commit()
+        return self.get_collection(coll_id)
+
+    def get_collection(self, coll_id: str) -> dict | None:
+        row = self.execute("SELECT * FROM collections WHERE id = ?", (coll_id,)).fetchone()
+        return _row_to_collection(row) if row else None
+
+    def list_collections(self) -> list[dict]:
+        rows = self.execute(
+            "SELECT * FROM collections ORDER BY updated_at DESC"
+        ).fetchall()
+        counts = {
+            r["collection_id"]: r["c"]
+            for r in self.execute(
+                "SELECT collection_id, COUNT(*) AS c FROM collection_items GROUP BY collection_id"
+            ).fetchall()
+        }
+        out = []
+        for row in rows:
+            coll = _row_to_collection(row)
+            coll["item_count"] = counts.get(coll["id"], 0)
+            out.append(coll)
+        return out
+
+    def delete_collection(self, coll_id: str) -> bool:
+        cur = self.execute("DELETE FROM collections WHERE id = ?", (coll_id,))
+        self.commit()
+        return (cur.rowcount or 0) > 0
+
+    def add_note_to_collection(self, coll_id: str, note_id: str) -> bool:
+        """Append at the end of a manual collection. Idempotent per (coll, note)."""
+        if not self.get_note(note_id) or not self.get_collection(coll_id):
+            return False
+        row = self.execute("SELECT MAX(position) AS p FROM collection_items WHERE collection_id = ?", (coll_id,)).fetchone()
+        self.execute(
+            "INSERT OR IGNORE INTO collection_items (collection_id, note_id, position, added_at) "
+            "VALUES (?, ?, ?, ?)",
+            (coll_id, note_id, (row["p"] or 0) + 1, now_iso()),
+        )
+        self.commit()
+        return True
+
+    def remove_note_from_collection(self, coll_id: str, note_id: str) -> bool:
+        cur = self.execute(
+            "DELETE FROM collection_items WHERE collection_id = ? AND note_id = ?",
+            (coll_id, note_id),
+        )
+        self.commit()
+        return (cur.rowcount or 0) > 0
+
+    def collection_notes(self, coll: dict, limit: int = 200) -> list[dict]:
+        """Notes in a collection, newest first.
+
+        Manual/project collections read their membership table; a saved_query
+        executes its stored filter live, so the collection tracks future
+        matches without touching it.
+        """
+        if coll["kind"] == "saved_query":
+            q = coll.get("query") or {}
+            if isinstance(q, str):
+                try:
+                    q = json.loads(q)
+                except json.JSONDecodeError:
+                    q = {}
+            if q.get("text"):
+                hits = self.search(str(q["text"]), limit=limit)
+                notes = [
+                    n for n in hits
+                    if (not q.get("tag") or q["tag"] in n["tags"])
+                    and (not q.get("type") or n["type"] == q["type"])
+                ]
+            else:
+                notes = self.list_notes(
+                    limit=limit,
+                    tag=q.get("tag"),
+                    note_type=q.get("type"),
+                    starred=bool(q.get("starred")),
+                )
+            return notes
+        rows = self.execute(
+            """
+            SELECT n.* FROM collection_items ci
+            JOIN notes n ON n.id = ci.note_id
+            WHERE ci.collection_id = :cid AND n.trashed_at IS NULL
+            ORDER BY ci.position ASC
+            LIMIT :limit
+            """,
+            {"cid": coll["id"], "limit": limit},
+        ).fetchall()
+        return [_row_to_note(r) for r in rows]
+
+    def collections_for_note(self, note_id: str) -> list[dict]:
+        rows = self.execute(
+            """
+            SELECT c.* FROM collection_items ci
+            JOIN collections c ON c.id = ci.collection_id
+            WHERE ci.note_id = ?
+            ORDER BY c.name COLLATE NOCASE
+            """,
+            (note_id,),
+        ).fetchall()
+        return [_row_to_collection(r) for r in rows]
+
     # ---- note embeddings ------------------------------------------------
 
     def upsert_note_embedding(
@@ -1660,6 +1828,20 @@ def _note_to_sql(note: dict) -> dict:
     out["starred"] = int(bool(out.get("starred")))
     out["sensitive"] = int(bool(out.get("sensitive")))
     return out
+
+
+def _row_to_collection(row: sqlite3.Row) -> dict:
+    query = row["query"]
+    return {
+        "id": row["id"],
+        "kind": row["kind"],
+        "name": row["name"],
+        "description": row["description"],
+        "status": row["status"],
+        "query": json.loads(query) if query else None,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
 
 
 def _row_to_task(row: sqlite3.Row) -> dict:
