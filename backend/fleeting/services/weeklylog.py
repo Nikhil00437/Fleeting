@@ -273,6 +273,13 @@ async def generate_weekly_log(
     ):
         raise ValueError(f"no tracked activity in the week of {week_start}")
 
+    try:
+        from .search import persist_commits
+
+        persist_commits(db, agg["commits"])
+    except Exception:
+        log.warning("weekly log: could not persist commits for search", exc_info=True)
+
     transcript = build_transcript(agg)
     try:
         md, model = await generate_with_llm(transcript, week_start, cfg)

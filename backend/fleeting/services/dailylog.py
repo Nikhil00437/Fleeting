@@ -410,6 +410,15 @@ async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bo
     if not sessions and not scan["total"] and not notes:
         raise ValueError("no tracked activity in this window")
 
+    # Persist commit subjects so they become searchable; the collection pass
+    # already ran for the report, so this costs nothing extra.
+    try:
+        from .search import persist_commits
+
+        persist_commits(db, git, until=until)
+    except Exception:
+        log.warning("daily log: could not persist commits for search", exc_info=True)
+
     files_block = render_files_activity(scan, git)
     notes_block = render_notes_context(notes)
 

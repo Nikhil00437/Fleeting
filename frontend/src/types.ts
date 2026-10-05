@@ -355,3 +355,12 @@ export interface WeeklyLogOut {
   report: WeeklyLogRow | null;
   summary: WeekSummary;
 }
+
+export interface UnifiedResult {
+  query?: string;
+  notes: Note[];
+  sessions: { id: number; app_class: string; title: string; day: string; seconds: number }[];
+  commits: { repo: string; subject: string; author: string | null; committed_at: string }[];
+  counts?: { notes: number; sessions: number; commits: number };
+  total: number;
+}

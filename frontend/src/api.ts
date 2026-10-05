@@ -23,6 +23,7 @@ import type {
   ProcessInfo,
   ProcessDetails,
   WeeklyLogOut,
+  UnifiedResult,
   WeeklyLogRow,
 
 } from "./types";
@@ -107,6 +108,14 @@ export const api = {
   },
 
   tags: () => req<TagCount[]>("/tags"),
+
+  /** Notes + window sessions + commits. Additive to /search. */
+  unifiedSearch: (q: string, params?: { limit?: number; since_day?: string }) => {
+    const sp = new URLSearchParams({ q });
+    if (params?.limit) sp.set("limit", String(params.limit));
+    if (params?.since_day) sp.set("since_day", params.since_day);
+    return req<UnifiedResult>(`/search/unified?${sp.toString()}`);
+  },
 
   tasks: (
     params?:

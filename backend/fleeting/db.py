@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import threading
 import uuid
@@ -159,7 +160,57 @@ MIGRATIONS: list[str] = [
         created_at TEXT NOT NULL
     );
     """,
+    # v8 — activity-aware search. Notes were only half the record; window
+    # titles and commit subjects are the other half, and both were collected
+    # for the digests but never searchable.
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS activity_fts USING fts5(
+        app_class, title,
+        content='activity', content_rowid='id'
+    );
+    -- Triggers live in migrate(), not here: CREATE TRIGGER ... ON activity
+    -- needs that table to exist, and a database predating activity tracking
+    -- would otherwise fail to migrate at all.
+
+    CREATE TABLE IF NOT EXISTS commits (
+        repo TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        author TEXT,
+        committed_at TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY (repo, subject, committed_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commits_when ON commits(committed_at);
+    """,
 ]
+
+
+# Kept insert-sync between `activity` and its FTS index. Mirrors notes_ai/ad/au.
+_ACTIVITY_FTS_TRIGGERS: tuple[tuple[str, str], ...] = (
+    (
+        "activity_ai",
+        """AFTER INSERT ON activity BEGIN
+            INSERT INTO activity_fts(rowid, app_class, title)
+            VALUES (new.id, new.app_class, new.title);
+        END""",
+    ),
+    (
+        "activity_ad",
+        """AFTER DELETE ON activity BEGIN
+            INSERT INTO activity_fts(activity_fts, rowid, app_class, title)
+            VALUES ('delete', old.id, old.app_class, old.title);
+        END""",
+    ),
+    (
+        "activity_au",
+        """AFTER UPDATE ON activity BEGIN
+            INSERT INTO activity_fts(activity_fts, rowid, app_class, title)
+            VALUES ('delete', old.id, old.app_class, old.title);
+            INSERT INTO activity_fts(rowid, app_class, title)
+            VALUES (new.id, new.app_class, new.title);
+        END""",
+    ),
+)
 
 
 NOTE_COLUMNS = frozenset({
@@ -241,7 +292,38 @@ class Database:
                     current,
                 )
                 raise
+        self._backfill_activity_index()
         self._migrate_action_items()
+
+    def _backfill_activity_index(self) -> None:
+        """Index existing activity rows for the search FTS table.
+
+        Done in Python rather than in migration v8's SQL because a database old
+        enough to predate activity tracking has no `activity` table, and the
+        statement would abort the whole migration.
+        """
+        try:
+            has_activity = self.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activity'"
+            ).fetchone()
+            if not has_activity:
+                return
+            # Triggers first: without them new sessions never reach the index.
+            for name, body in _ACTIVITY_FTS_TRIGGERS:
+                self.execute(f"CREATE TRIGGER IF NOT EXISTS {name} {body}")
+            total = self.execute("SELECT COUNT(*) AS c FROM activity").fetchone()["c"]
+            # Always rebuild rather than trying to detect staleness: COUNT(*) on
+            # an external-content FTS table counts the *content* table, so it
+            # cannot tell a populated index from an empty one. 'rebuild' is also
+            # the documented way to (re)index — a plain INSERT ... SELECT leaves
+            # the index unsearchable (rows present, MATCH returns nothing).
+            # Cheap: activity is pruned to the retention window.
+            self.execute("INSERT INTO activity_fts(activity_fts) VALUES('rebuild')")
+            self.commit()
+            if total:
+                log.info("indexed %d activity rows for search", total)
+        except sqlite3.OperationalError:
+            log.warning("activity search backfill skipped", exc_info=True)
 
     def execute(self, sql: str, params: tuple | list = ()) -> sqlite3.Cursor:
         return self.conn.execute(sql, params)
@@ -556,6 +638,104 @@ class Database:
                      "tracked": tracked, "has_rule": True}
                 )
         return out
+
+    # ---- activity-aware search ------------------------------------------
+
+    def search_activity(
+        self, query: str, *, limit: int = 50, since_day: str | None = None
+    ) -> list[dict]:
+        """FTS5 match over window sessions (title + app class), newest first.
+
+        Zero-second sessions are excluded here exactly as `activity_sessions`
+        does elsewhere: they are tab-switch noise that reads everywhere else.
+        """
+        params: dict = {"q": _activity_fts_query(query), "limit": max(1, int(limit))}
+        where = ["activity_fts MATCH :q", "a.seconds >= 1"]
+        if since_day:
+            where.append("a.day >= :since_day")
+            params["since_day"] = since_day
+        try:
+            rows = self.execute(
+                f"""
+                SELECT a.id, a.app_class, a.title, a.day, a.seconds,
+                       bm25(activity_fts) AS rank
+                FROM activity_fts f
+                JOIN activity a ON a.id = f.rowid
+                WHERE {' AND '.join(where)}
+                ORDER BY rank
+                LIMIT :limit
+                """,
+                params,
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Unparseable FTS expression: return nothing rather than everything.
+            log.info("activity search rejected query %r", query)
+            return []
+        return [
+            {
+                "id": r["id"],
+                "app_class": r["app_class"],
+                "title": r["title"],
+                "day": r["day"],
+                "seconds": int(r["seconds"] or 0),
+            }
+            for r in rows
+        ]
+
+    def record_commit(
+        self, repo: str, subject: str, author: str = "", committed_at: str | None = None
+    ) -> None:
+        """Store one commit subject. Idempotent — re-running a digest is fine."""
+        self.execute(
+            """
+            INSERT OR IGNORE INTO commits (repo, subject, author, committed_at, recorded_at)
+            VALUES (:repo, :subject, :author, :when, :recorded)
+            """,
+            {
+                "repo": str(repo),
+                "subject": str(subject),
+                "author": str(author or ""),
+                "when": committed_at or now_iso(),
+                "recorded": now_iso(),
+            },
+        )
+        self.commit()
+
+    def search_commits(
+        self, query: str, *, limit: int = 20, since: str | None = None
+    ) -> list[dict]:
+        """Commits whose repo or subject matches, newest first."""
+        tokens = [t for t in query.split() if t]
+        if not tokens:
+            return []
+        clauses = []
+        params: dict = {"limit": max(1, int(limit))}
+        for i, tok in enumerate(tokens):
+            params[f"t{i}"] = f"%{tok}%"
+            clauses.append(f"(repo LIKE :t{i} OR subject LIKE :t{i})")
+        where = " OR ".join(clauses)
+        if since:
+            where += " AND committed_at >= :since"
+            params["since"] = since
+        rows = self.execute(
+            f"""
+            SELECT repo, subject, author, committed_at
+            FROM commits
+            WHERE {where}
+            ORDER BY committed_at DESC
+            LIMIT :limit
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "repo": r["repo"],
+                "subject": r["subject"],
+                "author": r["author"],
+                "committed_at": r["committed_at"],
+            }
+            for r in rows
+        ]
 
     # ---- search --------------------------------------------------------
 
@@ -1216,6 +1396,21 @@ def _row_to_task(row: sqlite3.Row) -> dict:
         "created_at": row["created_at"],
         "completed_at": row["completed_at"],
     }
+
+
+def _activity_fts_query(raw: str) -> str:
+    """FTS5 query for window titles.
+
+    Window titles are paths and app names ("fleeting — routers/notes.py —
+    fleeting"), not prose, so the note-oriented tokeniser is wrong here: it keeps
+    only alphanumerics and would fuse "routers/notes.py" into one token that
+    matches nothing. Split on every separator instead, so a search for either
+    "notes" or "routers/notes.py" finds the session.
+    """
+    tokens = re.findall(r"[A-Za-z0-9_]+", raw)
+    if not tokens:
+        return '""'
+    return " ".join(f'"{t}"*' for t in tokens)
 
 
 def _fts_query(raw: str) -> str:

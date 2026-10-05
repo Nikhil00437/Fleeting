@@ -3,8 +3,9 @@ import { api } from "../api";
 import { appColor } from "../apps";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
+import { bucketCounts, emptyUnified, sessionLabel } from "./unifiedSearch";
 import { LinkIcon, MicIcon, SearchIcon, SparkIcon, TextIcon, XIcon } from "./Icons";
-import type { Note, SearchMode, TagCount } from "../types";
+import type { Note, SearchMode, TagCount, UnifiedResult } from "../types";
 
 interface Props {
   notes?: Note[];
@@ -45,6 +46,8 @@ export default function SearchView({
   const [results, setResults] = useState<Note[] | null>(null);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [searching, setSearching] = useState(false);
+  const [scope, setScope] = useState<"notes" | "activity">("notes");
+  const [unified, setUnified] = useState<UnifiedResult | null>(null);
   const debounceRef = useRef<number>(0);
 
   useEffect(() => {
@@ -60,17 +63,24 @@ export default function SearchView({
       return;
     }
     setSearching(true);
+    if (scope === "activity") setUnified(null);
     debounceRef.current = window.setTimeout(async () => {
       try {
-        setResults(await api.search(q, { mode }));
+        if (scope === "activity") {
+          setResults([]);
+          setUnified(await api.unifiedSearch(q, { limit: 20 }));
+        } else {
+          setResults(await api.search(q, { mode }));
+        }
       } catch {
-        setResults([]);
+        if (scope === "activity") setUnified(emptyUnified() as UnifiedResult);
+        else setResults([]);
       } finally {
         setSearching(false);
       }
     }, 180);
     return () => window.clearTimeout(debounceRef.current);
-  }, [query, mode]);
+  }, [query, mode, scope]);
 
   const browseNotes = useMemo(
     () => notes.filter((n) => !isEmptyFailedVoice(n)),
@@ -242,8 +252,56 @@ export default function SearchView({
           </div>
         )}
 
+        {/* Activity-aware results: window sessions + commits */}
+        {scope === "activity" && unified ? (
+          <div className="space-y-3">
+            {bucketCounts(unified).map((b) => (
+              <div key={b.key}>
+                <p className="micro-label mb-1.5 px-1">
+                  {b.label} · {b.count}
+                </p>
+                {b.count === 0 ? (
+                  <p className="px-1 text-[11px] text-ink-500">No {b.label.toLowerCase()} matched.</p>
+                ) : b.key === "sessions" ? (
+                  <ul className="space-y-1">
+                    {unified.sessions.map((s) => (
+                      <li
+                        key={s.id}
+                        className="flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-950/50 px-3 py-1.5 text-xs text-ink-200"
+                      >
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: appColor(s.app_class) }}
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{sessionLabel(s)}</span>
+                        <span className="shrink-0 font-mono text-[10px] text-ink-500">{s.day}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : b.key === "commits" ? (
+                  <ul className="space-y-1">
+                    {unified.commits.map((c) => (
+                      <li
+                        key={`${c.repo}:${c.committed_at}:${c.subject}`}
+                        className="flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-950/50 px-3 py-1.5 text-xs text-ink-200"
+                      >
+                        <span className="shrink-0 font-mono text-[10px] text-cyan-400">{c.repo}</span>
+                        <span className="min-w-0 flex-1 truncate">{c.subject}</span>
+                        <span className="shrink-0 font-mono text-[10px] text-ink-500">
+                          {c.committed_at.slice(0, 10)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         {/* Knowledge Base Results / Stream */}
-        <div className="space-y-3">
+        <div className={scope === "activity" ? "hidden" : "space-y-3"}>
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <span className="micro-label">
@@ -256,6 +314,22 @@ export default function SearchView({
               <span className="rounded-md border border-ink-800 bg-ink-900/80 px-2 py-0.5 font-mono text-[10.5px] text-ink-300">
                 {activeList.length} {activeList.length === 1 ? "capture" : "captures"}
               </span>
+              <div className="flex items-center gap-0.5 rounded-lg border border-ink-800 bg-ink-900/80 p-0.5">
+                {(["notes", "activity"] as const).map((sc) => (
+                  <button
+                    key={sc}
+                    onClick={() => setScope(sc)}
+                    aria-pressed={scope === sc}
+                    className={`rounded-md px-2 py-0.5 font-mono text-[10.5px] ${
+                      scope === sc
+                        ? "bg-ember-500/25 font-semibold text-ember-300"
+                        : "text-ink-400 hover:text-ink-200"
+                    }`}
+                  >
+                    {sc === "notes" ? "Notes" : "What I did"}
+                  </button>
+                ))}
+              </div>
             </div>
             {query.trim() && (
               <button

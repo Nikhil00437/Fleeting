@@ -47,3 +47,21 @@ def stats(request: Request, days: int = 7) -> dict:
     data["notes_per_day"] = st.db.notes_per_day(min(max(days, 2), 60))
     return data
 
+
+
+@router.get("/search/unified")
+async def unified(
+    request: Request,
+    q: str,
+    limit: int = Query(20, ge=1, le=200),
+    since_day: str | None = None,
+) -> dict:
+    """Search notes, window sessions and commits together.
+
+    Separate from `/search` on purpose: that endpoint returns a bare array of
+    notes and the existing UI depends on its shape.
+    """
+    from ..services.search import unified_search
+
+    st = request.app.state.st
+    return await unified_search(st.db, st.cfg, q, limit=limit, since_day=since_day)
