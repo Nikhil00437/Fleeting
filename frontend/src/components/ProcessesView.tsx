@@ -241,7 +241,7 @@ export default function ProcessesView({
 
       {/* ── content ──────────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-5">
+        <div key={tab} className="rise flex-1 overflow-y-auto p-5">
           {loading ? (
             <div className="space-y-2.5">
               {[0, 1, 2, 3, 4].map((i) => (
