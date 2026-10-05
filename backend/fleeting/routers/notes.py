@@ -67,10 +67,25 @@ def update_note(note_id: str, body: NoteUpdateIn, request: Request) -> NoteOut:
         return _out(note)
 
     # title edits also refresh the vault mirror
+    old_raw = note.get("raw_text") or ""
     note = st.db.update_note(note_id, changes)
     assert note is not None
     if note["status"] == "done":
         markdown.sync_note(st.cfg.paths, note)
+
+    # #435: a human fixing a voice transcript teaches whisper new words.
+    if note["type"] == "voice" and "raw_text" in changes:
+        from ..services.transcribe import added_words
+
+        new = added_words(old_raw, note.get("raw_text") or "")
+        if new:
+            existing = {w.strip() for w in st.cfg.transcribe.vocabulary.split(",") if w.strip()}
+            extra = [w for w in new if w not in existing]
+            if extra:
+                st.cfg.transcribe.vocabulary = ", ".join(
+                    [v.strip() for v in st.cfg.transcribe.vocabulary.split(",") if v.strip()] + extra
+                )
+                save_config(st.cfg)
 
     # Re-embed: semantic search reads note_embeddings, which no update path
     # touched, so an edited note stayed findable only by its old text.

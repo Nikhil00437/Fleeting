@@ -171,6 +171,8 @@ class CaptureYouTubeIn(BaseModel):
 class NoteUpdateIn(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     summary: str | None = Field(default=None, max_length=4000)
+    # #435: correcting a voice transcript teaches whisper new words
+    raw_text: str | None = Field(default=None, max_length=200_000)
     tags: list[str] | None = None
     pinned: bool | None = None
     archived: bool | None = None

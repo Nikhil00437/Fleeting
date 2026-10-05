@@ -19,6 +19,22 @@ from pathlib import Path
 
 from ..config import TranscribeConfig
 
+# #435: words the user typed over a transcript are the corrections — harvest
+# them into the whisper vocabulary. Common words are ignored; the ceiling is
+# that intentional additions are learned too, which is arguably the point.
+_STOP = {"the", "and", "for", "you", "that", "this", "with", "have", "from", "was", "not", "but"}
+
+
+def added_words(old: str, new: str) -> list[str]:
+    old_words = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{2,}", old)}
+    out: list[str] = []
+    for w in re.findall(r"[A-Za-z][A-Za-z-]{2,}", new):
+        low = w.lower()
+        if low not in old_words and low not in _STOP and w not in out:
+            out.append(w)
+    return out
+
+
 # #432: "spoken=written" pairs from config, applied on word boundaries.
 def apply_replacements(text: str, spec: str) -> str:
     for pair in spec.split(","):

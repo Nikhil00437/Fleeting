@@ -157,3 +157,18 @@ def test_replacements_and_auto_format(tmp_path, monkeypatch):
     wav = tmp_path / "a.wav"
     wav.write_bytes(b"x")
     assert t.transcribe_wav(wav)["text"] == "Hi I am here. Reach me at me@example.com anytime"
+
+
+def test_correction_loop_extends_vocabulary(client, tmp_path, monkeypatch):
+    """#435: fixing typos in a voice transcript feeds whisper's vocabulary."""
+    import fleeting.config as fcfg
+
+    r = client.post("/api/capture/audio", files={"file": ("m.webm", b"not real audio", "audio/webm")})
+    assert r.status_code == 200
+    nid = r.json()["id"]
+
+    r = client.patch(f"/api/notes/{nid}", json={"raw_text": "met with Nikhil about Omarchy"})
+    assert r.status_code == 200
+
+    text = (tmp_path / "config.toml").read_text()
+    assert "Nikhil" in text and "Omarchy" in text
