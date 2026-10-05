@@ -190,6 +190,26 @@ MIGRATIONS: list[str] = [
     CREATE UNIQUE INDEX idx_notes_capture_id ON notes(capture_id) WHERE capture_id IS NOT NULL;
     CREATE INDEX idx_notes_type ON notes(type);
     """,
+    # v10 — 0.4 notes & organisation: lifecycle (star/trash/review), presentation
+    # (colour), typed custom fields, sensitive flag, and the link table wikilinks
+    # and backlinks read from. raw_text already exists (v1) and doubles as the
+    # pre-clean text version history compares against.
+    """
+    ALTER TABLE notes ADD COLUMN starred INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE notes ADD COLUMN trashed_at TEXT;
+    ALTER TABLE notes ADD COLUMN color TEXT;
+    ALTER TABLE notes ADD COLUMN fields TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE notes ADD COLUMN sensitive INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE notes ADD COLUMN review_state TEXT NOT NULL DEFAULT 'enriched';
+    CREATE INDEX idx_notes_trashed ON notes(trashed_at);
+    CREATE INDEX idx_notes_starred ON notes(starred);
+    CREATE TABLE note_links (
+      src TEXT NOT NULL,
+      dst TEXT NOT NULL,
+      PRIMARY KEY (src, dst)
+    ) WITHOUT ROWID;
+    CREATE INDEX idx_note_links_dst ON note_links(dst);
+    """,
 ]
 
 
@@ -225,6 +245,7 @@ NOTE_COLUMNS = frozenset({
     "type", "title", "summary", "raw_text", "tags", "action_items", "source",
     "audio_path", "status", "error", "pinned", "archived",
     "created_at", "updated_at", "processed_at", "capture_id", "source_title",
+    "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
 })
 
 
@@ -361,10 +382,12 @@ class Database:
             """
             INSERT INTO notes (id, type, title, summary, raw_text, tags, action_items,
                                source, audio_path, status, error, pinned, archived,
-                               created_at, updated_at, processed_at, capture_id, source_title)
+                               created_at, updated_at, processed_at, capture_id, source_title,
+                               starred, trashed_at, color, fields, sensitive, review_state)
             VALUES (:id, :type, :title, :summary, :raw_text, :tags, :action_items,
                     :source, :audio_path, :status, :error, :pinned, :archived,
-                    :created_at, :updated_at, :processed_at, :capture_id, :source_title)
+                    :created_at, :updated_at, :processed_at, :capture_id, :source_title,
+                    :starred, :trashed_at, :color, :fields, :sensitive, :review_state)
             """,
             _note_to_sql(note),
         )
@@ -386,7 +409,7 @@ class Database:
         sets = ", ".join(f"{key} = :{key}" for key in changes)
         changes_sql = dict(changes)
         # JSON-encode list/dict fields
-        for key in ("tags", "action_items", "source"):
+        for key in ("tags", "action_items", "source", "fields"):
             if key in changes_sql and not isinstance(changes_sql[key], str):
                 changes_sql[key] = json.dumps(
                     changes_sql[key],
@@ -1365,6 +1388,12 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         "processed_at": row["processed_at"],
         "capture_id": row["capture_id"] if "capture_id" in row.keys() else None,
         "source_title": row["source_title"] if "source_title" in row.keys() else None,
+        "starred": bool(row["starred"]) if "starred" in row.keys() else False,
+        "trashed_at": row["trashed_at"] if "trashed_at" in row.keys() else None,
+        "color": row["color"] if "color" in row.keys() else None,
+        "fields": json.loads(row["fields"] or "{}") if "fields" in row.keys() else {},
+        "sensitive": bool(row["sensitive"]) if "sensitive" in row.keys() else False,
+        "review_state": row["review_state"] if "review_state" in row.keys() else "enriched",
     }
     for key in extra:
         if key in row.keys():
@@ -1374,8 +1403,8 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
 
 def _note_to_sql(note: dict) -> dict:
     out = dict(note)
-    defaults: dict[str, object] = {"tags": [], "action_items": [], "source": {}}
-    for key in ("tags", "action_items", "source"):
+    defaults: dict[str, object] = {"tags": [], "action_items": [], "source": {}, "fields": {}}
+    for key in ("tags", "action_items", "source", "fields"):
         val = out.get(key)
         if val is None or (isinstance(val, str) and not val.strip()):
             val = defaults[key]
@@ -1395,6 +1424,11 @@ def _note_to_sql(note: dict) -> dict:
     out.setdefault("error", None)
     out.setdefault("pinned", 0)
     out.setdefault("archived", 0)
+    out.setdefault("starred", 0)
+    out.setdefault("trashed_at", None)
+    out.setdefault("color", None)
+    out.setdefault("sensitive", 0)
+    out.setdefault("review_state", "enriched")
     out.setdefault("audio_path", None)
     out.setdefault("processed_at", None)
     out.setdefault("capture_id", None)
@@ -1404,6 +1438,8 @@ def _note_to_sql(note: dict) -> dict:
     out.setdefault("updated_at", now)
     out["pinned"] = int(bool(out.get("pinned")))
     out["archived"] = int(bool(out.get("archived")))
+    out["starred"] = int(bool(out.get("starred")))
+    out["sensitive"] = int(bool(out.get("sensitive")))
     return out
 
 

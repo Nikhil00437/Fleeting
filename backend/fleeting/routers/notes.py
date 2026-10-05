@@ -63,6 +63,9 @@ def update_note(note_id: str, body: NoteUpdateIn, request: Request) -> NoteOut:
         raise HTTPException(404, "note not found")
 
     changes = body.model_dump(exclude_unset=True, exclude_none=True)
+    # Empty colour string means "clear" (see NoteUpdateIn); None is "leave alone".
+    if changes.get("color") == "":
+        changes["color"] = None
     if not changes:
         return _out(note)
 

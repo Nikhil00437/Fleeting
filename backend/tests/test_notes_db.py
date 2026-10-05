@@ -45,3 +45,53 @@ def test_update_note_does_not_execute_injected_key(db, note):
 def test_update_note_still_bumps_updated_at(db, note):
     updated = db.update_note(note["id"], {"title": "t"})
     assert updated["updated_at"] >= note["updated_at"]
+
+# ---- 0.4 metadata columns -----------------------------------------------
+
+def test_insert_note_defaults_new_lifecycle_columns(db):
+    n = db.insert_note({"raw_text": "hi", "type": "text"})
+    assert n["starred"] is False
+    assert n["trashed_at"] is None
+    assert n["color"] is None
+    assert n["fields"] == {}
+    assert n["sensitive"] is False
+    assert n["review_state"] == "enriched"
+
+
+def test_new_metadata_columns_round_trip(db, note):
+    updated = db.update_note(
+        note["id"],
+        {
+            "starred": True,
+            "color": "ember",
+            "fields": {"rating": 4, "url": "https://x.dev"},
+            "sensitive": True,
+            "review_state": "reviewed",
+        },
+    )
+    assert updated["starred"] is True
+    assert updated["color"] == "ember"
+    assert updated["fields"] == {"rating": 4, "url": "https://x.dev"}
+    assert updated["sensitive"] is True
+    assert updated["review_state"] == "reviewed"
+    # persisted, not just merged in memory
+    assert db.get_note(note["id"])["fields"] == {"rating": 4, "url": "https://x.dev"}
+
+
+def test_trashed_at_round_trip(db, note):
+    from fleeting.db import now_iso
+
+    db.update_note(note["id"], {"trashed_at": now_iso()})
+    assert db.get_note(note["id"])["trashed_at"] is not None
+    db.update_note(note["id"], {"trashed_at": None})
+    assert db.get_note(note["id"])["trashed_at"] is None
+
+
+def test_note_links_table_persists(db, note):
+    other = db.insert_note({"raw_text": "target", "type": "text"})
+    db.execute(
+        "INSERT INTO note_links (src, dst) VALUES (?, ?)", (note["id"], other["id"])
+    )
+    db.commit()
+    rows = db.execute("SELECT src, dst FROM note_links WHERE src = ?", (note["id"],)).fetchall()
+    assert [r["dst"] for r in rows] == [other["id"]]

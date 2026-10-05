@@ -212,3 +212,32 @@ def test_whisper_progress_and_test_endpoint(client, monkeypatch):
     assert after_s["transcribe_progress"]["percent"] == 100
 
 
+
+
+def test_patch_note_04_metadata(client):
+    r = client.post("/api/capture/text", json={"text": "note body for metadata"})
+    note = wait_done(client, r.json()["id"])
+
+    r = client.patch(
+        f"/api/notes/{note['id']}",
+        json={
+            "starred": True,
+            "color": "ember",
+            "fields": {"rating": 5},
+            "sensitive": True,
+            "review_state": "reviewed",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["starred"] is True
+    assert body["color"] == "ember"
+    assert body["fields"] == {"rating": 5}
+    assert body["sensitive"] is True
+    assert body["review_state"] == "reviewed"
+
+    # empty string clears the colour; invalid review state is rejected
+    assert client.patch(f"/api/notes/{note['id']}", json={"color": ""}).json()["color"] is None
+    assert (
+        client.patch(f"/api/notes/{note['id']}", json={"review_state": "nope"}).status_code == 422
+    )

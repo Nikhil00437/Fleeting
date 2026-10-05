@@ -130,6 +130,9 @@ class TaskUpdateIn(BaseModel):
         return v_str
 
 
+REVIEW_STATES = ("raw", "enriched", "reviewed", "final")
+
+
 class NoteOut(BaseModel):
     id: str
     type: str
@@ -152,6 +155,12 @@ class NoteOut(BaseModel):
     match_type: str | None = None
     capture_id: str | None = None
     source_title: str | None = None
+    starred: bool = False
+    trashed_at: str | None = None
+    color: str | None = None
+    fields: dict = Field(default_factory=dict)
+    sensitive: bool = False
+    review_state: str = "enriched"
 
 
 class CaptureTextIn(BaseModel):
@@ -181,6 +190,14 @@ class NoteUpdateIn(BaseModel):
     tags: list[str] | None = None
     pinned: bool | None = None
     archived: bool | None = None
+    starred: bool | None = None
+    # Empty string clears the colour; None (unset) leaves it alone. This keeps
+    # PATCH semantics unambiguous without an exclude-null dance in the router.
+    color: str | None = Field(default=None, max_length=32)
+    # Replaces the whole typed-fields object — the editor sends what it sees.
+    fields: dict | None = None
+    sensitive: bool | None = None
+    review_state: Literal["raw", "enriched", "reviewed", "final"] | None = None
     action_items: list[ActionItem] | None = None
 
 
