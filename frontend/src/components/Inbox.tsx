@@ -56,6 +56,40 @@ export default function Inbox({
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [showMetrics, setShowMetrics] = useState(true);
   const [showFailed, setShowFailed] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const togglePick = (id: string) =>
+    setPicked((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  async function bulkAction(kind: "pin" | "archive" | "delete") {
+    const ids = [...picked];
+    if (ids.length === 0) return;
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        if (kind === "pin") onPin(id);
+        else if (kind === "archive") {
+          const n = await api.archiveNote(id);
+          onNoteUpdated?.(n);
+        } else {
+          await api.deleteNote(id);
+          onNoteDeleted?.(id);
+        }
+        ok++;
+      } catch (e) {
+        toast(e instanceof Error ? e.message : String(e), "err");
+      }
+    }
+    setPicked(new Set());
+    setSelectMode(false);
+    toast(`${kind === "delete" ? "Deleted" : kind === "archive" ? "Archived" : "Pinned"} ${ok} note${ok === 1 ? "" : "s"}`);
+    void refreshStats();
+  }
 
   // Every mutation below used to swallow its error, so a failed delete left the
   // note on screen with no explanation. Toast the outcome instead.
@@ -299,6 +333,21 @@ export default function Inbox({
           >
             <ActivityIcon className="h-3 w-3" />
             <span className="hidden lg:inline">Overview</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setPicked(new Set());
+            }}
+            className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+              selectMode
+                ? "border-ember-400/35 bg-ember-500/15 text-ember-200"
+                : "border-white/[0.07] bg-ink-950/80 text-ink-400 hover:text-ink-200"
+            }`}
+            title="Select multiple notes"
+          >
+            Select
           </button>
 
           <div className="flex rounded-lg border border-white/[0.07] bg-ink-950/80 p-0.5">
@@ -583,6 +632,9 @@ export default function Inbox({
                       onToggleTask={handleToggleTask}
                       onRetry={handleRetry}
                       onDelete={handleDelete}
+                      selectMode={selectMode}
+                      selected={picked.has(n.id)}
+                      onToggleSelect={togglePick}
                     />
                   ))}
                 </div>
@@ -616,6 +668,9 @@ export default function Inbox({
                       onToggleTask={handleToggleTask}
                       onRetry={handleRetry}
                       onDelete={handleDelete}
+                      selectMode={selectMode}
+                      selected={picked.has(n.id)}
+                      onToggleSelect={togglePick}
                     />
                   ))}
                 </div>
@@ -624,6 +679,47 @@ export default function Inbox({
           </div>
         )}
       </div>
+
+      {/* Bulk action bar */}
+      {selectMode && (
+        <div className="flex shrink-0 items-center gap-2 border-t border-ink-800 bg-ink-950 px-4 py-2.5">
+          <span className="text-xs text-ink-300">
+            <strong className="font-semibold text-ink-100">{picked.size}</strong> selected
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              onClick={() => void bulkAction("pin")}
+              disabled={picked.size === 0}
+              className="rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-xs text-ink-200 disabled:opacity-40"
+            >
+              Pin
+            </button>
+            <button
+              onClick={() => void bulkAction("archive")}
+              disabled={picked.size === 0}
+              className="rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-xs text-ink-200 disabled:opacity-40"
+            >
+              Archive
+            </button>
+            <button
+              onClick={() => void bulkAction("delete")}
+              disabled={picked.size === 0}
+              className="rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-xs text-red-200 disabled:opacity-40"
+            >
+              Delete
+            </button>
+            <button
+              onClick={() => {
+                setSelectMode(false);
+                setPicked(new Set());
+              }}
+              className="rounded-lg px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -72,6 +72,9 @@ interface Props {
   onRetry?: (id: string) => void;
   onDelete?: (id: string) => void;
   highlight?: boolean;
+  selectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 export default function NoteCard({
@@ -83,6 +86,9 @@ export default function NoteCard({
   onRetry,
   onDelete,
   highlight,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: Props) {
   const body = note.snippet ?? note.summary ?? note.raw_text ?? "";
   const parts = note.snippet ? note.snippet.split(/\[\[|\]\]/) : null;
@@ -108,19 +114,35 @@ export default function NoteCard({
 
   return (
     <article
-      onClick={() => onOpen(note.id)}
+      onClick={() => (selectMode ? onToggleSelect?.(note.id) : onOpen(note.id))}
       {...activationProps(
-        `Open note: ${note.title || note.raw_text.slice(0, 60) || note.id}`,
-        () => onOpen(note.id),
+        selectMode
+          ? `Select note: ${note.title || note.raw_text.slice(0, 60) || note.id}`
+          : `Open note: ${note.title || note.raw_text.slice(0, 60) || note.id}`,
+        () => (selectMode ? onToggleSelect?.(note.id) : onOpen(note.id)),
       )}
       className={`glass card-hover reveal group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4 cursor-pointer ${
         highlight
           ? "!border-ember-400/50 ring-1 ring-ember-400/25"
           : ""
-      }`}
+      } ${selected ? "!border-ember-400/60 ring-2 ring-ember-400/30" : ""}`}
       style={{ backgroundImage: meta.glow, borderLeftWidth: '3px', borderLeftColor: meta.accent }}
     >
       <div>
+        {selectMode && (
+          <span
+            className={`absolute top-3 right-3 flex h-4 w-4 items-center justify-center rounded border ${
+              selected
+                ? "border-ember-400 bg-ember-500 text-ink-950"
+                : "border-ink-600 bg-ink-950/80 text-transparent"
+            }`}
+            aria-hidden
+          >
+            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 8.5l3.5 3.5L13 4.5" />
+            </svg>
+          </span>
+        )}
         {/* Top Meta Header Row */}
         <div className="mb-2.5 flex items-center gap-2">
           <span

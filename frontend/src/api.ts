@@ -76,6 +76,7 @@ export const api = {
 
   deleteNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}`, { method: "DELETE" }),
 
+  archiveNote: (id: string) => req<Note>(`/notes/${id}/archive`, { method: "POST" }),
   pinNote: (id: string) => req<Note>(`/notes/${id}/pin`, { method: "POST" }),
 
   reprocess: (id: string) => req<Note>(`/notes/${id}/reprocess`, { method: "POST" }),
