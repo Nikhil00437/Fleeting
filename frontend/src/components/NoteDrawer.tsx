@@ -18,6 +18,7 @@ import {
 } from "./Icons";
 import { StatusBadge } from "./NoteCard";
 import { pipelineSteps, totalSecs } from "./pipeline";
+import AudioPlayer from "./AudioPlayer";
 import { runNoteAction } from "./actionRunner";
 import { errorMessage } from "./settingsState";
 import type { Note } from "../types";
@@ -296,6 +297,10 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
         </div>
 
         <PipelineStepper note={note} />
+
+        {note.audio_path && (
+          <AudioPlayer noteId={note.id} words={note.source?.transcription?.words ?? []} />
+        )}
 
         {note.status === "failed" && note.error && (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">

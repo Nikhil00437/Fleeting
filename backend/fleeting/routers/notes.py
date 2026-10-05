@@ -154,6 +154,25 @@ async def reprocess_note(note_id: str, request: Request) -> NoteOut:
     return _out(note)
 
 
+@router.get("/{note_id}/audio")
+def get_note_audio(note_id: str, request: Request):
+    """Stream the raw capture audio so the UI can offer click-to-seek playback."""
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, "note not found")
+    audio = note.get("audio_path")
+    if not audio or not Path(audio).exists():
+        raise HTTPException(404, "no audio on file for this note")
+    ext = Path(audio).suffix.lower().lstrip(".")
+    media = {"webm": "audio/webm", "ogg": "audio/ogg", "oga": "audio/ogg", "wav": "audio/wav", "mp3": "audio/mpeg", "m4a": "audio/mp4", "mp4": "audio/mp4", "opus": "audio/opus"}.get(ext, "application/octet-stream")
+    return FileResponse(audio, media_type=media)
+
+
 @router.post("/{note_id}/export")
 def export_note(note_id: str, request: Request) -> dict:
     st = request.app.state.st

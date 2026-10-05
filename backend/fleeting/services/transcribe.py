@@ -395,6 +395,7 @@ class Transcriber:
         model = self._get_model()
         audio = self._load_wav16k(wav_path)
         started = time.monotonic()
+        words: list[dict] = []
         try:
             segments, info = model.transcribe(
                 audio,
@@ -402,8 +403,13 @@ class Transcriber:
                 vad_filter=True,
                 initial_prompt=self.cfg.vocabulary or None,
                 task="translate" if self.cfg.translate else "transcribe",
+                word_timestamps=True,  # #88
             )
-            parts = [seg.text.strip() for seg in segments]
+            parts = []
+            for seg in segments:
+                parts.append(seg.text.strip())
+                for w in getattr(seg, "words", None) or []:
+                    words.append({"w": w.word, "s": round(w.start, 2), "e": round(w.end, 2)})
         except Exception as exc:
             raise TranscriptionError(f"whisper failed: {exc}") from exc
         text = " ".join(p for p in parts if p).strip()
@@ -417,7 +423,7 @@ class Transcriber:
             "transcribed %.1fs audio -> %d chars in %.1fs",
             info.duration or 0, len(text), time.monotonic() - started,
         )
-        return {"text": text, "duration": info.duration or 0.0, "language": info.language or ""}
+        return {"text": text, "duration": info.duration or 0.0, "language": info.language or "", "words": words}
 
     @staticmethod
     def _load_wav16k(path: Path):

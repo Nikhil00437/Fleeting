@@ -136,9 +136,10 @@ class Processor:
                 raw_text = result["text"]
                 if not raw_text:
                     raise TranscriptionError("transcription produced no text (silent audio?)")
-                self._patch_source(note_id, {
-                    "transcription": {"duration": result["duration"], "language": result["language"]}
-                })
+                transcription = {"duration": result["duration"], "language": result["language"]}
+                if result.get("words"):
+                    transcription["words"] = result["words"]  # #88
+                self._patch_source(note_id, {"transcription": transcription})
                 note = self.db.update_note(note_id, {"raw_text": raw_text})
                 # #91 retention: drop the raw audio once it has served its
                 # purpose, unless the user asked to keep it.
