@@ -135,6 +135,7 @@ export interface Settings {
   transcribe_translate?: boolean;
   transcribe_cleanup_audio?: boolean;
   transcribe_keep_audio?: boolean;
+  transcribe_voice_punctuation?: boolean;
   transcribe_loaded: boolean;
   transcribe_cached_models?: string[];
   transcribe_progress?: WhisperProgress;

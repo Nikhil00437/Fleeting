@@ -8,6 +8,7 @@ container the browser or yt-dlp produces works.
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,6 +18,35 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..config import TranscribeConfig
+
+# #429: spoken punctuation commands -> symbols. Longer phrases first so
+# "new paragraph" wins over "new", and applied case-insensitively on word
+# boundaries so "," never corrupts a word like "commas"->",s".
+_VOICE_PUNCTUATION: tuple[tuple[str, str], ...] = (
+    ("new paragraph", "\n\n"),
+    ("new line", "\n"),
+    ("question mark", "?"),
+    ("exclamation mark", "!"),
+    ("exclamation point", "!"),
+    ("open quote", '"'),
+    ("close quote", '"'),
+    ("period", "."),
+    ("comma", ","),
+    ("colon", ":"),
+    ("semicolon", ";"),
+    ("dash", " - "),
+)
+
+
+def apply_voice_punctuation(text: str) -> str:
+    for spoken, symbol in _VOICE_PUNCTUATION:
+        text = re.sub(rf"\b{re.escape(spoken)}\b", symbol, text, flags=re.IGNORECASE)
+    # collapse the spaces that surrounded the spoken command
+    text = re.sub(r"[ \t]+([.,!?;:])", r"\1", text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"([.,!?;:])\1{2,}", r"\1\1", text)
+    return text.strip()
 
 log = logging.getLogger("fleeting.transcribe")
 
@@ -341,6 +371,8 @@ class Transcriber:
         except Exception as exc:
             raise TranscriptionError(f"whisper failed: {exc}") from exc
         text = " ".join(p for p in parts if p).strip()
+        if self.cfg.voice_punctuation:
+            text = apply_voice_punctuation(text)
         log.info(
             "transcribed %.1fs audio -> %d chars in %.1fs",
             info.duration or 0, len(text), time.monotonic() - started,

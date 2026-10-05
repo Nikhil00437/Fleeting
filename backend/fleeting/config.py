@@ -71,6 +71,8 @@ class TranscribeConfig:
     # #91: loudness-normalise before transcription, and keep raw audio?
     cleanup_audio: bool = False
     keep_audio: bool = True
+    # #429: spoken punctuation commands ("comma" -> ",", "new line" -> "\n")
+    voice_punctuation: bool = False
 
 
 @dataclass

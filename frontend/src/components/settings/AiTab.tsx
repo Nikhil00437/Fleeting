@@ -462,6 +462,7 @@ export default function AiTab({
                       ["transcribe_translate", "Translate to English (whisper)", "Recordings in other languages are transcribed into English."],
                       ["transcribe_cleanup_audio", "Audio cleanup before transcription", "Normalise loudness with ffmpeg loudnorm before sending to whisper."],
                       ["transcribe_keep_audio", "Keep original audio files", "When off, the raw audio file is deleted once transcription succeeds."],
+                      ["transcribe_voice_punctuation", "Voice punctuation commands", "Spoken words like \"comma\" or \"new line\" become symbols in the transcript."],
                     ] as const
                   ).map(([key, title, sub]) => (
                     <label key={key} className="flex cursor-pointer items-center justify-between gap-3">

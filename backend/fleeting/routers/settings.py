@@ -37,6 +37,7 @@ def _settings_payload(request: Request) -> dict:
         "transcribe_translate": cfg.transcribe.translate,
         "transcribe_cleanup_audio": cfg.transcribe.cleanup_audio,
         "transcribe_keep_audio": cfg.transcribe.keep_audio,
+        "transcribe_voice_punctuation": cfg.transcribe.voice_punctuation,
         "transcribe_loaded": st.transcriber.is_ready(),
         "transcribe_cached_models": st.transcriber.cached_models(),
         "transcribe_progress": st.transcriber.progress,
@@ -117,6 +118,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.transcribe.cleanup_audio = body.transcribe_cleanup_audio
     if body.transcribe_keep_audio is not None:
         cfg.transcribe.keep_audio = body.transcribe_keep_audio
+    if body.transcribe_voice_punctuation is not None:
+        cfg.transcribe.voice_punctuation = body.transcribe_voice_punctuation
     if body.yt_transcribe_fallback is not None:
         cfg.youtube.transcribe_fallback = body.yt_transcribe_fallback
     if body.yt_max_duration_min is not None:

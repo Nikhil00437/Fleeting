@@ -195,6 +195,7 @@ class SettingsIn(BaseModel):
     transcribe_translate: bool | None = None
     transcribe_cleanup_audio: bool | None = None
     transcribe_keep_audio: bool | None = None
+    transcribe_voice_punctuation: bool | None = None
     yt_transcribe_fallback: bool | None = None
     yt_max_duration_min: int | None = Field(default=None, ge=5, le=240)
     desktop_notifications: bool | None = None

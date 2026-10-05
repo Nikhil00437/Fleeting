@@ -112,3 +112,25 @@ def test_cleanup_audio_adds_loudnorm(tmp_path, monkeypatch):
     src.write_bytes(b"x")
     t._to_wav(src)
     assert "-af" in calls[0] and "loudnorm" in calls[0]
+
+
+def test_voice_punctuation_applied_to_transcript(tmp_path, monkeypatch):
+    """#429: spoken commands become symbols when the toggle is on."""
+    cfg = Config().transcribe
+    cfg.voice_punctuation = True
+    t = Transcriber(cfg)
+
+    class FakeInfo:
+        duration = 1.0
+        language = "en"
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            return ([type("S", (), {"text": "hi there comma how are you period"})()], FakeInfo())
+
+    monkeypatch.setattr(t, "_get_model", lambda: FakeModel())
+    monkeypatch.setattr(t, "_load_wav16k", lambda path: b"")
+
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"x")
+    assert t.transcribe_wav(wav)["text"] == "hi there, how are you."

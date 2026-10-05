@@ -22,6 +22,7 @@ const base: Settings = {
   transcribe_translate: false,
   transcribe_cleanup_audio: false,
   transcribe_keep_audio: true,
+  transcribe_voice_punctuation: false,
   transcribe_loaded: false,
   transcribe_cached_models: [],
   yt_transcribe_fallback: true,
