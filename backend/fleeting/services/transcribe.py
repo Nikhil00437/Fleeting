@@ -19,6 +19,26 @@ from pathlib import Path
 
 from ..config import TranscribeConfig
 
+# #432: "spoken=written" pairs from config, applied on word boundaries.
+def apply_replacements(text: str, spec: str) -> str:
+    for pair in spec.split(","):
+        if "=" not in pair:
+            continue
+        spoken, written = pair.split("=", 1)
+        spoken, written = spoken.strip(), written.strip()
+        if spoken:
+            text = re.sub(rf"\b{re.escape(spoken)}\b", written, text, flags=re.IGNORECASE)
+    return text
+
+
+# #434: capitalise the first letter of the transcript and of each new sentence,
+# plus bare "i" -> "I". Number formatting is a ponytail-deferred ceiling:
+# spoken numbers ("twenty one") are left as-is.
+def auto_format(text: str) -> str:
+    text = re.sub(r"\bi\b", "I", text)
+    return re.sub(r"(^|[.!?\n]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), text)
+
+
 # #429: spoken punctuation commands -> symbols. Longer phrases first so
 # "new paragraph" wins over "new", and applied case-insensitively on word
 # boundaries so "," never corrupts a word like "commas"->",s".
@@ -371,8 +391,12 @@ class Transcriber:
         except Exception as exc:
             raise TranscriptionError(f"whisper failed: {exc}") from exc
         text = " ".join(p for p in parts if p).strip()
+        if self.cfg.replacements:
+            text = apply_replacements(text, self.cfg.replacements)
         if self.cfg.voice_punctuation:
             text = apply_voice_punctuation(text)
+        if self.cfg.auto_format:
+            text = auto_format(text)
         log.info(
             "transcribed %.1fs audio -> %d chars in %.1fs",
             info.duration or 0, len(text), time.monotonic() - started,

@@ -73,6 +73,10 @@ class TranscribeConfig:
     keep_audio: bool = True
     # #429: spoken punctuation commands ("comma" -> ",", "new line" -> "\n")
     voice_punctuation: bool = False
+    # #434: sentence-case the transcript and capitalise bare "i"
+    auto_format: bool = False
+    # #432: "spoken phrase=written form" pairs, comma-separated
+    replacements: str = ""
 
 
 @dataclass

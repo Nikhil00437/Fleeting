@@ -134,3 +134,26 @@ def test_voice_punctuation_applied_to_transcript(tmp_path, monkeypatch):
     wav = tmp_path / "a.wav"
     wav.write_bytes(b"x")
     assert t.transcribe_wav(wav)["text"] == "hi there, how are you."
+
+
+def test_replacements_and_auto_format(tmp_path, monkeypatch):
+    """#432/#434: replacement map runs, then auto-format capitalises."""
+    cfg = Config().transcribe
+    cfg.replacements = "my email=me@example.com"
+    cfg.auto_format = True
+    t = Transcriber(cfg)
+
+    class FakeInfo:
+        duration = 1.0
+        language = "en"
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            return ([type("S", (), {"text": "hi i am here. reach me at my email anytime"})()], FakeInfo())
+
+    monkeypatch.setattr(t, "_get_model", lambda: FakeModel())
+    monkeypatch.setattr(t, "_load_wav16k", lambda path: b"")
+
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"x")
+    assert t.transcribe_wav(wav)["text"] == "Hi I am here. Reach me at me@example.com anytime"
