@@ -87,6 +87,9 @@ export const api = {
 
   archiveNote: (id: string) => req<Note>(`/notes/${id}/archive`, { method: "POST" }),
   pinNote: (id: string) => req<Note>(`/notes/${id}/pin`, { method: "POST" }),
+  starNote: (id: string) => req<Note>(`/notes/${id}/star`, { method: "POST" }),
+  snoozeNote: (id: string, until: string | null) =>
+    req<Note>(`/notes/${id}/snooze`, { method: "POST", body: JSON.stringify({ until }) }),
 
   reprocess: (id: string) => req<Note>(`/notes/${id}/reprocess`, { method: "POST" }),
 

@@ -309,6 +309,14 @@ export default function App() {
   }
  }
 
+ async function star(id: string) {
+  try {
+   mergeNote(await api.starNote(id));
+  } catch (e) {
+   toast(e instanceof Error ? e.message : String(e), "err");
+  }
+ }
+
  const selected = notes.find((n) => n.id === selectedId) ?? null;
 
  const failedCount = useMemo(
@@ -901,6 +909,7 @@ export default function App() {
         selectedId={selectedId}
         onOpen={setSelectedId}
         onPin={pin}
+        onStar={star}
         onQuickStart={() => captureRef.current?.focus()}
         onNoteUpdated={(n) => {
          mergeNote(n);

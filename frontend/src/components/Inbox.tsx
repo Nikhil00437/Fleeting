@@ -14,6 +14,7 @@ import {
   PinIcon,
   SearchIcon,
   SparkIcon,
+  StarIcon,
   TextIcon,
   TrashIcon,
   XIcon,
@@ -25,6 +26,7 @@ interface Props {
   selectedId?: string | null;
   onOpen: (id: string) => void;
   onPin: (id: string) => void;
+  onStar?: (id: string) => void;
   onQuickStart: () => void;
   onNoteUpdated?: (note: Note) => void;
   onNoteDeleted?: (id: string) => void;
@@ -42,6 +44,7 @@ export default function Inbox({
   selectedId,
   onOpen,
   onPin,
+  onStar,
   onQuickStart,
   onNoteUpdated,
   onNoteDeleted,
@@ -52,6 +55,8 @@ export default function Inbox({
   const [chartMode, setChartMode] = useState<"bars" | "area">("bars");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  // #273: dedicated starred view — a filter over the same feed, not a fetch.
+  const [starredOnly, setStarredOnly] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [showMetrics, setShowMetrics] = useState(true);
@@ -237,6 +242,7 @@ export default function Inbox({
     const q = filterQuery.trim().toLowerCase();
     const pool = showFailed ? activeNotes : healthyNotes;
     return pool.filter((n) => {
+      if (starredOnly && !n.starred) return false;
       if (typeFilter !== "all" && n.type !== typeFilter) return false;
       if (tagFilter && !n.tags.includes(tagFilter)) return false;
       if (q) {
@@ -249,7 +255,7 @@ export default function Inbox({
       }
       return true;
     });
-  }, [activeNotes, healthyNotes, showFailed, typeFilter, tagFilter, filterQuery]);
+  }, [activeNotes, healthyNotes, showFailed, starredOnly, typeFilter, tagFilter, filterQuery]);
 
   const pinned = filteredNotes.filter((n) => n.pinned);
   const rest = filteredNotes.filter((n) => !n.pinned);
@@ -358,6 +364,18 @@ export default function Inbox({
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => setStarredOnly((v) => !v)}
+            className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+              starredOnly
+                ? "border-amber-400/40 bg-amber-500/15 text-amber-200"
+                : "border-white/[0.07] bg-ink-950/80 text-ink-400 hover:text-ink-200"
+            }`}
+            title="Show starred notes only"
+          >
+            <StarIcon filled={starredOnly} className="h-3 w-3" />
+          </button>
+
           <div className="relative w-36 lg:w-48">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
             <input
@@ -756,6 +774,7 @@ export default function Inbox({
                       highlight={selectedId === n.id}
                       onOpen={onOpen}
                       onPin={onPin}
+                      onStar={onStar}
                       onTagClick={(t) => setTagFilter((cur) => (cur === t ? null : t))}
                       onToggleTask={handleToggleTask}
                       onRetry={handleRetry}
@@ -792,6 +811,7 @@ export default function Inbox({
                       highlight={selectedId === n.id}
                       onOpen={onOpen}
                       onPin={onPin}
+                      onStar={onStar}
                       onTagClick={(t) => setTagFilter((cur) => (cur === t ? null : t))}
                       onToggleTask={handleToggleTask}
                       onRetry={handleRetry}

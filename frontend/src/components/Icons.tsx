@@ -35,6 +35,12 @@ export const PinIcon = ({ className = base, filled = false }: IconProps & { fill
   </svg>
 );
 
+export const StarIcon = ({ className = base, filled = false }: IconProps & { filled?: boolean }) => (
+  <svg viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5-5.9-3.1-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" />
+  </svg>
+);
+
 export const SearchIcon = ({ className = base }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={className}>
     <circle cx="11" cy="11" r="7" />

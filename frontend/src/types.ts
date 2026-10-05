@@ -31,6 +31,7 @@ export interface Note {
   fields?: Record<string, unknown>;
   sensitive?: boolean;
   review_state?: "raw" | "enriched" | "reviewed" | "final";
+  snoozed_until?: string | null;
 }
 
 export interface Stats {

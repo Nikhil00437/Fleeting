@@ -323,8 +323,16 @@ def vault_path_for(cfg: PathsConfig, note: dict) -> Path:
 
 
 def sync_note(cfg: PathsConfig, note: dict) -> Path | None:
-    """Write/update the note's markdown file. Returns path or None if sync off."""
+    """Write/update the note's markdown file. Returns path or None if sync off.
+
+    #26: sensitive notes never leave the database — the vault mirror is a
+    plain-text copy on disk that outlives the app, so it must stay clean.
+    """
     if not cfg.vault_sync:
+        return None
+    if note.get("sensitive"):
+        # Also remove any file written before the note was marked sensitive.
+        remove_note(cfg, note)
         return None
     path = vault_path_for(cfg, note)
     try:

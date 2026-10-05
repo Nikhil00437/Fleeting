@@ -104,6 +104,41 @@ def test_unified_search_can_be_scoped_by_day(client) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _rewind_to_v7(path, *, drop_activity: bool = False) -> None:
+    """Drop everything migrations v9+ added to `notes`, so re-running them is
+    a clean ADD COLUMN. Generic over the column list so appending migrations
+    does not require editing this fixture again."""
+    import sqlite3
+
+    conn = sqlite3.connect(str(path))
+    base_cols = {
+        "id", "type", "title", "summary", "raw_text", "tags", "action_items",
+        "source", "audio_path", "status", "error", "pinned", "archived",
+        "created_at", "updated_at", "processed_at",
+    }
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(notes)").fetchall()]
+    stmts = [
+        "DROP TRIGGER IF EXISTS activity_ai",
+        "DROP TRIGGER IF EXISTS activity_ad",
+        "DROP TRIGGER IF EXISTS activity_au",
+        "DROP TABLE IF EXISTS activity_fts",
+        "DROP TABLE IF EXISTS commits",
+        *([] if not drop_activity else ["DROP TABLE IF EXISTS activity"]),
+        "DROP TABLE IF EXISTS note_links",
+    ]
+    stmts += [
+        f"DROP INDEX IF EXISTS {r[1]}"
+        for r in conn.execute("PRAGMA index_list(notes)").fetchall()
+        # sqlite_autoindex_* backs the PRIMARY KEY and cannot be dropped
+        if not r[1].startswith("sqlite_")
+    ]
+    stmts += [f"ALTER TABLE notes DROP COLUMN {c}" for c in cols if c not in base_cols]
+    stmts.append("DELETE FROM schema_version WHERE version >= 8")
+    conn.executescript(";".join(stmts) + ";")
+    conn.commit()
+    conn.close()
+
+
 def test_upgrading_an_existing_db_indexes_its_history(tmp_path) -> None:
     """A user upgrading from an older build must not get an empty index."""
     import sqlite3
@@ -125,31 +160,7 @@ def test_upgrading_an_existing_db_indexes_its_history(tmp_path) -> None:
         }
     )
     # Simulate "before v8" by dropping the search objects.
-    conn = sqlite3.connect(str(path))
-    conn.executescript(
-        "DROP TRIGGER IF EXISTS activity_ai;"
-        "DROP TRIGGER IF EXISTS activity_ad;"
-        "DROP TRIGGER IF EXISTS activity_au;"
-        "DROP TABLE IF EXISTS activity_fts;"
-        "DROP TABLE IF EXISTS commits;"
-        # rewind notes schema too, else re-running v9/v10 fails on ADD COLUMN
-        "DROP INDEX IF EXISTS idx_notes_capture_id;"
-        "DROP INDEX IF EXISTS idx_notes_type;"
-        "ALTER TABLE notes DROP COLUMN capture_id;"
-        "ALTER TABLE notes DROP COLUMN source_title;"
-        "DROP TABLE IF EXISTS note_links;"
-        "DROP INDEX IF EXISTS idx_notes_trashed;"
-        "DROP INDEX IF EXISTS idx_notes_starred;"
-        "ALTER TABLE notes DROP COLUMN starred;"
-        "ALTER TABLE notes DROP COLUMN trashed_at;"
-        "ALTER TABLE notes DROP COLUMN color;"
-        "ALTER TABLE notes DROP COLUMN fields;"
-        "ALTER TABLE notes DROP COLUMN sensitive;"
-        "ALTER TABLE notes DROP COLUMN review_state;"
-        "DELETE FROM schema_version WHERE version >= 8;"
-    )
-    conn.commit()
-    conn.close()
+    _rewind_to_v7(path)
 
     upgraded = fdb.Database(path)
     upgraded.migrate()
@@ -182,32 +193,7 @@ def test_migration_v8_does_not_require_the_activity_table(tmp_path) -> None:
     path = tmp_path / "no_activity.db"
     db = fdb.Database(path)
     db.migrate()
-    conn = sqlite3.connect(str(path))
-    conn.executescript(
-        "DROP TRIGGER IF EXISTS activity_ai;"
-        "DROP TRIGGER IF EXISTS activity_ad;"
-        "DROP TRIGGER IF EXISTS activity_au;"
-        "DROP TABLE IF EXISTS activity_fts;"
-        "DROP TABLE IF EXISTS commits;"
-        "DROP TABLE IF EXISTS activity;"
-        # rewind notes schema too, else re-running v9/v10 fails on ADD COLUMN
-        "DROP INDEX IF EXISTS idx_notes_capture_id;"
-        "DROP INDEX IF EXISTS idx_notes_type;"
-        "ALTER TABLE notes DROP COLUMN capture_id;"
-        "ALTER TABLE notes DROP COLUMN source_title;"
-        "DROP TABLE IF EXISTS note_links;"
-        "DROP INDEX IF EXISTS idx_notes_trashed;"
-        "DROP INDEX IF EXISTS idx_notes_starred;"
-        "ALTER TABLE notes DROP COLUMN starred;"
-        "ALTER TABLE notes DROP COLUMN trashed_at;"
-        "ALTER TABLE notes DROP COLUMN color;"
-        "ALTER TABLE notes DROP COLUMN fields;"
-        "ALTER TABLE notes DROP COLUMN sensitive;"
-        "ALTER TABLE notes DROP COLUMN review_state;"
-        "DELETE FROM schema_version WHERE version >= 8;"
-    )
-    conn.commit()
-    conn.close()
+    _rewind_to_v7(path, drop_activity=True)
 
     upgraded = fdb.Database(path)
     upgraded.migrate()  # must not raise

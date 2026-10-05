@@ -133,6 +133,12 @@ class TaskUpdateIn(BaseModel):
 REVIEW_STATES = ("raw", "enriched", "reviewed", "final")
 
 
+class SnoozeIn(BaseModel):
+    """#14 snooze: preset name, YYYY-MM-DD, full ISO stamp, or null to wake now."""
+
+    until: str | None = Field(default=None, max_length=64)
+
+
 class NoteOut(BaseModel):
     id: str
     type: str
@@ -161,6 +167,7 @@ class NoteOut(BaseModel):
     fields: dict = Field(default_factory=dict)
     sensitive: bool = False
     review_state: str = "enriched"
+    snoozed_until: str | None = None
 
 
 class CaptureTextIn(BaseModel):

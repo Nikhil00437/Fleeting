@@ -176,14 +176,21 @@ class Processor:
 
             # 2) enrichment
             await self._set_stage(note_id, "enriching")
-            try:
-                template_prompt = (note.get("source") or {}).get("template", {}).get("prompt")
-                enriched = await llm.enrich(note["raw_text"], self.cfg.llm, prompt=template_prompt)
-                source["enrichment"] = "local-llm"
-            except llm.LLMUnavailable as exc:
-                log.info("LLM unavailable (%s) — heuristic fallback for %s", exc, note_id)
+            if note.get("sensitive"):
+                # #26: sensitive content never reaches any model — not the
+                # local LLM, not a remote one behind a custom provider, and
+                # not the embedding index either (below).
                 enriched = llm.heuristic_enrich(note["raw_text"])
-                source["enrichment"] = "heuristic"
+                source["enrichment"] = "heuristic-sensitive"
+            else:
+                try:
+                    template_prompt = (note.get("source") or {}).get("template", {}).get("prompt")
+                    enriched = await llm.enrich(note["raw_text"], self.cfg.llm, prompt=template_prompt)
+                    source["enrichment"] = "local-llm"
+                except llm.LLMUnavailable as exc:
+                    log.info("LLM unavailable (%s) — heuristic fallback for %s", exc, note_id)
+                    enriched = llm.heuristic_enrich(note["raw_text"])
+                    source["enrichment"] = "heuristic"
 
             # 3) persist structured fields
             changes = {
@@ -267,10 +274,17 @@ class Processor:
             # 4) embedding + vault mirror + notify
             await self._set_stage(note_id, "syncing")
             if note:
-                try:
-                    embed_note(note, self.db, self.cfg)
-                except Exception as exc:
-                    log.warning("failed to embed note %s: %s", note_id, exc)
+                if note.get("sensitive"):
+                    # #26: no embedding vectors for sensitive notes — the
+                    # configured embedding backend may be a remote provider.
+                    # Drop any vector made before the flag was set, or the
+                    # note would stay findable in semantic search.
+                    self.db.delete_note_embedding(note_id)
+                else:
+                    try:
+                        embed_note(note, self.db, self.cfg)
+                    except Exception as exc:
+                        log.warning("failed to embed note %s: %s", note_id, exc)
                 markdown.sync_note(self.cfg.paths, note)
                 self._maybe_notify(note)
                 # close out the syncing stage's timing before the final publish

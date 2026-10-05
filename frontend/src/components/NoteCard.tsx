@@ -5,7 +5,9 @@ import {
   MicIcon,
   PinIcon,
   RefreshIcon,
+  ShieldIcon,
   SparkIcon,
+  StarIcon,
   TextIcon,
   TrashIcon,
 } from "./Icons";
@@ -67,6 +69,7 @@ interface Props {
   note: Note;
   onOpen: (id: string) => void;
   onPin: (id: string) => void;
+  onStar?: (id: string) => void;
   onTagClick?: (tag: string) => void;
   onToggleTask?: (note: Note, itemId: string) => void;
   onRetry?: (id: string) => void;
@@ -81,6 +84,7 @@ export default function NoteCard({
   note,
   onOpen,
   onPin,
+  onStar,
   onTagClick,
   onToggleTask,
   onRetry,
@@ -169,6 +173,24 @@ export default function NoteCard({
 
           {note.status !== "done" && <StatusBadge note={note} />}
 
+          {note.sensitive && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-medium text-amber-300"
+              title="Sensitive — kept out of the vault mirror, LLM calls and assistant context"
+            >
+              <ShieldIcon className="h-2.5 w-2.5" /> private
+            </span>
+          )}
+
+          {note.snoozed_until && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-iris-500/30 bg-iris-500/10 px-2 py-0.5 text-[10.5px] font-medium text-iris-300"
+              title={`Snoozed until ${new Date(note.snoozed_until).toLocaleString()}`}
+            >
+              zzz {new Date(note.snoozed_until).toLocaleDateString([], { month: "short", day: "numeric" })}
+            </span>
+          )}
+
           {(note.score !== undefined || note.match_type) && (
             <span
               className="inline-flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-300"
@@ -226,6 +248,24 @@ export default function NoteCard({
                 title="Delete failed capture"
               >
                 <TrashIcon className="h-3 w-3" />
+              </button>
+            )}
+
+            {onStar && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStar(note.id);
+                }}
+                className={`rounded-lg p-1 transition-colors ${
+                  note.starred
+                    ? "text-amber-300"
+                    : "text-ink-500 opacity-0 group-hover:opacity-100 hover:bg-white/[0.06] hover:text-ink-100"
+                }`}
+                title={note.starred ? "Unstar note" : "Star note"}
+              >
+                <StarIcon filled={note.starred} className="h-3.5 w-3.5" />
               </button>
             )}
 

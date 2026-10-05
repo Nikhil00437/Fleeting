@@ -146,6 +146,10 @@ def build_assistant_context(
     # 4. Build structured sources list
     sources: list[dict] = []
     for n in notes:
+        # #26: sensitive notes stay locally searchable but must never be sent
+        # to the chat model — the assistant's provider can be a remote one.
+        if n.get("sensitive") or n.get("trashed_at"):
+            continue
         snippet = n.get("snippet") or n.get("summary") or ""
         sources.append({
             "id": str(n["id"]),

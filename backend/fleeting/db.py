@@ -210,6 +210,13 @@ MIGRATIONS: list[str] = [
     ) WITHOUT ROWID;
     CREATE INDEX idx_note_links_dst ON note_links(dst);
     """,
+    # v11 — #14 snooze: notes hidden until a wake-up timestamp. No job is
+    # needed to wake them; the list query simply stops hiding them once the
+    # stamp passes.
+    """
+    ALTER TABLE notes ADD COLUMN snoozed_until TEXT;
+    CREATE INDEX idx_notes_snoozed ON notes(snoozed_until);
+    """,
 ]
 
 
@@ -246,6 +253,7 @@ NOTE_COLUMNS = frozenset({
     "audio_path", "status", "error", "pinned", "archived",
     "created_at", "updated_at", "processed_at", "capture_id", "source_title",
     "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
+    "snoozed_until",
 })
 
 
@@ -383,11 +391,13 @@ class Database:
             INSERT INTO notes (id, type, title, summary, raw_text, tags, action_items,
                                source, audio_path, status, error, pinned, archived,
                                created_at, updated_at, processed_at, capture_id, source_title,
-                               starred, trashed_at, color, fields, sensitive, review_state)
+                               starred, trashed_at, color, fields, sensitive, review_state,
+                               snoozed_until)
             VALUES (:id, :type, :title, :summary, :raw_text, :tags, :action_items,
                     :source, :audio_path, :status, :error, :pinned, :archived,
                     :created_at, :updated_at, :processed_at, :capture_id, :source_title,
-                    :starred, :trashed_at, :color, :fields, :sensitive, :review_state)
+                    :starred, :trashed_at, :color, :fields, :sensitive, :review_state,
+                    :snoozed_until)
             """,
             _note_to_sql(note),
         )
@@ -444,12 +454,21 @@ class Database:
         archived: bool = False,
         pinned_first: bool = True,
         trashed: bool = False,
+        starred: bool = False,
+        include_snoozed: bool = False,
     ) -> list[dict]:
         where = ["archived = :archived"]
         # #274: trashed notes are hidden everywhere by default and only surface
         # through the explicit trash listing.
         where.append("trashed_at IS NULL" if not trashed else "trashed_at IS NOT NULL")
         params: dict = {"archived": 1 if archived else 0, "limit": limit, "offset": offset}
+        if starred:
+            where.append("starred = 1")
+        if not include_snoozed:
+            # #14: snoozed notes reappear on their own once the stamp passes —
+            # ISO strings share one UTC offset, so string comparison is safe.
+            where.append("(snoozed_until IS NULL OR snoozed_until <= :now_ts)")
+            params["now_ts"] = now_iso()
         if tag:
             where.append("EXISTS (SELECT 1 FROM json_each(notes.tags) je WHERE je.value = :tag)")
             params["tag"] = tag
@@ -495,6 +514,15 @@ class Database:
             "SELECT * FROM notes WHERE trashed_at IS NOT NULL "
             "ORDER BY trashed_at DESC LIMIT :limit",
             {"limit": limit},
+        ).fetchall()
+        return [_row_to_note(r) for r in rows]
+
+    def snoozed_notes(self) -> list[dict]:
+        """Notes currently snoozed, in wake-up order. #14 visibility surface."""
+        rows = self.execute(
+            "SELECT * FROM notes WHERE snoozed_until IS NOT NULL AND snoozed_until > :now "
+            "AND trashed_at IS NULL ORDER BY snoozed_until ASC",
+            {"now": now_iso()},
         ).fetchall()
         return [_row_to_note(r) for r in rows]
 
@@ -1431,6 +1459,7 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         "fields": json.loads(row["fields"] or "{}") if "fields" in row.keys() else {},
         "sensitive": bool(row["sensitive"]) if "sensitive" in row.keys() else False,
         "review_state": row["review_state"] if "review_state" in row.keys() else "enriched",
+        "snoozed_until": row["snoozed_until"] if "snoozed_until" in row.keys() else None,
     }
     for key in extra:
         if key in row.keys():
@@ -1466,6 +1495,7 @@ def _note_to_sql(note: dict) -> dict:
     out.setdefault("color", None)
     out.setdefault("sensitive", 0)
     out.setdefault("review_state", "enriched")
+    out.setdefault("snoozed_until", None)
     out.setdefault("audio_path", None)
     out.setdefault("processed_at", None)
     out.setdefault("capture_id", None)

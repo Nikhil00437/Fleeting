@@ -12,6 +12,8 @@ import {
   MicIcon,
   PinIcon,
   RefreshIcon,
+  ShieldIcon,
+  StarIcon,
   TextIcon,
   TrashIcon,
   XIcon,
@@ -107,11 +109,13 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
   const [newTaskText, setNewTaskText] = useState("");
   const [inspectorTab, setInspectorTab] = useState<"overview" | "raw" | "markdown">("overview");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
 
   useEffect(() => {
     setTitle(note.title);
     setSummary(note.summary || "");
     setConfirmDelete(false);
+    setSnoozeOpen(false);
     setNewTaskText("");
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -141,13 +145,34 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
     });
   }
 
+  async function snooze(until: string | null) {
+    setSnoozeOpen(false);
+    await runNoteAction({
+      api,
+      toast: onToast,
+      action: () => api.snoozeNote(note.id, until),
+      success: until ? `Snoozed until ${until.replace("_", " ")}` : "Note woken up",
+      onDone: (updated) => onUpdate(updated),
+    });
+  }
+
+  async function restoreFromTrash() {
+    await runNoteAction({
+      api,
+      toast: onToast,
+      action: () => api.restoreNote(note.id),
+      success: "Note restored",
+      onDone: (updated) => onUpdate(updated),
+    });
+  }
+
   async function remove() {
     setConfirmDelete(false);
     await runNoteAction({
       api,
       toast: onToast,
       action: () => api.deleteNote(note.id),
-      success: "Note deleted",
+      success: "Note moved to trash",
       onDone: () => {
         onDelete?.(note.id);
         onClose();
@@ -248,6 +273,28 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
             <PinIcon filled={note.pinned} className="h-3.5 w-3.5" />
           </button>
           <button
+            onClick={() => void patch({ starred: !note.starred } as Partial<Note>)}
+            className={`rounded-md p-1.5 transition-colors hover:bg-white/[0.06] ${
+              note.starred ? "text-amber-300" : "text-ink-400"
+            }`}
+            title={note.starred ? "Unstar" : "Star"}
+          >
+            <StarIcon filled={note.starred} className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => void patch({ sensitive: !note.sensitive } as Partial<Note>)}
+            className={`rounded-md p-1.5 transition-colors hover:bg-white/[0.06] ${
+              note.sensitive ? "text-amber-300" : "text-ink-400"
+            }`}
+            title={
+              note.sensitive
+                ? "Sensitive — click to allow vault mirror & LLM again"
+                : "Mark sensitive: excluded from vault mirror, LLM and assistant"
+            }
+          >
+            <ShieldIcon className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={() => void patch({ archived: true } as Partial<Note>)}
             className="rounded-md p-1.5 text-ink-400 transition-colors hover:bg-white/[0.06] hover:text-ink-200"
             title="Archive"
@@ -266,6 +313,36 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
 
       {/* Scrollable Inspector Body */}
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {note.trashed_at && (
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+            <span>
+              In the trash — auto-purged after the retention window.
+            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                onClick={() => void restoreFromTrash()}
+                className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/20"
+              >
+                Restore
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await api.purgeNote(note.id);
+                    onDelete?.(note.id);
+                    onClose();
+                  } catch (e) {
+                    onToast(errorMessage(e), "err");
+                  }
+                }}
+                className="rounded-lg border border-red-400/30 bg-red-500/20 px-2.5 py-1 text-[11px] font-semibold text-red-200 hover:bg-red-500/30"
+              >
+                Delete forever
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Editable Note Title + Metadata Pills */}
         <div>
           <input
@@ -524,6 +601,50 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onToast 
 
       {/* Docked Inspector Footer Actions */}
       <div className="flex h-10 shrink-0 items-center gap-1 border-t border-white/[0.07] bg-ink-950/80 px-3">
+        <div className="relative">
+          <button
+            onClick={() => setSnoozeOpen((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/[0.06] ${
+              note.snoozed_until ? "text-iris-300" : "text-ink-300 hover:text-ink-100"
+            }`}
+            title="Hide this note until a chosen time"
+          >
+            zzz Snooze
+          </button>
+          {snoozeOpen && (
+            <div className="glass-studio absolute bottom-9 left-0 z-50 w-44 rounded-xl p-1.5">
+              {[
+                { label: "Later today", value: "later" },
+                { label: "Tomorrow", value: "tomorrow" },
+                { label: "Next Monday", value: "next_monday" },
+              ].map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => void snooze(p.value)}
+                  className="block w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-ink-200 hover:bg-white/[0.06]"
+                >
+                  {p.label}
+                </button>
+              ))}
+              <label className="block w-full cursor-pointer rounded-lg px-2.5 py-1.5 text-[11px] text-ink-200 hover:bg-white/[0.06]">
+                Pick a date…
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-md border border-white/10 bg-ink-950 px-1.5 py-1 text-[11px] text-ink-100"
+                  onChange={(e) => e.target.value && void snooze(e.target.value)}
+                />
+              </label>
+              {note.snoozed_until && (
+                <button
+                  onClick={() => void snooze(null)}
+                  className="block w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-iris-300 hover:bg-white/[0.06]"
+                >
+                  Wake now
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <button
           onClick={() => void reprocess()}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-300 transition-colors hover:bg-white/[0.06] hover:text-ink-100"

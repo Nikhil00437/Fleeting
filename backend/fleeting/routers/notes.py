@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..config import save_config
 from ..db import now_iso
-from ..models import NoteOut, NoteUpdateIn
+from ..models import NoteOut, NoteUpdateIn, SnoozeIn
 from ..services import markdown
 from ..services.embeddings import embed_note
 
@@ -20,6 +22,42 @@ log = logging.getLogger("fleeting.notes")
 
 def _out(note: dict) -> NoteOut:
     return NoteOut(**note)
+
+
+def _resolve_snooze(until: str | None) -> str | None:
+    """Snooze preset or date -> a UTC ISO wake-up stamp. None wakes the note now.
+
+    Presets land on human hours (18:00 / 08:00 local), not "now + N", because
+    "tomorrow" that fires at 3am is not what anyone means.
+    """
+    if not until or not until.strip():
+        return None
+    u = until.strip().lower()
+    now = datetime.now().astimezone()
+    if u in ("later", "later_today", "this_evening", "evening"):
+        wake = now.replace(hour=18, minute=0, second=0, microsecond=0)
+        if wake <= now:
+            wake += timedelta(days=1)
+    elif u == "tomorrow":
+        wake = (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+    elif u in ("next_monday", "next_week", "nextweek"):
+        wake = (now + timedelta(days=(7 - now.weekday()) % 7 or 7)).replace(
+            hour=8, minute=0, second=0, microsecond=0
+        )
+    elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", u):
+        try:
+            wake = datetime.strptime(u, "%Y-%m-%d").replace(hour=8)
+        except ValueError as exc:
+            raise HTTPException(422, "not a real date") from exc
+    else:
+        try:
+            wake = datetime.fromisoformat(until.strip())
+        except ValueError as exc:
+            raise HTTPException(
+                422,
+                "until must be 'later', 'tomorrow', 'next_monday', YYYY-MM-DD, or an ISO timestamp",
+            ) from exc
+    return wake.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
 @router.get("")
@@ -33,6 +71,7 @@ def list_notes(
     status: str | None = None,
     type: str | None = None,
     archived: bool = False,
+    starred: bool = False,
 ) -> list[NoteOut]:
     st = request.app.state.st
     notes = st.db.list_notes(
@@ -42,8 +81,18 @@ def list_notes(
         status=status,
         note_type=type,
         archived=archived,
+        starred=starred,
     )
     return [_out(n) for n in notes]
+
+
+# Literal paths must register before /{note_id}, or FastAPI hands "snoozed"
+# to the id route and 404s.
+@router.get("/snoozed")
+def list_snoozed(request: Request) -> list[NoteOut]:
+    """#14: what is currently hidden by a snooze, in wake-up order."""
+    st = request.app.state.st
+    return [_out(n) for n in st.db.snoozed_notes()]
 
 
 @router.get("/{note_id}")
@@ -111,6 +160,32 @@ def toggle_pin(note_id: str, request: Request) -> NoteOut:
     if not note:
         raise HTTPException(404, "note not found")
     note = st.db.update_note(note_id, {"pinned": not note["pinned"]})
+    assert note
+    st.bus.publish("note.updated", note)
+    return _out(note)
+
+
+@router.post("/{note_id}/star")
+def toggle_star(note_id: str, request: Request) -> NoteOut:
+    """#273: star is a long-lived marker (unlike pin's ordering role)."""
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, "note not found")
+    note = st.db.update_note(note_id, {"starred": not note["starred"]})
+    assert note
+    st.bus.publish("note.updated", note)
+    return _out(note)
+
+
+@router.post("/{note_id}/snooze")
+def snooze_note(note_id: str, body: SnoozeIn, request: Request) -> NoteOut:
+    """#14: hide a note until a preset or timestamp; an empty body wakes it."""
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, "note not found")
+    note = st.db.update_note(note_id, {"snoozed_until": _resolve_snooze(body.until)})
     assert note
     st.bus.publish("note.updated", note)
     return _out(note)
