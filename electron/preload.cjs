@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("fleetingDesktop", {
   hideHud: () => ipcRenderer.invoke("hud:hide"),
   resizeHud: (height) => ipcRenderer.invoke("hud:resize", height),
   typeText: (text) => ipcRenderer.invoke("hud:type-text", text),
+  undoLastType: () => ipcRenderer.invoke("hud:undo-last-type"),
   onHudTrigger: (cb) => {
     const handler = () => cb();
     ipcRenderer.on("hud:trigger", handler);

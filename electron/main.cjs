@@ -376,6 +376,8 @@ function alertFallback() {
   }
 }
 
+let lastTypedText = "";
+
 async function handleTypeText(text) {
   if (hudWindow && !hudWindow.isDestroyed()) {
     hudWindow.hide();
@@ -566,11 +568,15 @@ if (!gotLock) {
       }
     });
     ipcMain.handle("hud:type-text", (_event, text) => handleTypeText(text));
+    ipcMain.handle("hud:undo-last-type", () => handleUndoLastType());
 
     // Register global shortcut
     try {
       globalShortcut.register("CommandOrControl+Alt+Space", () => {
         toggleHud();
+      });
+      globalShortcut.register("CommandOrControl+Alt+Backspace", () => {
+        void handleUndoLastType();
       });
     } catch {
       /* ignore shortcut registration failure */
