@@ -23,6 +23,13 @@ const TASK_RE = /\b(todo:|task:|remember to|need to|don't forget to)\b/i;
 export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // brief green confirm flash on the bar after a capture lands
+  const [sent, setSent] = useState(false);
+
+  function flashSent() {
+    setSent(true);
+    window.setTimeout(() => setSent(false), 1200);
+  }
 
   // recording state
   const [recording, setRecording] = useState(false);
@@ -54,6 +61,7 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
         : await api.captureText(trimmed);
       onCaptured(note);
       setText("");
+      flashSent();
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -122,6 +130,7 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
       const ext = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
       const note = await api.captureAudio(blob, `memo.${ext}`);
       onCaptured(note);
+      flashSent();
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -190,7 +199,9 @@ export default function CaptureBar({ inputRef, onCaptured, onError }: Props) {
             }}
             placeholder="Capture a thought, 'todo: …' task, or paste a YouTube URL…"
             spellCheck={false}
-            className="h-8 w-full rounded-xl border border-ink-800 bg-ink-950/90 pr-24 pl-8.5 text-xs text-ink-100 placeholder-ink-400 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)] outline-none transition-all focus:border-ember-500/50 focus:bg-ink-950 focus:shadow-[0_0_0_3px_rgb(245_158_11/0.1)]"
+            className={`h-8 w-full rounded-xl border bg-ink-950/90 pr-24 pl-8.5 text-xs text-ink-100 placeholder-ink-400 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)] outline-none transition-all focus:border-ember-500/50 focus:bg-ink-950 focus:shadow-[0_0_0_3px_rgb(245_158_11/0.1)] ${
+              sent ? "border-emerald-400/70 ring-2 ring-emerald-400/20" : "border-ink-800"
+            }`}
           />
           <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-1">
             {isYT && (

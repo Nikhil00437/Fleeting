@@ -267,7 +267,7 @@ export default function SearchView({
                     {unified.sessions.map((s) => (
                       <li
                         key={s.id}
-                        className="flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-950/50 px-3 py-1.5 text-xs text-ink-200"
+                        className="rise flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-950/50 px-3 py-1.5 text-xs text-ink-200"
                       >
                         <span
                           className="h-2 w-2 shrink-0 rounded-full"

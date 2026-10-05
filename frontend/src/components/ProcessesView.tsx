@@ -364,7 +364,7 @@ export default function ProcessesView({
                     {filtered.map((p) => (
                       <tr
                         key={p.pid}
-                        className={`border-b border-ink-800/50 transition-colors hover:bg-ink-900/50 ${
+                        className={`rise border-b border-ink-800/50 transition-colors hover:bg-ink-900/50 ${
                           inspectPid === p.pid ? "bg-ink-900/40" : ""
                         }`}
                       >
