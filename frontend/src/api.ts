@@ -90,11 +90,12 @@ export const api = {
   captureYouTube: (url: string, opts?: { template?: string; mode?: string }) =>
     req<Note>("/capture/youtube", { method: "POST", body: JSON.stringify({ url, ...opts }) }),
 
-  captureAudio: (blob: Blob, filename = "memo.webm", opts?: { template?: string; mode?: string }) => {
+  captureAudio: (blob: Blob, filename = "memo.webm", opts?: { template?: string; mode?: string; language?: string }) => {
     const fd = new FormData();
     fd.append("file", blob, filename);
     if (opts?.template) fd.append("template", opts.template);
     if (opts?.mode) fd.append("mode", opts.mode);
+    if (opts?.language) fd.append("language", opts.language);
     return req<Note>("/capture/audio", { method: "POST", body: fd });
   },
 
@@ -103,6 +104,8 @@ export const api = {
     fd.append("file", blob, "snapshot.webm");
     return req<{ text: string }>("/capture/preview", { method: "POST", body: fd });
   },
+
+  profiles: () => req<Record<string, { language?: string; template?: string; mode?: string }>>("/profiles"),
 
   templates: () => req<Record<string, { type?: string; tags?: string[]; prompt?: string; mode?: string }>>("/templates"),
 

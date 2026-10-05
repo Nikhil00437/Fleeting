@@ -365,6 +365,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     from .routers import templates
 
     app.include_router(templates.router)
+    app.include_router(templates.profiles_router)
 
     _mount_frontend(app)
     return app

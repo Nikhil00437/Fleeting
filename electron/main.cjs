@@ -607,6 +607,15 @@ if (!gotLock) {
     });
     ipcMain.handle("hud:type-text", (_event, text) => handleTypeText(text));
     ipcMain.handle("hud:undo-last-type", () => handleUndoLastType());
+    ipcMain.handle("hud:active-app", async () => {
+      const raw = await runCmd("hyprctl", ["activewindow", "-j"]);
+      try {
+        const data = JSON.parse(raw);
+        return data.class || data.appClass || null;
+      } catch {
+        return null;
+      }
+    });
 
     // Register global shortcut
     try {

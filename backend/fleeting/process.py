@@ -131,7 +131,7 @@ class Processor:
             if note["type"] == "voice" and note.get("audio_path"):
                 await self._set_stage(note_id, "transcribing")
                 result = await asyncio.to_thread(
-                    self.transcriber.transcribe_file, note["audio_path"]
+                    self.transcriber.transcribe_file, note["audio_path"], source.get("language")
                 )
                 raw_text = result["text"]
                 if not raw_text:

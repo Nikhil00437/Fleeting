@@ -39,6 +39,8 @@ export default function CaptureHud({
   const [templates, setTemplates] = useState<Record<string, { tags?: string[]; mode?: string }>>({});
   const [templateName, setTemplateName] = useState<string>("");
   const [outputMode, setOutputMode] = useState<"raw" | "cleaned" | "bullets">("raw");
+  // #428: per-app profile applied on capture start
+  const [profileLanguage, setProfileLanguage] = useState<string | null>(null);
   // #2: hold-to-talk — record only while the button is held, vs the default
   // toggle that starts on mount and stops on Enter/check.
   const [holdMode, setHoldMode] = useState(false);
@@ -101,6 +103,7 @@ export default function CaptureHud({
       const note = await api.captureAudio(blob, "memo.webm", {
         template: templateName || undefined,
         mode: outputMode !== "raw" ? outputMode : undefined,
+        language: profileLanguage ?? undefined,
       });
       if (isCancelledRef.current) return;
 
@@ -132,7 +135,7 @@ export default function CaptureHud({
       setErrorMessage(err instanceof Error ? err.message : "Transcription failed");
       void getDesktop()?.resizeHud?.(72);
     }
-  }, [stop, onDone, templateName, outputMode]);
+  }, [stop, onDone, templateName, outputMode, profileLanguage]);
 
   const handleRestart = useCallback(async () => {
     isCancelledRef.current = false;
@@ -252,9 +255,24 @@ export default function CaptureHud({
     return () => window.clearInterval(id);
   }, [state, isRecording, snapshot]);
 
-  // Load capture templates once (#1)
+  // Load capture templates once (#1), then apply the per-app profile (#428)
   useEffect(() => {
-    api.templates().then((t) => setTemplates(t)).catch(() => {});
+    api
+      .templates()
+      .then((t) => {
+        setTemplates(t);
+        return api.profiles().catch(() => ({}) as Record<string, { language?: string; template?: string; mode?: "raw" | "cleaned" | "bullets" }>);
+      })
+      .then(async (profiles) => {
+        const cls = await getDesktop()?.activeAppClass?.();
+        if (!cls) return;
+        const profile = Object.entries(profiles).find(([key]) => cls.toLowerCase().includes(key.toLowerCase()))?.[1];
+        if (!profile) return;
+        if (profile.template) setTemplateName(profile.template);
+        if (profile.mode === "raw" || profile.mode === "cleaned" || profile.mode === "bullets") setOutputMode(profile.mode);
+        if (profile.language) setProfileLanguage(profile.language);
+      })
+      .catch(() => {});
   }, []);
 
   // Listen to desktop global shortcut or second-instance trigger

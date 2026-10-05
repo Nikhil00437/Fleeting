@@ -244,6 +244,8 @@ export interface FleetingDesktopBridge {
   resizeHud?: (height: number) => Promise<void>;
   typeText?: (text: string) => Promise<boolean>;
   onHudTrigger?: (cb: () => void) => () => void;
+  undoLastType?: () => Promise<boolean>;
+  activeAppClass?: () => Promise<string | null>;
 }
 
 declare global {

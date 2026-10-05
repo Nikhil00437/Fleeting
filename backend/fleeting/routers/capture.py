@@ -95,6 +95,7 @@ async def capture_audio(
     file: UploadFile = File(...),
     template: str | None = Form(default=None),
     mode: str | None = Form(default=None),
+    language: str | None = Form(default=None),
 ) -> NoteOut:
     st = request.app.state.st
     data = await file.read()
@@ -124,6 +125,7 @@ async def capture_audio(
                 "bytes": len(data),
                 "filename": file.filename,
                 **({"template": {"name": tname, "prompt": tmeta.get("prompt"), "mode": mode}} if tname or mode else {}),
+                **({"language": language} if language else {}),
             },
             "status": "pending",
             "created_at": _now(),
