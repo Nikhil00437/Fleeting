@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { fmtDuration, relTime, timeOfDay } from "../time";
 import {
   CheckIcon,
+  EditIcon,
   LinkIcon,
   MicIcon,
   PinIcon,
@@ -10,7 +12,9 @@ import {
   StarIcon,
   TextIcon,
   TrashIcon,
+  XIcon,
 } from "./Icons";
+import { readingMinutes, tldr, wordCount } from "./noteMeta";
 import { activationProps } from "./a11y";
 import { colorHex } from "./noteColors";
 import type { Note } from "../types";
@@ -72,6 +76,10 @@ interface Props {
   onPin: (id: string) => void;
   onStar?: (id: string) => void;
   onTagClick?: (tag: string) => void;
+  /** #305: Alt-click a tag chip to hide everything carrying it. */
+  onTagExclude?: (tag: string) => void;
+  /** #18: inline card edits land here (same callback as the drawer). */
+  onUpdate?: (note: Note) => void;
   onToggleTask?: (note: Note, itemId: string) => void;
   onRetry?: (id: string) => void;
   onDelete?: (id: string) => void;
@@ -87,6 +95,8 @@ export default function NoteCard({
   onPin,
   onStar,
   onTagClick,
+  onTagExclude,
+  onUpdate,
   onToggleTask,
   onRetry,
   onDelete,
@@ -95,8 +105,12 @@ export default function NoteCard({
   selected,
   onToggleSelect,
 }: Props) {
-  const body = note.snippet ?? note.summary ?? note.raw_text ?? "";
+  // #476: search hits keep their highlighted snippet; everything else shows
+  // the one-line tl;dr.
+  const body = note.snippet ?? tldr(note);
   const parts = note.snippet ? note.snippet.split(/\[\[|\]\]/) : null;
+  const minutes = readingMinutes(note.raw_text);
+  const words = wordCount(note.raw_text);
   const meta = TYPE_META[note.type] ?? {
     icon: <SparkIcon className="h-3 w-3" />,
     label: note.type,
@@ -119,6 +133,22 @@ export default function NoteCard({
   const accent = colorHex(note.color) ?? meta.accent;
 
   const isNew = Date.now() - new Date(note.created_at).getTime() < 5 * 60 * 1000;
+
+  // #18: inline editing without the drawer round-trip
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(note.title);
+  const [editBody, setEditBody] = useState(note.raw_text);
+  const openEditor = () => {
+    setEditTitle(note.title);
+    setEditBody(note.raw_text);
+    setEditing(true);
+  };
+  const saveEditor = () => {
+    setEditing(false);
+    if (editTitle !== note.title || editBody !== note.raw_text) {
+      onUpdate?.({ ...note, title: editTitle, raw_text: editBody });
+    }
+  };
 
   return (
     <article
@@ -282,6 +312,20 @@ export default function NoteCard({
               </button>
             )}
 
+            {onUpdate && note.status === "done" && !editing && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openEditor();
+                }}
+                className="rounded-lg p-1 text-ink-500 opacity-0 transition-colors group-hover:opacity-100 hover:bg-white/[0.06] hover:text-ink-100"
+                title="Edit inline"
+              >
+                <EditIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+
             <button
               type="button"
               onClick={(e) => {
@@ -303,6 +347,54 @@ export default function NoteCard({
         {/* Title + Optional YouTube Thumbnail Layout */}
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
+            {editing ? (
+              <div onClick={(e) => e.stopPropagation()} className="space-y-1.5">
+                <input
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveEditor();
+                    if (e.key === "Escape") setEditing(false);
+                  }}
+                  autoFocus
+                  aria-label="Edit title"
+                  className="w-full rounded-lg border border-ember-500/40 bg-ink-950 px-2 py-1 text-[14px] font-semibold text-ink-100 outline-none"
+                />
+                <textarea
+                  value={editBody}
+                  onChange={(e) => setEditBody(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setEditing(false);
+                  }}
+                  rows={4}
+                  aria-label="Edit note text"
+                  className="w-full resize-y rounded-lg border border-white/10 bg-ink-950 px-2 py-1.5 text-xs leading-relaxed text-ink-200 outline-none focus:border-ember-500/40"
+                />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      saveEditor();
+                    }}
+                    className="rounded-md bg-ember-500/20 px-2 py-0.5 text-[10.5px] font-semibold text-ember-300 hover:bg-ember-500/30"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditing(false);
+                    }}
+                    className="flex items-center gap-0.5 rounded-md px-2 py-0.5 text-[10.5px] text-ink-400 hover:text-ink-200"
+                  >
+                    <XIcon className="h-2.5 w-2.5" /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
             <h3 className="line-clamp-1 text-[14px] font-semibold tracking-tight text-ink-100 transition-colors group-hover:text-ember-200">
               {note.title ||
                 (note.raw_text ? note.raw_text.slice(0, 65) : "Untitled capture")}
@@ -329,6 +421,8 @@ export default function NoteCard({
                     )
                   : body}
               </p>
+            )}
+              </>
             )}
           </div>
 
@@ -413,18 +507,31 @@ export default function NoteCard({
               key={t}
               type="button"
               onClick={(e) => {
-                if (!onTagClick) return;
                 e.stopPropagation();
-                onTagClick(t);
+                if (e.altKey) {
+                  // #305: Alt-click hides every note carrying this tag
+                  onTagExclude?.(t);
+                  return;
+                }
+                onTagClick?.(t);
               }}
               className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10.5px] text-ink-300 transition-all duration-200 hover:scale-105 hover:border-ember-400/40 hover:bg-ember-500/10 hover:text-ember-200"
               style={{ borderLeftColor: accent, borderLeftWidth: '2px' }}
+              title={onTagExclude ? "Click: filter · Alt-click: exclude" : undefined}
             >
               #{t}
             </button>
           ))}
           {note.tags.length > 5 && (
             <span className="font-mono text-[10px] text-ink-500">+{note.tags.length - 5}</span>
+          )}
+          {words > 0 && (
+            <span
+              className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-ink-400"
+              title={`${words} words`}
+            >
+              {words}w · {minutes} min
+            </span>
           )}
           {openTasks.length > 0 && (
             <span className="ml-auto rounded-full border border-ember-400/25 bg-ember-500/12 px-2 py-0.5 font-mono text-[10px] font-medium text-ember-300">

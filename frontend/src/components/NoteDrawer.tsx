@@ -559,7 +559,21 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
 
             {/* Editable AI Summary */}
             <div className="glass rounded-xl p-3.5">
-              <p className="micro-label mb-1.5 !text-[9.5px] !text-ember-300">Executive Summary</p>
+              <div className="mb-1.5 flex items-center justify-between">
+                <p className="micro-label !text-[9.5px] !text-ember-300">Executive Summary</p>
+                {note.summary && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(note.summary).then(() => onToast("summary copied"));
+                    }}
+                    className="text-ink-500 transition-colors hover:text-ink-200"
+                    title="Copy summary"
+                    aria-label="Copy summary"
+                  >
+                    <CopyIcon className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
               <textarea
                 value={summary}
                 onChange={(e) => setSummary(e.target.value)}
@@ -637,7 +651,23 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
 
             {/* Tags Editor */}
             <div>
-              <p className="micro-label mb-1.5 !text-[9.5px]">Tags</p>
+              <div className="mb-1.5 flex items-center justify-between">
+                <p className="micro-label !text-[9.5px]">Tags</p>
+                {note.tags.length > 0 && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard
+                        .writeText(note.tags.map((t) => `#${t}`).join(" "))
+                        .then(() => onToast("tags copied"));
+                    }}
+                    className="text-ink-500 transition-colors hover:text-ink-200"
+                    title="Copy tags"
+                    aria-label="Copy tags"
+                  >
+                    <CopyIcon className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {note.tags.map((t) => (
                   <span
@@ -707,9 +737,21 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
             {/* Raw Content / Transcript */}
             {note.raw_text && (
               <div>
-                <p className="micro-label mb-1.5 !text-[9.5px]">
-                  {note.type === "voice" || note.type === "youtube" ? "Transcript" : "Raw Content"}
-                </p>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <p className="micro-label !text-[9.5px]">
+                    {note.type === "voice" || note.type === "youtube" ? "Transcript" : "Raw Content"}
+                  </p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(note.raw_text).then(() => onToast("text copied"));
+                    }}
+                    className="text-ink-500 transition-colors hover:text-ink-200"
+                    title="Copy text"
+                    aria-label="Copy note text"
+                  >
+                    <CopyIcon className="h-3 w-3" />
+                  </button>
+                </div>
                 <div className="selectable rounded-xl border border-white/[0.06] bg-ink-950/80 p-3.5 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink-200">
                   {note.raw_text}
                 </div>

@@ -58,6 +58,8 @@ export default function Inbox({
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   // #273: dedicated starred view — a filter over the same feed, not a fetch.
   const [starredOnly, setStarredOnly] = useState(false);
+  // #305: Alt-clicked tag — everything carrying it is hidden until cleared.
+  const [excludedTag, setExcludedTag] = useState<string | null>(null);
   // #424: review queue — notes whose enrichment used the heuristic fallback.
   const [reviewOnly, setReviewOnly] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
@@ -249,6 +251,7 @@ export default function Inbox({
       if (reviewOnly && n.review_state !== "raw") return false;
       if (typeFilter !== "all" && n.type !== typeFilter) return false;
       if (tagFilter && !n.tags.includes(tagFilter)) return false;
+      if (excludedTag && n.tags.includes(excludedTag)) return false;
       if (q) {
         return (
           (n.title || "").toLowerCase().includes(q) ||
@@ -259,7 +262,7 @@ export default function Inbox({
       }
       return true;
     });
-  }, [activeNotes, healthyNotes, showFailed, starredOnly, reviewOnly, typeFilter, tagFilter, filterQuery]);
+  }, [activeNotes, healthyNotes, showFailed, starredOnly, reviewOnly, excludedTag, typeFilter, tagFilter, filterQuery]);
 
   const pinned = filteredNotes.filter((n) => n.pinned);
   const rest = filteredNotes.filter((n) => !n.pinned);
@@ -348,6 +351,17 @@ export default function Inbox({
             className="flex items-center gap-1 rounded-md border border-ember-400/40 bg-ember-500/15 px-2 py-1 text-xs font-medium text-ember-200 hover:bg-ember-500/25"
           >
             <FilterIcon className="h-3 w-3" /> #{tagFilter}
+            <XIcon className="h-3 w-3" />
+          </button>
+        )}
+
+        {excludedTag && (
+          <button
+            onClick={() => setExcludedTag(null)}
+            className="flex items-center gap-1 rounded-md border border-red-400/40 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-200 hover:bg-red-500/20"
+            title="Stop excluding this tag"
+          >
+            −#{excludedTag}
             <XIcon className="h-3 w-3" />
           </button>
         )}
@@ -772,6 +786,7 @@ export default function Inbox({
               onClick={() => {
                 setTypeFilter("all");
                 setTagFilter(null);
+                setExcludedTag(null);
                 setFilterQuery("");
               }}
               className="mt-2 text-xs font-medium text-ember-300 hover:underline"
@@ -800,6 +815,8 @@ export default function Inbox({
                       onPin={onPin}
                       onStar={onStar}
                       onTagClick={(t) => setTagFilter((cur) => (cur === t ? null : t))}
+                      onTagExclude={setExcludedTag}
+                      onUpdate={onNoteUpdated}
                       onToggleTask={handleToggleTask}
                       onRetry={handleRetry}
                       onDelete={handleDelete}
@@ -837,6 +854,8 @@ export default function Inbox({
                       onPin={onPin}
                       onStar={onStar}
                       onTagClick={(t) => setTagFilter((cur) => (cur === t ? null : t))}
+                      onTagExclude={setExcludedTag}
+                      onUpdate={onNoteUpdated}
                       onToggleTask={handleToggleTask}
                       onRetry={handleRetry}
                       onDelete={handleDelete}
