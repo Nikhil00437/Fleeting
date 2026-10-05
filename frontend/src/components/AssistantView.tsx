@@ -443,7 +443,7 @@ export default function AssistantView({
               return (
                 <div
                   key={msg.id}
-                  className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}
+                  className={`rise flex flex-col ${isUser ? "items-end" : "items-start"}`}
                   data-testid={`message-${msg.role}`}
                 >
                   <div
