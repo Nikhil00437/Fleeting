@@ -20,3 +20,9 @@ dist/
 # OS / editor
 .DS_Store
 .idea/
+
+# internal planning / agent instructions — keep out of the app repo
+AGENTS.md
+docs/
+future_ideas.md
+*.zip
