@@ -5,8 +5,11 @@ import { AreaTrend, Bars, Ring, StackBar } from "./charts";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
 import { buildTagTree, flattenTagTree, tagMatches } from "./tagTree";
+import { relTime } from "../time";
+import { activationProps } from "./a11y";
 import {
   ActivityIcon,
+  CheckIcon,
   FilterIcon,
   FolderIcon,
   GridIcon,
@@ -70,6 +73,9 @@ export default function Inbox({
   // #270: tag tree panel.
   const [showTagTree, setShowTagTree] = useState(false);
   const [tagCounts, setTagCounts] = useState<TagCount[] | null>(null);
+  // #271: triage — one note at a time, a decision before the next appears.
+  const [triageOpen, setTriageOpen] = useState(false);
+  const [triageDone, setTriageDone] = useState<Set<string>>(new Set());
   // #424: review queue — notes whose enrichment used the heuristic fallback.
   const [reviewOnly, setReviewOnly] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
@@ -358,6 +364,48 @@ export default function Inbox({
     [healthyNotes],
   );
 
+  // #271: oldest-first queue of anything not yet human-reviewed.
+  const triageQueue = useMemo(
+    () =>
+      healthyNotes
+        .filter((n) => n.review_state === "raw" || n.review_state === "enriched")
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)),
+    [healthyNotes],
+  );
+  const triageCurrent = triageQueue.find((n) => !triageDone.has(n.id)) ?? null;
+
+  function markTriageDone(id: string) {
+    setTriageDone((s) => new Set(s).add(id));
+  }
+
+  async function triageKeep(note: Note) {
+    markTriageDone(note.id);
+    try {
+      onNoteUpdated?.(await api.updateNote(note.id, { review_state: "reviewed" }));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function triageArchive(note: Note) {
+    markTriageDone(note.id);
+    try {
+      onNoteUpdated?.(await api.archiveNote(note.id));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function triageTrash(note: Note) {
+    markTriageDone(note.id);
+    try {
+      await api.deleteNote(note.id);
+      onNoteDeleted?.(note.id);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
   const completion =
     stats && stats.done_tasks + stats.open_tasks > 0
       ? stats.done_tasks / (stats.done_tasks + stats.open_tasks)
@@ -476,6 +524,24 @@ export default function Inbox({
           >
             <StarIcon filled={starredOnly} className="h-3 w-3" />
           </button>
+
+          {triageQueue.length > 0 && (
+            <button
+              onClick={() => {
+                setTriageOpen((v) => !v);
+                setTriageDone(new Set());
+              }}
+              className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+                triageOpen
+                  ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-200"
+                  : "border-cyan-400/20 bg-ink-950/80 text-cyan-300/80 hover:text-cyan-200"
+              }`}
+              title="#271 File every unreviewed note, one at a time"
+            >
+              Triage
+              <span className="font-mono">{triageQueue.length}</span>
+            </button>
+          )}
 
           <button
             onClick={() => {
@@ -918,8 +984,119 @@ export default function Inbox({
           </div>
         )}
 
-        {/* Notes Feed, Collection, or Trash */}
-        {activeCollection ? (
+        {/* #271 Triage mode */}
+        {triageOpen ? (
+          !triageCurrent ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <div className="glass-studio flex h-14 w-14 items-center justify-center rounded-2xl">
+                <CheckIcon className="h-6 w-6 text-emerald-400" />
+              </div>
+              <h2 className="mt-4 text-base font-semibold text-ink-100">Triage complete</h2>
+              <p className="mt-1 text-xs text-ink-400">
+                {triageDone.size > 0
+                  ? `${triageDone.size} note${triageDone.size === 1 ? "" : "s"} filed this session.`
+                  : "Nothing waiting to be filed."}
+              </p>
+              <button
+                onClick={() => {
+                  setTriageOpen(false);
+                  setTriageDone(new Set());
+                }}
+                className="mt-4 rounded-lg border border-white/10 bg-ink-900 px-3.5 py-1.5 text-xs font-medium text-ink-200 hover:border-ember-400/40"
+              >
+                Back to inbox
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-2 px-1">
+                <p className="micro-label !text-cyan-300">Triage</p>
+                <span className="rounded-full bg-white/[0.05] px-2 py-0.2 font-mono text-[10px] text-ink-400">
+                  {triageDone.size + 1} / {triageQueue.length + triageDone.size}
+                </span>
+                <div className="h-px flex-1 bg-gradient-to-r from-ink-500/20 via-ink-500/5 to-transparent" />
+                <button
+                  onClick={() => {
+                    setTriageOpen(false);
+                    setTriageDone(new Set());
+                  }}
+                  className="rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-[11px] text-ink-200 hover:text-ink-100"
+                >
+                  Exit triage
+                </button>
+              </div>
+              <article
+                {...activationProps(
+                  `Open note: ${triageCurrent.title || triageCurrent.id}`,
+                  () => onOpen(triageCurrent.id),
+                )}
+                className="glass rounded-2xl p-5"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-md bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-ink-300">
+                    {triageCurrent.type}
+                  </span>
+                  {triageCurrent.review_state === "raw" && (
+                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-medium text-amber-300">
+                      needs review
+                    </span>
+                  )}
+                  <span className="ml-auto font-mono text-[10.5px] text-ink-500">
+                    {relTime(triageCurrent.created_at)}
+                  </span>
+                </div>
+                <h2 className="mt-2.5 text-lg font-semibold tracking-tight text-ink-100">
+                  {triageCurrent.title || triageCurrent.raw_text.slice(0, 80) || "Untitled capture"}
+                </h2>
+                {triageCurrent.summary && (
+                  <p className="mt-1.5 text-xs leading-relaxed text-ink-300">{triageCurrent.summary}</p>
+                )}
+                {triageCurrent.raw_text && (
+                  <p className="mt-2 line-clamp-6 whitespace-pre-wrap text-xs leading-relaxed text-ink-400">
+                    {triageCurrent.raw_text}
+                  </p>
+                )}
+                {triageCurrent.tags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {triageCurrent.tags.map((t) => (
+                      <span key={t} className="rounded-md bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] text-ink-300">
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.05] pt-3">
+                  <button
+                    onClick={() => void triageKeep(triageCurrent)}
+                    className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                    title="Keep it and mark reviewed"
+                  >
+                    Keep
+                  </button>
+                  <button
+                    onClick={() => void triageArchive(triageCurrent)}
+                    className="rounded-lg border border-white/[0.08] bg-ink-900 px-3 py-1.5 text-xs font-medium text-ink-200 hover:text-ink-100"
+                  >
+                    Archive
+                  </button>
+                  <button
+                    onClick={() => void triageTrash(triageCurrent)}
+                    className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-500/20"
+                  >
+                    Trash
+                  </button>
+                  <button
+                    onClick={() => onOpen(triageCurrent.id)}
+                    className="ml-auto rounded-lg px-2.5 py-1.5 text-xs text-ink-400 hover:text-ink-200"
+                    title="Open the drawer to edit, tag or link before deciding"
+                  >
+                    Open in drawer →
+                  </button>
+                </div>
+              </article>
+            </div>
+          )
+        ) : activeCollection ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 px-1 pt-4">
               <FolderIcon className="h-3.5 w-3.5 text-iris-300" />
