@@ -809,3 +809,34 @@ def test_list_tasks_list_context_waiting_filters(db):
     # "all lists" escape hatch.
     everything = db.list_tasks(status="all", list="inbox")
     assert len(everything) == 3
+
+
+def test_orphans_finds_single_use_tags_untagged_notes_and_unlinked_tasks(tmp_path):
+    """#422: three kinds of unfiled work, one query each."""
+    db = Database(tmp_path / "o.db")
+    db.migrate()
+    tagged = db.insert_note({"title": "tagged twice", "status": "done", "tags": ["solo", "shared"]})
+    db.insert_note({"title": "also tagged", "status": "done", "tags": ["shared"]})
+    db.insert_note({"title": "no tags here", "status": "done", "tags": []})
+    db.insert_note({"title": "pending no tags", "status": "pending", "tags": []})
+    db.insert_task({"text": "loose task"})  # lands on the synthetic Inbox note
+
+    result = db.orphans()
+    assert "solo" in result["single_use_tags"]
+    assert "shared" not in result["single_use_tags"]
+    untagged_titles = [n["title"] for n in result["untagged_notes"]]
+    assert "no tags here" in untagged_titles
+    assert "pending no tags" not in untagged_titles  # only finished notes
+    assert [t["text"] for t in result["unlinked_tasks"]] == ["loose task"]
+
+
+def test_orphans_ignore_archived_and_trashed_notes(tmp_path):
+    db = Database(tmp_path / "o2.db")
+    db.migrate()
+    db.insert_note({"title": "gone", "status": "done", "tags": [], "archived": 1})
+    db.insert_note({"title": "binned", "status": "done", "tags": []})
+    trashed_id = db.list_notes()[0]["id"]
+    db.update_note(trashed_id, {"trashed_at": "2026-10-06T00:00:00+00:00"})
+    titles = [n["title"] for n in db.orphans()["untagged_notes"]]
+    assert "gone" not in titles
+    assert "binned" not in titles

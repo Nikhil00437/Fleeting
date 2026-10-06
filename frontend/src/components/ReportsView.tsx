@@ -3,6 +3,7 @@ import { api } from "../api";
 import { renderMarkdown } from "../markdown";
 import { ActivityIcon, BotIcon, CopyIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
+import OrphansCard from "./OrphansCard";
 
 interface Props {
   onToast: (message: string, kind?: "ok" | "err") => void;
@@ -116,6 +117,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
       <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-2">
     <div className="xl:col-span-2">
       <WeeklyDigestCard onToast={onToast} refreshKey={refreshKey} />
+    </div>
+
+    {/* #422 housekeeping */}
+    <div className="xl:col-span-2">
+      <OrphansCard onToast={onToast} refreshKey={refreshKey} />
     </div>
 
     {/* Daily AI Report */}

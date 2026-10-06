@@ -244,3 +244,10 @@ def test_patch_note_04_metadata(client):
     assert (
         client.patch(f"/api/notes/{note['id']}", json={"review_state": "nope"}).status_code == 422
     )
+
+
+def test_orphans_endpoint(client):
+    """#422: /api/orphans reports the three kinds of unfiled work."""
+    client.post("/api/capture/text", json={"text": "a thought worth filing"})
+    data = client.get("/api/orphans").json()
+    assert set(data) == {"single_use_tags", "untagged_notes", "unlinked_tasks"}

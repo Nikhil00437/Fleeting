@@ -1392,6 +1392,53 @@ class Database:
                 self.execute("DELETE FROM tasks WHERE id = ?", (old_id,))
         self.commit()
 
+    def orphans(self, limit: int = 50) -> dict:
+        """#422: work that no structure points at.
+
+        Three kinds of orphan, each a cheap JOIN rather than a query-time
+        regex: tags only one note uses (noise in the tag cloud), finished
+        notes with no tags at all (invisible to tag filters), and tasks that
+        hang off the synthetic Inbox note rather than a real capture.
+        """
+        tag_rows = self.execute(
+            """
+            SELECT je.value AS tag, COUNT(*) AS uses
+            FROM notes n, json_each(n.tags) je
+            WHERE n.archived = 0 AND n.trashed_at IS NULL
+            GROUP BY je.value
+            HAVING uses = 1
+            ORDER BY uses, je.value
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+        untagged = self.execute(
+            """
+            SELECT id, title FROM notes
+            WHERE archived = 0 AND trashed_at IS NULL AND status = 'done'
+              AND (tags = '[]' OR tags = '' OR tags IS NULL)
+              AND title != 'Inbox'
+            ORDER BY created_at DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+        inbox_row = self.execute("SELECT id FROM notes WHERE title = 'Inbox' AND archived = 0 LIMIT 1").fetchone()
+        inbox_id = str(inbox_row["id"]) if inbox_row else None
+        unlinked = []
+        if inbox_id:
+            unlinked = self.execute(
+                "SELECT id, text FROM tasks WHERE note_id = ? AND done = 0 ORDER BY created_at DESC LIMIT ?",
+                (inbox_id, limit),
+            ).fetchall()
+
+        return {
+            "single_use_tags": [str(r["tag"]) for r in tag_rows],
+            "untagged_notes": [{"id": r["id"], "title": r["title"]} for r in untagged],
+            "unlinked_tasks": [{"id": r["id"], "text": r["text"]} for r in unlinked],
+        }
+
     def _get_or_create_inbox_note(self) -> str:
         row = self.execute("SELECT id FROM notes WHERE title = 'Inbox' AND archived = 0 LIMIT 1").fetchone()
         if row:

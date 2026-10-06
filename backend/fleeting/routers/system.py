@@ -155,6 +155,12 @@ SAMPLE_NOTES = [
 ]
 
 
+@router.get("/orphans")
+def orphans(request: Request, limit: int = 50) -> dict:
+    """#422: single-use tags, untagged notes and unlinked tasks."""
+    return request.app.state.st.db.orphans(limit=max(1, min(limit, 500)))
+
+
 @router.post("/samples")
 def create_samples(request: Request) -> dict:
     """#488: fill an empty vault with deletable sample notes.

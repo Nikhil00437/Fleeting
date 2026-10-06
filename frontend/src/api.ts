@@ -310,6 +310,14 @@ export const api = {
       body: JSON.stringify({ format }),
     }),
 
+  /** #422: single-use tags, untagged notes, unlinked tasks. */
+  orphans: () =>
+    req<{
+      single_use_tags: string[];
+      untagged_notes: { id: string; title: string }[];
+      unlinked_tasks: { id: string; text: string }[];
+    }>("/orphans"),
+
   weeklyReview: () =>
     req<{
       week_start: string;
