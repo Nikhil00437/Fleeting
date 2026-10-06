@@ -202,6 +202,17 @@ class TodayLoad(BaseModel):
     capacity_min: int
 
 
+class WeeklyReview(BaseModel):
+    """#38 weekly review: what slipped, what landed, what to decide about."""
+
+    week_start: str
+    today: str
+    carry_over: list[TaskOut]
+    this_week: list[TaskOut]
+    completed: list[TaskOut]
+    stats: dict[str, int | float]
+
+
 class FocusIn(BaseModel):
     """#280: log real minutes spent. `minutes` is added to spent_min."""
 

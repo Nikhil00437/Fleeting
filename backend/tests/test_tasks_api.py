@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timedelta
 
 import pytest
 
@@ -691,3 +691,22 @@ def test_spent_minutes_count_toward_day_load(client):
     client.post(f"/api/tasks/{task['id']}/focus", json={"minutes": 30})
     load = client.get("/api/tasks/today").json()["load"]
     assert load["spent_min"] == 30
+
+
+def test_weekly_review_splits_carry_over_this_week_and_done(client):
+    """#38: the review ritual's input is three sorted piles."""
+    today = datetime.now().astimezone()
+    past = (today - timedelta(days=10)).strftime("%Y-%m-%d")
+    week_start = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+
+    slipped = client.post("/api/tasks", json={"text": "slipped", "due_date": past}).json()
+    client.post("/api/tasks", json={"text": "this week", "due_date": week_start})
+    landed = client.post("/api/tasks", json={"text": "landed"}).json()
+    client.post(f"/api/tasks/{landed['id']}/toggle")
+
+    review = client.get("/api/tasks/review").json()
+    assert [t["id"] for t in review["carry_over"]] == [slipped["id"]]
+    assert [t["text"] for t in review["this_week"]] == ["this week"]
+    assert [t["text"] for t in review["completed"]] == ["landed"]
+    assert review["stats"]["carry_over"] == 1
+    assert review["stats"]["completed"] == 1

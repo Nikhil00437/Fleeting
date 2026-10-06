@@ -302,6 +302,17 @@ export const api = {
 
   weekPlan: () => req<WeekPlan>("/tasks/plan"),
 
+  /** #38 weekly review input: slipped / due this week / closed. */
+  weeklyReview: () =>
+    req<{
+      week_start: string;
+      today: string;
+      carry_over: TaskItem[];
+      this_week: TaskItem[];
+      completed: TaskItem[];
+      stats: { carry_over: number; this_week: number; completed: number; completion_rate: number };
+    }>("/tasks/review"),
+
   deleteTask: (id: string) => req<{ ok: boolean; id: string }>(`/tasks/${id}`, { method: "DELETE" }),
 
   taskRepos: () => req<RepoInfo[]>("/tasks/repos"),

@@ -13,6 +13,7 @@ import SearchView from "./components/SearchView";
 import SettingsView from "./components/SettingsView";
 import TasksView from "./components/TasksView";
 import TodayView from "./components/TodayView";
+import ReviewView from "./components/ReviewView";
 import TimelineView from "./components/TimelineView";
 import ReportsView from "./components/ReportsView";
 import CaptureHud from "./components/CaptureHud";
@@ -23,6 +24,7 @@ import {
  ActivityIcon,
  BotIcon,
  CalendarIcon,
+ RefreshIcon,
  ClockIcon,
  CpuIcon,
  MicIcon,
@@ -40,6 +42,7 @@ import type { Note, Stats, WhisperProgress } from "./types";
 type View =
   | "inbox"
   | "today"
+  | "review"
   | "timeline"
   | "reports"
   | "tasks"
@@ -304,6 +307,7 @@ export default function App() {
     setTimeout(() => searchRef.current?.focus(), 30);
    } else if (e.key === "i") setView("inbox");
    else if (e.key === "y") setView("today");
+  else if (e.key === "w") setView("review");
    else if (e.key === "t") setView("tasks");
    else if (e.key === "a") setView("assistant");
    else if (e.key === "l") setView("timeline");
@@ -371,6 +375,12 @@ export default function App() {
    label: "Today",
    icon: <CalendarIcon className="h-4 w-4 text-emerald-400" />,
    hint: "y",
+  },
+  {
+   id: "review",
+   label: "Review",
+   icon: <RefreshIcon className="h-4 w-4 text-iris-400" />,
+   hint: "w",
   },
   {
    id: "inbox",
@@ -949,6 +959,7 @@ export default function App() {
         onNoteDeleted={removeNote}
        />
       ))}
+     {view === "review" && <ReviewView onToast={toast} />}
      {view === "today" && (
       <TodayView
        refreshKey={tasksKey}

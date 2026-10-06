@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -16,6 +17,7 @@ from ..models import (
     StreakOut,
     TaskCreateIn,
     TaskOut,
+    WeeklyReview,
     TaskUpdateIn,
     TodayOut,
     WeekPlan,
@@ -197,6 +199,49 @@ def get_today(request: Request) -> TodayOut:
         up_next=[TaskOut(**t) for t in result["up_next"]],
         load=result["load"],
         streak=StreakOut(**whatnow.build_streaks(tasks, now=now)),
+    )
+
+
+@router.get("/review", response_model=WeeklyReview)
+def get_weekly_review(request: Request) -> WeeklyReview:
+    """#38: the weekly review ritual's input — what needs a decision.
+
+    Split into three piles: work that was due before this week and is still
+    open (carry it or drop it), work due inside the week, and what actually
+    landed. The UI decides; this only sorts, so the screen and any future
+    reminder agree on what "slipped" means.
+    """
+    st = request.app.state.st
+    from ..db import datetime_now_local
+
+    now = datetime_now_local()
+    today = now.strftime("%Y-%m-%d")
+    week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+
+    tasks = st.db.list_tasks(status="all", limit=1000)
+    open_tasks = [t for t in tasks if not t["done"] and t.get("list", "inbox") == "inbox"]
+    carry_over = sorted(
+        [t for t in open_tasks if t.get("due_date") and t["due_date"] < week_start],
+        key=lambda t: (t["due_date"], t["priority"]),
+    )
+    this_week = sorted(
+        [t for t in open_tasks if t.get("due_date") and week_start <= t["due_date"] <= today],
+        key=lambda t: (t["due_date"], t["priority"]),
+    )
+    completed = [t for t in tasks if t["done"] and (t.get("completed_at") or "")[:10] >= week_start]
+    total = len(open_tasks) + len(completed)
+    return WeeklyReview(
+        week_start=week_start,
+        today=today,
+        carry_over=[TaskOut(**t) for t in carry_over],
+        this_week=[TaskOut(**t) for t in this_week],
+        completed=[TaskOut(**t) for t in completed],
+        stats={
+            "carry_over": len(carry_over),
+            "this_week": len(this_week),
+            "completed": len(completed),
+            "completion_rate": round(len(completed) / total, 2) if total else 0.0,
+        },
     )
 
 
