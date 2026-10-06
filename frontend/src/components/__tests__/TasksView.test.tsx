@@ -13,6 +13,7 @@ import TasksView, {
   updateTaskTextAction,
   createQuickTaskAction,
   dropSortOrder,
+  parseBlockedBy,
 } from "../TasksView";
 import type { TaskItem, RepoInfo } from "../../types";
 import { api } from "../../api";
@@ -461,5 +462,17 @@ describe("dropSortOrder (#29)", () => {
   it("midpoints above the only sibling when dropping before it", () => {
     const siblings = [row("a", 7)];
     expect(dropSortOrder(row("b", 0), row("a", 7), siblings)).toBe(6.5);
+  });
+});
+
+/** #277: blocked_by is a CSV; the picker needs a clean parse. */
+describe("parseBlockedBy", () => {
+  it("splits, trims and drops empties", () => {
+    expect(parseBlockedBy("a, b ,,c")).toEqual(["a", "b", "c"]);
+  });
+  it("treats null/undefined/empty as no blockers", () => {
+    expect(parseBlockedBy(null)).toEqual([]);
+    expect(parseBlockedBy(undefined)).toEqual([]);
+    expect(parseBlockedBy("")).toEqual([]);
   });
 });

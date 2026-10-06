@@ -181,6 +181,14 @@ export function groupTasksByNote(tasks: TaskItem[]): {
   return Array.from(map.values());
 }
 
+/** #277: blocked_by is stored as a CSV of task ids. */
+export function parseBlockedBy(csv?: string | null): string[] {
+  return (csv ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export async function toggleTaskAction(
   task: TaskItem,
   setTasks: (updater: (prev: TaskItem[]) => TaskItem[]) => void,
@@ -341,6 +349,11 @@ export default function TasksView({
   const updateTasks = (updater: (prev: TaskItem[]) => TaskItem[]) => {
     setTasks((prev) => updater(prev ?? []));
   };
+
+  // #277 dependency editor / #281 waiting-for editor, one open popover at a time
+  const [blockedEditId, setBlockedEditId] = useState<string | null>(null);
+  const [waitingEditId, setWaitingEditId] = useState<string | null>(null);
+  const [waitingText, setWaitingText] = useState("");
 
   // Multi-facet filters
   const [statusFilter, setStatusFilter] = useState<"open" | "done" | "all">(initialStatusFilter);
@@ -1108,6 +1121,58 @@ export default function TasksView({
     );
   }
 
+/** #277: dependency picker — toggle any other task as a blocker. */
+function BlockedPicker({
+  task,
+  allTasks,
+  open,
+  onToggle,
+  onSet,
+}: {
+  task: TaskItem;
+  allTasks: TaskItem[];
+  open: boolean;
+  onToggle: () => void;
+  onSet: (ids: string[]) => void;
+}) {
+  const selected = parseBlockedBy(task.blocked_by);
+  const candidates = allTasks.filter(
+    (x) => x.id !== task.id && !x.done && x.id !== task.parent_id && !parseBlockedBy(x.blocked_by).includes(task.id)
+  );
+  return (
+    <div className="relative">
+      <button
+        onClick={onToggle}
+        className={`text-[11px] transition-opacity ${
+          selected.length > 0 ? "text-red-300" : "text-ink-600 opacity-0 hover:text-red-300 group-hover:opacity-100"
+        }`}
+        title={selected.length > 0 ? `Blocked by ${selected.length} task(s)` : "Mark blocked by another task"}
+        aria-label="Blocked by"
+      >
+        ⊘{selected.length > 0 ? selected.length : ""}
+      </button>
+      {open && (
+        <div className="absolute right-0 bottom-full z-20 mb-1 max-h-52 w-60 overflow-auto rounded-xl border border-ink-700 bg-ink-950 p-1.5 shadow-2xl">
+          {candidates.length === 0 && <p className="px-1.5 py-1 text-[11px] text-ink-500">no open tasks</p>}
+          {candidates.map((x) => {
+            const on = selected.includes(x.id);
+            return (
+              <button
+                key={x.id}
+                onClick={() => onSet(on ? selected.filter((id) => id !== x.id) : [...selected, x.id])}
+                className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] text-ink-200 hover:bg-ink-900"
+              >
+                <span className={on ? "text-red-400" : "text-ink-600"}>{on ? "☑" : "☐"}</span>
+                <span className="truncate">{x.text}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
   function renderTaskRow(t: TaskItem, compact = false) {
     const isDone = Boolean(t.done);
     const isEditing = editingTaskId === t.id;
@@ -1237,14 +1302,86 @@ export default function TasksView({
             </button>
           )}
 
-          {/* Waiting-for badge (#281) */}
-          {t.waiting_for && (
-            <span
+          {/* Waiting-for badge (#281) — click to edit */}
+          {t.waiting_for ? (
+            <button
+              onClick={() => {
+                setWaitingEditId(waitingEditId === t.id ? null : t.id);
+                setWaitingText(t.waiting_for ?? "");
+              }}
               className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
-              title={`Waiting for: ${t.waiting_for}`}
+              title={`Waiting for: ${t.waiting_for} — click to edit`}
             >
               ⏳ {t.waiting_for}
-            </span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setWaitingEditId(waitingEditId === t.id ? null : t.id);
+                setWaitingText("");
+              }}
+              className="text-[11px] text-ink-600 opacity-0 transition-opacity hover:text-amber-300 group-hover:opacity-100"
+              title="Mark as waiting on someone/something"
+              aria-label="Set waiting for"
+            >
+              ⏳
+            </button>
+          )}
+
+          {/* Blocked-by editor (#277) */}
+          <BlockedPicker
+            task={t}
+            allTasks={tasks ?? []}
+            open={blockedEditId === t.id}
+            onToggle={() => {
+              setBlockedEditId(blockedEditId === t.id ? null : t.id);
+              setWaitingEditId(null);
+            }}
+            onSet={(ids) => {
+              api
+                .updateTask(t.id, { blocked_by: ids.length ? ids.join(",") : null })
+                .then((updated) => {
+                  updateTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...updated } : x)));
+                  onTasksChanged();
+                  onToast(ids.length ? "dependency updated" : "dependency cleared");
+                })
+                .catch((e) => onToast(e instanceof Error ? e.message : String(e), "err"))
+                .finally(() => setBlockedEditId(null));
+            }}
+          />
+
+          {/* Waiting-for popover (#281) */}
+          {waitingEditId === t.id && (
+            <div className="absolute right-3 bottom-full z-20 mb-1 flex items-center gap-1.5 rounded-xl border border-ink-700 bg-ink-950 p-2 shadow-2xl">
+              <input
+                autoFocus
+                value={waitingText}
+                onChange={(e) => setWaitingText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const value = waitingText.trim();
+                    api
+                      .updateTask(t.id, { waiting_for: value || null })
+                      .then((updated) => {
+                        updateTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...updated } : x)));
+                        onTasksChanged();
+                        onToast(value ? `waiting on ${value}` : "cleared waiting-for");
+                      })
+                      .catch((err) => onToast(err instanceof Error ? err.message : String(err), "err"))
+                      .finally(() => setWaitingEditId(null));
+                  } else if (e.key === "Escape") setWaitingEditId(null);
+                }}
+                placeholder="waiting on…"
+                className="w-40 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-[11px] text-ink-100 outline-none"
+              />
+              <button
+                onClick={() => setWaitingEditId(null)}
+                className="text-[11px] text-ink-500 hover:text-ink-200"
+                aria-label="Cancel waiting-for edit"
+              >
+                ✕
+              </button>
+            </div>
           )}
 
           {/* @context chip (#283) */}
