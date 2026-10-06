@@ -5,6 +5,7 @@ import { AreaTrend, Bars, Ring, StackBar } from "./charts";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
 import { buildTagTree, flattenTagTree, tagMatches } from "./tagTree";
+import { inboxZeroProgress } from "./inboxZero";
 import { relTime } from "../time";
 import { activationProps } from "./a11y";
 import {
@@ -428,13 +429,7 @@ export default function Inbox({
   const inboxZero = useMemo(() => {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const todays = healthyNotes.filter((n) => new Date(n.created_at) >= startOfDay);
-    const filed = todays.filter((n) => n.review_state !== "raw" || n.status === "done").length;
-    return {
-      total: todays.length,
-      filed,
-      progress: todays.length ? filed / todays.length : 1,
-    };
+    return inboxZeroProgress(healthyNotes, startOfDay.getTime());
   }, [healthyNotes]);
 
   const reviewQueueCount = useMemo(
