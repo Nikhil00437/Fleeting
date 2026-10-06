@@ -202,6 +202,13 @@ class TodayLoad(BaseModel):
     capacity_min: int
 
 
+class FocusIn(BaseModel):
+    """#280: log real minutes spent. `minutes` is added to spent_min."""
+
+    minutes: int = Field(ge=1, le=24 * 60)
+    note: str | None = Field(default=None, max_length=200)
+
+
 class PlanDay(BaseModel):
     day: str
     workday: bool

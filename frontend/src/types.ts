@@ -85,6 +85,26 @@ export interface TodayLoad {
   capacity_min: number;
 }
 
+export interface PlanDay {
+  day: string;
+  workday: boolean;
+  capacity_min: number;
+  planned_min: number;
+  task_ids: string[];
+}
+
+export interface WeekPlan {
+  week_start: string;
+  days: PlanDay[];
+  unscheduled: string[];
+  totals: {
+    capacity_min: number;
+    planned_min: number;
+    over_capacity: boolean;
+    utilization: number;
+  };
+}
+
 export interface StreakData {
   current_streak: number;
   best_streak: number;

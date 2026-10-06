@@ -374,6 +374,10 @@ export default function TasksView({
     setTasks((prev) => updater(prev ?? []));
   };
 
+  // #280 focus timer: one task at a time, started from a row
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const [focusSeconds, setFocusSeconds] = useState(0);
+
   // #37 keyboard triage mode
   const [triage, setTriage] = useState(false);
   const [triageIndex, setTriageIndex] = useState(0);
@@ -614,6 +618,39 @@ export default function TasksView({
   // #37 keyboard-only triage: j/k move, x done, s someday, e edit, Esc exits.
   // Guards on triage being on and no text field focused, so typing "e" into the
   // quick-add box never reorders tasks.
+  // The focus timer is wall-clock, not a counter: the tick only redraws it,
+  // so a backgrounded tab does not lose minutes.
+  useEffect(() => {
+    if (!focusTaskId) return;
+    const startedAt = Date.now() - focusSeconds * 1000;
+    const id = window.setInterval(() => setFocusSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [focusTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function toggleFocus(t: TaskItem) {
+    if (focusTaskId === t.id) {
+      // Log whole minutes only — a 40-second session is noise, not work.
+      const minutes = Math.max(1, Math.round(focusSeconds / 60));
+      setFocusTaskId(null);
+      setFocusSeconds(0);
+      try {
+        const updated = await api.logFocus(t.id, minutes);
+        updateTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...updated } : x)));
+        onTasksChanged();
+        onToast(`logged ${minutes}m on "${t.text.slice(0, 40)}"`);
+      } catch (e) {
+        onToast(e instanceof Error ? e.message : String(e), "err");
+      }
+      return;
+    }
+    if (focusTaskId) {
+      onToast("stop the running timer first", "err");
+      return;
+    }
+    setFocusSeconds(0);
+    setFocusTaskId(t.id);
+  }
+
   useEffect(() => {
     if (!triage) return;
     const onKey = (ev: KeyboardEvent) => {
@@ -1551,6 +1588,26 @@ function BlockedPicker({
               </button>
             </div>
           )}
+
+          {/* #280 focus timer */}
+          <button
+            onClick={() => void toggleFocus(t)}
+            className={`font-mono text-[10.5px] transition-opacity ${
+              focusTaskId === t.id
+                ? "text-emerald-300"
+                : t.spent_min
+                  ? "text-ink-600 opacity-0 hover:text-emerald-300 group-hover:opacity-100"
+                  : "text-ink-600 opacity-0 hover:text-emerald-300 group-hover:opacity-100"
+            }`}
+            title={
+              focusTaskId === t.id
+                ? "Stop and log the time spent"
+                : `Start a focus timer${t.spent_min ? ` (${t.spent_min}m already logged)` : ""}`
+            }
+            aria-label={focusTaskId === t.id ? "Stop focus timer" : "Start focus timer"}
+          >
+            {focusTaskId === t.id ? `⏱ ${Math.floor(focusSeconds / 60)}:${String(focusSeconds % 60).padStart(2, "0")}` : `⏱${t.spent_min ? t.spent_min : ""}`}
+          </button>
 
           {/* #34: pin this task to the window you are in right now */}
           <button

@@ -666,3 +666,28 @@ def test_priority_inference_result_is_recorded(client, monkeypatch):
         asyncio.sleep(0.01)
     assert refreshed["priority"] == "P3"
     assert refreshed["priority_source"] == "inferred"
+
+
+def test_focus_timer_accumulates_real_minutes(client):
+    """#280: focus sessions add to spent_min rather than replacing it."""
+    task = client.post("/api/tasks", json={"text": "deep work"}).json()
+    after_first = client.post(f"/api/tasks/{task['id']}/focus", json={"minutes": 25}).json()
+    assert after_first["spent_min"] == 25
+    after_second = client.post(f"/api/tasks/{task['id']}/focus", json={"minutes": 15}).json()
+    assert after_second["spent_min"] == 40
+
+
+def test_focus_rejects_zero_and_missing_tasks(client):
+    task = client.post("/api/tasks", json={"text": "nope"}).json()
+    assert client.post(f"/api/tasks/{task['id']}/focus", json={"minutes": 0}).status_code == 422
+    assert client.post("/api/tasks/nosuch/focus", json={"minutes": 10}).status_code == 404
+
+
+def test_spent_minutes_count_toward_day_load(client):
+    """#32/#280: time logged in the focus timer reduces today's capacity."""
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    task = client.post("/api/tasks", json={"text": "focused work", "due_date": today, "estimate_min": 60}).json()
+    client.post(f"/api/tasks/{task['id']}/toggle")  # completed today, logs time
+    client.post(f"/api/tasks/{task['id']}/focus", json={"minutes": 30})
+    load = client.get("/api/tasks/today").json()["load"]
+    assert load["spent_min"] == 30

@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..models import (
+    FocusIn,
     QuickAddIn,
     QuickAddOut,
     QuickAddParseView,
@@ -197,6 +198,24 @@ def get_today(request: Request) -> TodayOut:
         load=result["load"],
         streak=StreakOut(**whatnow.build_streaks(tasks, now=now)),
     )
+
+
+@router.post("/{task_id}/focus", response_model=TaskOut)
+def log_focus(task_id: str, body: FocusIn, request: Request) -> TaskOut:
+    """#280: add real minutes to a task's spent_min.
+
+    Additive rather than a set: a task worked in three sittings accumulates,
+    and the focus log is the only honest record of time actually spent. The
+    day-load meter (#32) reads this column.
+    """
+    st = request.app.state.st
+    task = st.db.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "task not found")
+    updated = st.db.update_task(task_id, {"spent_min": (task.get("spent_min") or 0) + body.minutes})
+    assert updated is not None
+    st.bus.publish("task.updated", updated)
+    return TaskOut(**updated)
 
 
 @router.get("/plan", response_model=WeekPlan)
