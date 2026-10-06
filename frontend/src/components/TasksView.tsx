@@ -266,6 +266,7 @@ export async function updateTaskTextAction(
 export async function createQuickTaskAction(
   data: {
     text: string;
+    /** undefined = no explicit choice; the parser's priority then wins. */
     priority?: TaskPriority;
     due_date?: string | null;
     repo?: string | null;
@@ -278,13 +279,24 @@ export async function createQuickTaskAction(
   const trimmed = data.text.trim();
   if (!trimmed) return;
   try {
-    const created = await api.createTask({
-      ...data,
+    // #278: the backend lifts dates ("by friday"), @contexts, #repos and p1
+    // out of the line; the explicit selects above only override when set.
+    const res = await api.quickAdd({
       text: trimmed,
+      priority: data.priority,
+      due_date: data.due_date ?? null,
+      repo: data.repo ?? null,
+      note_id: data.note_id,
     });
-    setTasks((prev) => [created, ...(prev ?? [])]);
+    setTasks((prev) => [res.task, ...(prev ?? [])]);
     onTasksChanged();
-    onToast("task created");
+
+    const bits: string[] = [];
+    const due = res.task.due_date ?? res.parsed.due_date;
+    if (due) bits.push(`due ${formatDueDate(due).label.toLowerCase()}`);
+    if (res.task.context) bits.push(`@${res.task.context}`);
+    if (res.task.repo) bits.push(`+${res.task.repo}`);
+    onToast(bits.length ? `task created · ${bits.join(" · ")}` : "task created");
   } catch (e) {
     onToast(e instanceof Error ? e.message : String(e), "err");
   }
@@ -366,7 +378,8 @@ export default function TasksView({
       await createQuickTaskAction(
         {
           text: trimmed,
-          priority: newTaskPriority,
+          // P2 means "no explicit choice" — let the parser's priority win.
+          priority: newTaskPriority !== "P2" ? newTaskPriority : undefined,
           repo: newTaskRepo || null,
           due_date: newTaskDueDate || null,
         },
@@ -742,7 +755,7 @@ export default function TasksView({
                     void handleCreateTask();
                   }
                 }}
-                placeholder="Add a new task or action item…"
+                placeholder="Add a task — “call dentist tomorrow 3pm #health @errands p1”"
                 className="h-9 flex-1 rounded-xl border border-ink-800 bg-ink-950/90 px-3 text-xs text-ink-100 placeholder-ink-500 outline-none transition-colors focus:border-ember-500/50"
               />
               <button

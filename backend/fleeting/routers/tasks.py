@@ -7,9 +7,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..models import TaskCreateIn, TaskOut, TaskUpdateIn
+from ..models import QuickAddIn, QuickAddOut, QuickAddParseView, TaskCreateIn, TaskOut, TaskUpdateIn
 from ..services import markdown
 from ..services.repos import discover_git_repos
+from ..services.task_text import parse_quick_add
 
 log = logging.getLogger("fleeting.tasks")
 
@@ -78,6 +79,42 @@ def create_task(body: TaskCreateIn, request: Request) -> TaskOut:
     st.bus.publish("task.created", task)
     _sync_vault_and_notify_note(st, task["note_id"])
     return TaskOut(**task)
+
+
+@router.post("/quick-add", response_model=QuickAddOut)
+def quick_add_task(body: QuickAddIn, request: Request) -> QuickAddOut:
+    """#278: natural-language quick-add. The parser lifts what it recognises
+    out of the text; explicitly provided fields win over parsed ones."""
+    st = request.app.state.st
+    parsed = parse_quick_add(body.text)
+
+    task_data = {
+        "text": parsed.text or body.text,
+        "list": body.list,
+        "due_date": body.due_date or parsed.due_date,
+        "priority": body.priority or parsed.priority or "P2",
+        "repo": body.repo or parsed.repo,
+        "context": body.context or parsed.context,
+    }
+    if body.note_id:
+        task_data["note_id"] = body.note_id
+
+    try:
+        task = st.db.insert_task(task_data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    st.bus.publish("task.created", task)
+    _sync_vault_and_notify_note(st, task.get("note_id"))
+    return QuickAddOut(
+        task=TaskOut(**task),
+        parsed=QuickAddParseView(
+            text=parsed.text,
+            due_date=parsed.due_date,
+            context=parsed.context,
+            repo=parsed.repo,
+            priority=parsed.priority,
+        ),
+    )
 
 
 @router.get("/repos")

@@ -7,6 +7,7 @@ import type {
   TagCount,
   TaskItem,
   TaskPriority,
+  QuickAddResult,
   RepoInfo,
   HealthStatus,
   ConnectionTest,
@@ -270,6 +271,17 @@ export const api = {
     repo?: string | null;
     note_id?: string;
   }) => req<TaskItem>("/tasks", { method: "POST", body: JSON.stringify(data) }),
+
+  /** #278 natural-language quick-add; explicit fields override parsed ones. */
+  quickAdd: (data: {
+    text: string;
+    priority?: TaskPriority | null;
+    due_date?: string | null;
+    repo?: string | null;
+    context?: string | null;
+    note_id?: string;
+    list?: "inbox" | "someday";
+  }) => req<QuickAddResult>("/tasks/quick-add", { method: "POST", body: JSON.stringify(data) }),
 
   deleteTask: (id: string) => req<{ ok: boolean; id: string }>(`/tasks/${id}`, { method: "DELETE" }),
 

@@ -490,3 +490,32 @@ def test_task_planning_field_validation(client):
 
     resp = client.post("/api/tasks", json={"text": "Bad list", "list": "later"})
     assert resp.status_code == 422
+
+
+def test_quick_add_parses_natural_language(client):
+    resp = client.post("/api/tasks/quick-add", json={"text": "call dentist tomorrow 3pm #health"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["task"]["text"] == "call dentist 3pm"
+    assert data["task"]["due_date"] == (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    assert data["task"]["repo"] == "health"
+    assert data["parsed"]["due_date"] == data["task"]["due_date"]
+
+
+def test_quick_add_explicit_fields_beat_parsed(client):
+    resp = client.post(
+        "/api/tasks/quick-add",
+        json={"text": "call dentist tomorrow", "due_date": "2026-11-01", "priority": "P1"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["task"]["due_date"] == "2026-11-01"
+    assert data["task"]["priority"] == "P1"
+
+
+def test_quick_add_plain_text_stays_verbatim(client):
+    resp = client.post("/api/tasks/quick-add", json={"text": "a plain thought"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["task"]["text"] == "a plain thought"
+    assert data["task"]["due_date"] is None

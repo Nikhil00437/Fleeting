@@ -23,6 +23,7 @@ vi.mock("../../api", () => ({
     toggleTask: vi.fn(),
     updateTask: vi.fn(),
     createTask: vi.fn(),
+    quickAdd: vi.fn(),
     deleteTask: vi.fn(),
     taskRepos: vi.fn(),
     note: vi.fn(),
@@ -370,7 +371,7 @@ describe("TasksView Component & Helpers", () => {
       expect(currentList.find((t) => t.id === task.id)?.text).toBe("New title for task");
     });
 
-    it("createQuickTaskAction calls api.createTask and adds new item", async () => {
+    it("createQuickTaskAction calls api.quickAdd and adds new item", async () => {
       const created: TaskItem = {
         id: "task-new",
         note_id: "inbox",
@@ -383,7 +384,10 @@ describe("TasksView Component & Helpers", () => {
         created_at: "2026-10-01T12:00:00Z",
         completed_at: null,
       };
-      vi.mocked(api.createTask).mockResolvedValue(created);
+      vi.mocked(api.quickAdd).mockResolvedValue({
+        task: created,
+        parsed: { text: created.text, due_date: created.due_date, context: null, repo: created.repo, priority: "P1" },
+      });
 
       let currentList = [...mockTasks];
       const setList = (fn: (prev: TaskItem[]) => TaskItem[]) => {
@@ -405,11 +409,12 @@ describe("TasksView Component & Helpers", () => {
         onToast
       );
 
-      expect(api.createTask).toHaveBeenCalledWith({
+      expect(api.quickAdd).toHaveBeenCalledWith({
         text: "Brand new created task",
         priority: "P1",
         due_date: "2026-10-05",
         repo: "fleeting",
+        note_id: undefined,
       });
       expect(onTasksChanged).toHaveBeenCalled();
       expect(currentList[0].id).toBe("task-new");

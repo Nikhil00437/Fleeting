@@ -168,6 +168,31 @@ class TaskCreateIn(BaseModel):
     _check_follow_up = _validate_plan_date("follow_up_at")
 
 
+class QuickAddIn(BaseModel):
+    """#278: one line of natural language; explicit fields beat parsed ones."""
+
+    text: str = Field(min_length=1, max_length=2000)
+    note_id: str | None = None
+    priority: Literal["P1", "P2", "P3"] | None = None
+    due_date: str | None = None
+    repo: str | None = None
+    context: str | None = None
+    list: Literal["inbox", "someday"] = "inbox"
+
+
+class QuickAddParseView(BaseModel):
+    text: str
+    due_date: str | None = None
+    context: str | None = None
+    repo: str | None = None
+    priority: str | None = None
+
+
+class QuickAddOut(BaseModel):
+    task: TaskOut
+    parsed: QuickAddParseView
+
+
 class TaskUpdateIn(BaseModel):
     text: str | None = Field(default=None, min_length=1, max_length=2000)
     done: bool | None = None

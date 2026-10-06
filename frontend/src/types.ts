@@ -64,6 +64,20 @@ export type TaskPriority = "P1" | "P2" | "P3";
 
 export type TaskList = "inbox" | "someday";
 
+/** What the quick-add parser recognised in one line of text (#278). */
+export interface QuickAddParsed {
+  text: string;
+  due_date: string | null;
+  context: string | null;
+  repo: string | null;
+  priority: string | null;
+}
+
+export interface QuickAddResult {
+  task: TaskItem;
+  parsed: QuickAddParsed;
+}
+
 export interface TaskItem {
   id: string;
   note_id: string;
