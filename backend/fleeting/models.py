@@ -188,6 +188,25 @@ class QuickAddParseView(BaseModel):
     priority: str | None = None
 
 
+class TodayLoad(BaseModel):
+    estimated_min: int
+    spent_min: int
+    capacity_min: int
+
+
+class TodayOut(BaseModel):
+    """#30 Today view / #33 next action — one backend ranking, two views."""
+
+    day: str
+    overdue: list[TaskOut]
+    due_today: list[TaskOut]
+    waiting: list[TaskOut]
+    completed_today: list[TaskOut]
+    next_action: TaskOut | None = None
+    up_next: list[TaskOut] = []
+    load: TodayLoad
+
+
 class QuickAddOut(BaseModel):
     task: TaskOut
     parsed: QuickAddParseView

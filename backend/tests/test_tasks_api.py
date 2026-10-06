@@ -519,3 +519,23 @@ def test_quick_add_plain_text_stays_verbatim(client):
     data = resp.json()
     assert data["task"]["text"] == "a plain thought"
     assert data["task"]["due_date"] is None
+
+
+def test_today_endpoint(client):
+    st = client.app.state.st
+    today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    st.db.insert_task({"text": "overdue thing", "due_date": yesterday})
+    st.db.insert_task({"text": "due now", "due_date": today, "estimate_min": 30})
+    st.db.insert_task({"text": "future", "due_date": "2027-01-01"})
+
+    resp = client.get("/api/tasks/today")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["day"] == today
+    assert [t["text"] for t in data["overdue"]] == ["overdue thing"]
+    assert [t["text"] for t in data["due_today"]] == ["due now"]
+    assert data["next_action"]["text"] in ("overdue thing", "due now")
+    assert data["load"]["estimated_min"] == 30
+    assert data["load"]["capacity_min"] > 0

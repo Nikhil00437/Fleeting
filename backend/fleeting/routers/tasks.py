@@ -7,8 +7,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..models import QuickAddIn, QuickAddOut, QuickAddParseView, TaskCreateIn, TaskOut, TaskUpdateIn
-from ..services import markdown
+from ..models import QuickAddIn, QuickAddOut, QuickAddParseView, TaskCreateIn, TaskOut, TaskUpdateIn, TodayOut
+from ..services import markdown, whatnow
 from ..services.repos import discover_git_repos
 from ..services.task_text import parse_quick_add
 
@@ -114,6 +114,39 @@ def quick_add_task(body: QuickAddIn, request: Request) -> QuickAddOut:
             repo=parsed.repo,
             priority=parsed.priority,
         ),
+    )
+
+
+@router.get("/today", response_model=TodayOut)
+def get_today(request: Request) -> TodayOut:
+    """#30/#33: the day's work and the next action, one ranking for both."""
+    st = request.app.state.st
+    from ..db import datetime_now_local
+
+    now = datetime_now_local()
+    current_session = st.activity.current_session() if st.activity else None
+    current_title = None
+    if current_session:
+        # Window titles carry repo names and often context words — the one
+        # signal #33's ranking borrows from "recent activity".
+        current_title = " ".join(
+            x for x in (current_session.get("app_class"), current_session.get("title")) if x
+        )
+    result = whatnow.build_today(
+        st.db.list_tasks(status="all", limit=1000),
+        now=now,
+        capacity_min=st.cfg.tasks.daily_capacity_min,
+        current_title=current_title,
+    )
+    return TodayOut(
+        day=result["day"],
+        overdue=[TaskOut(**t) for t in result["overdue"]],
+        due_today=[TaskOut(**t) for t in result["due_today"]],
+        waiting=[TaskOut(**t) for t in result["waiting"]],
+        completed_today=[TaskOut(**t) for t in result["completed_today"]],
+        next_action=TaskOut(**result["next_action"]) if result["next_action"] else None,
+        up_next=[TaskOut(**t) for t in result["up_next"]],
+        load=result["load"],
     )
 
 

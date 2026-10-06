@@ -12,6 +12,7 @@ import NoteDrawer from "./components/NoteDrawer";
 import SearchView from "./components/SearchView";
 import SettingsView from "./components/SettingsView";
 import TasksView from "./components/TasksView";
+import TodayView from "./components/TodayView";
 import TimelineView from "./components/TimelineView";
 import ReportsView from "./components/ReportsView";
 import CaptureHud from "./components/CaptureHud";
@@ -21,6 +22,7 @@ import DictationView from "./components/DictationView";
 import {
  ActivityIcon,
  BotIcon,
+ CalendarIcon,
  ClockIcon,
  CpuIcon,
  MicIcon,
@@ -37,6 +39,7 @@ import type { Note, Stats, WhisperProgress } from "./types";
 
 type View =
   | "inbox"
+  | "today"
   | "timeline"
   | "reports"
   | "tasks"
@@ -300,6 +303,7 @@ export default function App() {
     setView("search");
     setTimeout(() => searchRef.current?.focus(), 30);
    } else if (e.key === "i") setView("inbox");
+   else if (e.key === "y") setView("today");
    else if (e.key === "t") setView("tasks");
    else if (e.key === "a") setView("assistant");
    else if (e.key === "l") setView("timeline");
@@ -363,6 +367,12 @@ export default function App() {
   hint: string;
  }> = [
   {
+   id: "today",
+   label: "Today",
+   icon: <CalendarIcon className="h-4 w-4 text-emerald-400" />,
+   hint: "y",
+  },
+  {
    id: "inbox",
    label: "Inbox",
    icon: <TextIcon className="h-4 w-4" />,
@@ -408,6 +418,14 @@ export default function App() {
     icon: <SparkIcon className="h-4 w-4 text-ember-400" />,
     shortcut: "N",
     run: () => setTimeout(() => captureRef.current?.focus(), 20),
+   },
+   {
+    id: "nav:today",
+    title: "Go to Today",
+    sub: "Next action, due work and day load",
+    icon: <CalendarIcon className="h-4 w-4 text-emerald-400" />,
+    shortcut: "Y",
+    run: () => setView("today"),
    },
    {
     id: "nav:inbox",
@@ -931,6 +949,14 @@ export default function App() {
         onNoteDeleted={removeNote}
        />
       ))}
+     {view === "today" && (
+      <TodayView
+       refreshKey={tasksKey}
+       onToast={toast}
+       onOpenNote={setSelectedId}
+       onTasksChanged={refreshStats}
+      />
+     )}
      {view === "timeline" && <TimelineView onToast={toast} refreshKey={timelineKey} />}
      {view === "reports" && <ReportsView onToast={toast} refreshKey={timelineKey} />}
      {view === "tasks" && (

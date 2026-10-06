@@ -122,6 +122,13 @@ class NotesConfig:
 
 
 @dataclass
+class TasksConfig:
+    # #32/#442: the day-load bar and the weekly planner divide planned task
+    # estimates by this budget. Focus hours, not clock hours.
+    daily_capacity_min: int = 240
+
+
+@dataclass
 class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
@@ -131,6 +138,7 @@ class Config:
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     activity: ActivityConfig = field(default_factory=ActivityConfig)
     notes: NotesConfig = field(default_factory=NotesConfig)
+    tasks: TasksConfig = field(default_factory=TasksConfig)
 
 
 # Sections that map to dataclass fields, used for (de)serialization.
@@ -143,6 +151,7 @@ _SECTIONS: dict[str, type] = {
     "notifications": NotificationsConfig,
     "activity": ActivityConfig,
     "notes": NotesConfig,
+    "tasks": TasksConfig,
 }
 
 

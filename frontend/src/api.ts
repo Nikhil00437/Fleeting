@@ -8,6 +8,7 @@ import type {
   TaskItem,
   TaskPriority,
   QuickAddResult,
+  TodayData,
   RepoInfo,
   HealthStatus,
   ConnectionTest,
@@ -282,6 +283,9 @@ export const api = {
     note_id?: string;
     list?: "inbox" | "someday";
   }) => req<QuickAddResult>("/tasks/quick-add", { method: "POST", body: JSON.stringify(data) }),
+
+  /** #30/#33: Today buckets, next action and day load from one ranking. */
+  today: () => req<TodayData>("/tasks/today"),
 
   deleteTask: (id: string) => req<{ ok: boolean; id: string }>(`/tasks/${id}`, { method: "DELETE" }),
 

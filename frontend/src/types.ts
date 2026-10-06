@@ -78,6 +78,24 @@ export interface QuickAddResult {
   parsed: QuickAddParsed;
 }
 
+/** #30/#33: the Today view payload — buckets + next action + day load. */
+export interface TodayLoad {
+  estimated_min: number;
+  spent_min: number;
+  capacity_min: number;
+}
+
+export interface TodayData {
+  day: string;
+  overdue: TaskItem[];
+  due_today: TaskItem[];
+  waiting: TaskItem[];
+  completed_today: TaskItem[];
+  next_action: TaskItem | null;
+  up_next: TaskItem[];
+  load: TodayLoad;
+}
+
 export interface TaskItem {
   id: string;
   note_id: string;
