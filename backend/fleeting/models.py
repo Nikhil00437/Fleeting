@@ -202,6 +202,19 @@ class TodayLoad(BaseModel):
     capacity_min: int
 
 
+class TaskExportIn(BaseModel):
+    """#40: choose the format and whether the file lands in the vault."""
+
+    format: Literal["todo", "markdown"] = "markdown"
+    include_done: bool = True
+
+
+class TaskExportOut(BaseModel):
+    content: str
+    filename: str
+    path: str | None = None
+
+
 class WeeklyReview(BaseModel):
     """#38 weekly review: what slipped, what landed, what to decide about."""
 

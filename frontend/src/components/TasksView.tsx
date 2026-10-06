@@ -5,6 +5,7 @@ import {
   CalendarIcon,
   CheckIcon,
   EditIcon,
+  ExportIcon,
   FolderIcon,
   GitCommitIcon,
   ListIcon,
@@ -931,6 +932,22 @@ export default function TasksView({
           </button>
         </div>
 
+        {/* #40 export */}
+        <button
+          onClick={() => void runExport("markdown")}
+          className="flex items-center gap-1.5 rounded-xl border border-ink-800/90 bg-ink-950/85 px-2.5 py-1 text-xs text-ink-400 transition-all hover:text-ink-200"
+          title="Export tasks as a Markdown checklist (#40)"
+        >
+          <ExportIcon className="h-3 w-3" /> Export
+        </button>
+        <button
+          onClick={() => void runExport("todo")}
+          className="rounded-xl border border-ink-800/90 bg-ink-950/85 px-2 py-1 text-[10px] font-mono text-ink-500 transition-all hover:text-ink-300"
+          title="Export as todo.txt"
+        >
+          .txt
+        </button>
+
         {/* #37 keyboard triage toggle */}
         <button
           onClick={() => {
@@ -1349,6 +1366,23 @@ function BlockedPicker({
     </div>
   );
 }
+
+  /** #40: fetch the export and drop it in the downloads folder. */
+  async function runExport(format: "todo" | "markdown") {
+    try {
+      const res = await api.exportTasks(format);
+      const blob = new Blob([res.content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      onToast(res.path ? `exported — also filed at ${res.path}` : `exported ${res.filename}`);
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
 
   /** #34: record the live window as the place this task can be done. */
   async function pinToCurrentWindow(t: TaskItem) {

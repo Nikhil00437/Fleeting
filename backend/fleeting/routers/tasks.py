@@ -16,13 +16,15 @@ from ..models import (
     QuickAddParseView,
     StreakOut,
     TaskCreateIn,
+    TaskExportIn,
+    TaskExportOut,
     TaskOut,
     WeeklyReview,
     TaskUpdateIn,
     TodayOut,
     WeekPlan,
 )
-from ..services import calendar_svc, llm, markdown, whatnow
+from ..services import calendar_svc, llm, markdown, task_export, whatnow
 from ..services.planner import plan_week
 from ..services.repos import discover_git_repos
 from ..services.task_text import parse_quick_add
@@ -200,6 +202,43 @@ def get_today(request: Request) -> TodayOut:
         load=result["load"],
         streak=StreakOut(**whatnow.build_streaks(tasks, now=now)),
     )
+
+
+@router.post("/export", response_model=TaskExportOut)
+def export_tasks(body: TaskExportIn, request: Request) -> TaskExportOut:
+    """#40: render every task as todo.txt or a Markdown checklist.
+
+    Always returns the text; when the vault is enabled it is also written
+    next to the notes so the checklist is browsable like everything else.
+    """
+    st = request.app.state.st
+    from ..config import expand_path
+
+    today = calendar_svc.today(calendar_svc.current_tz()).isoformat()
+    all_tasks = st.db.list_tasks(status="all", limit=2000)
+    open_tasks = [t for t in all_tasks if not t["done"] and t.get("list", "inbox") == "inbox"]
+    done = [t for t in all_tasks if t["done"]] if body.include_done else []
+
+    if body.format == "todo":
+        content = task_export.render_todo_txt(open_tasks, done)
+        filename = "todo.txt"
+    else:
+        content = task_export.render_markdown(open_tasks, done, day=today)
+        filename = "Tasks.md"
+
+    path: str | None = None
+    if st.cfg.paths.vault_sync:
+        try:
+            vault = expand_path(st.cfg.paths.vault_dir)
+            vault.mkdir(parents=True, exist_ok=True)
+            target = vault / filename
+            tmp = target.with_name(target.name + ".tmp")
+            tmp.write_text(content, encoding="utf-8")
+            tmp.replace(target)
+            path = str(target)
+        except OSError as exc:
+            log.warning("task export could not be written to the vault: %s", exc)
+    return TaskExportOut(content=content, filename=filename, path=path)
 
 
 @router.get("/review", response_model=WeeklyReview)

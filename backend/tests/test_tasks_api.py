@@ -710,3 +710,25 @@ def test_weekly_review_splits_carry_over_this_week_and_done(client):
     assert [t["text"] for t in review["completed"]] == ["landed"]
     assert review["stats"]["carry_over"] == 1
     assert review["stats"]["completed"] == 1
+
+
+def test_task_export_returns_content_and_writes_to_vault(client):
+    """#40: export renders in both formats and lands in the vault."""
+    client.post("/api/tasks", json={"text": "exported task", "priority": "P1"})
+
+    md = client.post("/api/tasks/export", json={"format": "markdown"}).json()
+    assert "exported task" in md["content"]
+    assert md["filename"] == "Tasks.md"
+    assert md["path"] and md["path"].endswith("Tasks.md")
+
+    todo = client.post("/api/tasks/export", json={"format": "todo"}).json()
+    assert "(A) exported task" in todo["content"]
+    assert todo["filename"] == "todo.txt"
+
+    from pathlib import Path
+
+    assert "exported task" in Path(md["path"]).read_text()
+
+
+def test_task_export_rejects_unknown_format(client):
+    assert client.post("/api/tasks/export", json={"format": "csv"}).status_code == 422

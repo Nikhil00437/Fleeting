@@ -303,6 +303,13 @@ export const api = {
   weekPlan: () => req<WeekPlan>("/tasks/plan"),
 
   /** #38 weekly review input: slipped / due this week / closed. */
+  /** #40: render tasks as todo.txt or a Markdown checklist (also files it in the vault). */
+  exportTasks: (format: "todo" | "markdown" = "markdown") =>
+    req<{ content: string; filename: string; path: string | null }>("/tasks/export", {
+      method: "POST",
+      body: JSON.stringify({ format }),
+    }),
+
   weeklyReview: () =>
     req<{
       week_start: string;
