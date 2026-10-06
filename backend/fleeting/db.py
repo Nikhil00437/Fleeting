@@ -269,6 +269,20 @@ MIGRATIONS: list[str] = [
       created_at TEXT NOT NULL
     );
     """,
+    # v15 — #24 attachments: files live under data/attachments/{note_id}/ and
+    # the rows travel with their note (CASCADE on purge).
+    """
+    CREATE TABLE note_attachments (
+      id TEXT PRIMARY KEY,
+      note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      path TEXT NOT NULL,
+      mime TEXT,
+      size INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_note_attachments_note ON note_attachments(note_id);
+    """,
 ]
 
 
@@ -540,6 +554,62 @@ class Database:
             {"nid": note_id, "cap": self.VERSIONS_PER_NOTE},
         )
 
+    def insert_attachment(self, note_id: str, filename: str, path: str, mime: str | None, size: int) -> dict:
+        att_id = new_id()
+        self.execute(
+            "INSERT INTO note_attachments (id, note_id, filename, path, mime, size, created_at) "
+            "VALUES (:id, :note_id, :filename, :path, :mime, :size, :created_at)",
+            {
+                "id": att_id,
+                "note_id": note_id,
+                "filename": filename,
+                "path": path,
+                "mime": mime,
+                "size": size,
+                "created_at": now_iso(),
+            },
+        )
+        self.commit()
+        return self.get_attachment(att_id)  # type: ignore[return-value]
+
+    def get_attachment(self, att_id: str) -> dict | None:
+        row = self.execute("SELECT * FROM note_attachments WHERE id = ?", (att_id,)).fetchone()
+        return dict(row) if row else None
+
+    def attachments_for(self, note_id: str) -> list[dict]:
+        rows = self.execute(
+            "SELECT * FROM note_attachments WHERE note_id = ? ORDER BY created_at ASC",
+            (note_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_attachment(self, att_id: str) -> dict | None:
+        att = self.get_attachment(att_id)
+        if att:
+            self.execute("DELETE FROM note_attachments WHERE id = ?", (att_id,))
+            self.commit()
+        return att
+
+    def _unlink_attachments(self, note_id: str, attachments_root: str | Path | None) -> None:
+        rows = self.execute(
+            "SELECT path FROM note_attachments WHERE note_id = ?", (note_id,)
+        ).fetchall()
+        if not rows:
+            return
+        self.execute("DELETE FROM note_attachments WHERE note_id = ?", (note_id,))
+        if attachments_root is None:
+            return
+        root = Path(attachments_root).resolve()
+        for r in rows:
+            try:
+                target = Path(r["path"]).resolve()
+                if target.is_relative_to(root):
+                    target.unlink(missing_ok=True)
+                else:
+                    log.warning("refusing to unlink attachment outside %s: %s", root, target)
+            except OSError:
+                log.warning("could not remove attachment %s", r["path"], exc_info=True)
+
     _WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]")
 
     def _sync_note_links(self, note_id: str, raw_text: str) -> None:
@@ -682,15 +752,19 @@ class Database:
             row = self.execute("SELECT COUNT(*) AS c FROM notes").fetchone()
         return int(row["c"])
 
-    def delete_note(self, note_id: str, audio_root: str | Path | None = None) -> dict | None:
-        """Hard-delete a note, its tasks, and its audio file.
+    def delete_note(
+        self, note_id: str, audio_root: str | Path | None = None,
+        attachments_root: str | Path | None = None,
+    ) -> dict | None:
+        """Hard-delete a note, its tasks, its audio file and its attachments.
 
         This is now the *purge* path — the API's DELETE trashes first (#274).
-        Only paths inside `audio_root` are unlinked, so a hand-edited or
-        imported row cannot delete something outside it.
+        Only paths inside the given roots are unlinked, so a hand-edited or
+        imported row cannot delete something outside them.
         """
         note = self.get_note(note_id)
         if note:
+            self._unlink_attachments(note_id, attachments_root)
             self.execute("DELETE FROM tasks WHERE note_id = ?", (note_id,))
             self.execute("DELETE FROM notes WHERE id = ?", (note_id,))
             self.commit()
@@ -715,7 +789,12 @@ class Database:
         ).fetchall()
         return [_row_to_note(r) for r in rows]
 
-    def purge_expired_trash(self, retention_days: int, audio_root: str | Path | None = None) -> list[dict]:
+    def purge_expired_trash(
+        self,
+        retention_days: int,
+        audio_root: str | Path | None = None,
+        attachments_root: str | Path | None = None,
+    ) -> list[dict]:
         """Hard-delete notes trashed more than `retention_days` ago.
 
         Returns the purged notes so callers can publish `note.deleted` and
@@ -731,7 +810,9 @@ class Database:
         ).fetchall()
         purged = []
         for r in rows:
-            note = self.delete_note(r["id"], audio_root=audio_root)
+            note = self.delete_note(
+                r["id"], audio_root=audio_root, attachments_root=attachments_root
+            )
             if note:
                 purged.append(note)
         if purged:

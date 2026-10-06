@@ -247,7 +247,9 @@ def purge_note(note_id: str, request: Request) -> dict:
     note = st.db.get_note(note_id)
     if not note:
         raise HTTPException(404, "note not found")
-    note = st.db.delete_note(note_id, audio_root=st.cfg_audio_dir())
+    note = st.db.delete_note(
+        note_id, audio_root=st.cfg_audio_dir(), attachments_root=st.cfg_attachments_dir()
+    )
     assert note
     markdown.remove_note(st.cfg.paths, note)
     st.bus.publish("note.deleted", {"id": note_id})
@@ -274,7 +276,9 @@ def trash_empty(request: Request) -> dict:
     st = request.app.state.st
     purged = 0
     for note in st.db.trashed_notes(limit=1000):
-        st.db.delete_note(note["id"], audio_root=st.cfg_audio_dir())
+        st.db.delete_note(
+            note["id"], audio_root=st.cfg_audio_dir(), attachments_root=st.cfg_attachments_dir()
+        )
         markdown.remove_note(st.cfg.paths, note)
         st.bus.publish("note.deleted", {"id": note["id"]})
         purged += 1
@@ -422,6 +426,91 @@ def get_note_audio(note_id: str, request: Request):
     ext = Path(audio).suffix.lower().lstrip(".")
     media = {"webm": "audio/webm", "ogg": "audio/ogg", "oga": "audio/ogg", "wav": "audio/wav", "mp3": "audio/mpeg", "m4a": "audio/mp4", "mp4": "audio/mp4", "opus": "audio/opus"}.get(ext, "application/octet-stream")
     return FileResponse(audio, media_type=media)
+
+
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB — screenshots/PDFs, not video
+
+
+@router.post("/{note_id}/attachments")
+async def upload_attachment(note_id: str, request: Request) -> dict:
+    """#24: attach a file (drag-and-drop in the UI) onto a note.
+
+    Filenames are reduced to their basename and stored under
+    attachments/{note_id}/ — a crafted "../" name cannot escape the root.
+    """
+    import uuid
+    from pathlib import Path
+
+    from starlette.datastructures import UploadFile
+
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, "note not found")
+    form = await request.form()
+    upload = form.get("file")
+    if not isinstance(upload, UploadFile):
+        raise HTTPException(422, "multipart form must carry a 'file' field")
+    data = await upload.read()
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(413, "attachment exceeds the 25 MB limit")
+    if not data:
+        raise HTTPException(422, "empty file")
+
+    safe_name = Path(upload.filename or "unnamed").name or "unnamed"
+    target_dir = Path(st.cfg_attachments_dir()) / note_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    # Prefix with a short uuid so two "Screenshot.png" uploads cannot collide.
+    target = target_dir / f"{uuid.uuid4().hex[:8]}-{safe_name}"
+    target.write_bytes(data)
+
+    att = st.db.insert_attachment(
+        note_id, safe_name, str(target), upload.content_type, len(data)
+    )
+    st.bus.publish("note.updated", st.db.get_note(note_id) or note)
+    return att
+
+
+@router.get("/{note_id}/attachments")
+def list_attachments(note_id: str, request: Request) -> list[dict]:
+    st = request.app.state.st
+    if not st.db.get_note(note_id):
+        raise HTTPException(404, "note not found")
+    return st.db.attachments_for(note_id)
+
+
+@router.get("/{note_id}/attachments/{att_id}/file")
+def download_attachment(note_id: str, att_id: str, request: Request):
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    st = request.app.state.st
+    att = st.db.get_attachment(att_id)
+    if not att or att["note_id"] != note_id or not Path(att["path"]).exists():
+        raise HTTPException(404, "attachment not found")
+    return FileResponse(
+        att["path"],
+        media_type=att["mime"] or "application/octet-stream",
+        filename=att["filename"],
+    )
+
+
+@router.delete("/{note_id}/attachments/{att_id}")
+def remove_attachment(note_id: str, att_id: str, request: Request) -> dict:
+    from pathlib import Path
+
+    st = request.app.state.st
+    att = st.db.get_attachment(att_id)
+    if not att or att["note_id"] != note_id:
+        raise HTTPException(404, "attachment not found")
+    st.db.delete_attachment(att_id)
+    try:
+        Path(att["path"]).unlink(missing_ok=True)
+    except OSError:
+        log.warning("could not remove attachment file %s", att["path"], exc_info=True)
+    st.bus.publish("note.updated", st.db.get_note(note_id) or {"id": note_id})
+    return {"ok": True, "id": att_id}
 
 
 @router.post("/{note_id}/export")

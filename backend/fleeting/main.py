@@ -265,7 +265,9 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             from .services import markdown
 
             try:
-                for purged in db.purge_expired_trash(trash_days, audio_root=st.cfg_audio_dir()):
+                for purged in db.purge_expired_trash(
+                    trash_days, audio_root=st.cfg_audio_dir(), attachments_root=st.cfg_attachments_dir()
+                ):
                     markdown.remove_note(cfg.paths, purged)
                     bus.publish("note.deleted", {"id": purged["id"]})
             except Exception:

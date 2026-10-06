@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../markdown";
 import { fmtDuration, relTime, timeOfDay } from "../time";
@@ -8,6 +8,7 @@ import {
   CheckIcon,
   CopyIcon,
   ExportIcon,
+  FileIcon,
   LinkIcon,
   MicIcon,
   PinIcon,
@@ -27,6 +28,14 @@ import { errorMessage } from "./settingsState";
 import { NOTE_COLORS, colorHex } from "./noteColors";
 import { diffStats, diffText } from "./textDiff";
 import type { Collection, Note } from "../types";
+
+interface Attachment {
+  id: string;
+  filename: string;
+  size: number;
+  mime: string | null;
+  created_at: string;
+}
 
 interface NoteVersion {
   id: number;
@@ -128,6 +137,9 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
   const [regenOpen, setRegenOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [allCollections, setAllCollections] = useState<Collection[] | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[] | null>(null);
+  const [dropActive, setDropActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [regenModels, setRegenModels] = useState<string[] | null>(null);
   const [versions, setVersions] = useState<NoteVersion[] | null>(null);
   const [versionError, setVersionError] = useState<string | null>(null);
@@ -145,6 +157,8 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
     setLinks(null);
     setNoteCollections(null);
     setPickerOpen(false);
+    setAttachments(null);
+    setDropActive(false);
     setNewTaskText("");
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -183,6 +197,38 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
       success: until ? `Snoozed until ${until.replace("_", " ")}` : "Note woken up",
       onDone: (updated) => onUpdate(updated),
     });
+  }
+
+  // #24: attachment list travels with the note.
+  useEffect(() => {
+    api
+      .attachments(note.id)
+      .then(setAttachments)
+      .catch(() => setAttachments([]));
+  }, [note.id]);
+
+  async function uploadFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    for (const f of list) {
+      try {
+        await api.uploadAttachment(note.id, f);
+      } catch (e) {
+        onToast(errorMessage(e), "err");
+      }
+    }
+    if (list.length) {
+      api.attachments(note.id).then(setAttachments).catch(() => {});
+      onToast(list.length === 1 ? "Attachment added" : `${list.length} attachments added`);
+    }
+  }
+
+  async function removeAttachment(attId: string) {
+    try {
+      await api.deleteAttachment(note.id, attId);
+      setAttachments((list) => (list ?? []).filter((a) => a.id !== attId));
+    } catch (e) {
+      onToast(errorMessage(e), "err");
+    }
   }
 
   // #22: fetch links lazily but keep them fresh — raw_text is the link source.
@@ -818,6 +864,80 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* #24: Attachments — drag files here or use the picker */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDropActive(true);
+              }}
+              onDragLeave={() => setDropActive(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDropActive(false);
+                if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
+              }}
+              className={`rounded-xl border border-dashed p-3 transition-colors ${
+                dropActive
+                  ? "border-ember-400/60 bg-ember-500/10"
+                  : "border-white/12 bg-white/[0.01]"
+              }`}
+            >
+              <div className="mb-1.5 flex items-center justify-between">
+                <p className="micro-label !text-[9.5px]">Attachments</p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-ink-500 transition-colors hover:text-ink-200"
+                  title="Attach a file"
+                  aria-label="Attach a file"
+                >
+                  +
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files?.length) void uploadFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+              {!attachments || attachments.length === 0 ? (
+                <p className="text-[11px] text-ink-500">
+                  Drop files here — they stay on this machine, attached to the note.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {attachments.map((a) => (
+                    <li key={a.id} className="group flex items-center gap-2 rounded-lg bg-ink-950/50 px-2.5 py-1.5">
+                      <FileIcon className="h-3 w-3 shrink-0 text-ink-400" />
+                      <a
+                        href={api.attachmentUrl(note.id, a.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="min-w-0 flex-1 truncate text-[11.5px] text-ink-200 hover:text-ember-200"
+                        title={a.filename}
+                      >
+                        {a.filename}
+                      </a>
+                      <span className="shrink-0 font-mono text-[9.5px] text-ink-500">
+                        {a.size > 1024 * 1024 ? `${(a.size / 1048576).toFixed(1)} MB` : `${Math.ceil(a.size / 1024)} KB`}
+                      </span>
+                      <button
+                        onClick={() => void removeAttachment(a.id)}
+                        className="shrink-0 text-ink-500 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-300"
+                        title="Remove attachment"
+                        aria-label={`Remove ${a.filename}`}
+                      >
+                        <XIcon className="h-3 w-3" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {/* Raw Content / Transcript */}

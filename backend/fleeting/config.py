@@ -33,6 +33,7 @@ DATA_DIR = xdg("XDG_DATA_HOME", Path.home() / ".local" / "share")
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 DB_PATH = DATA_DIR / "fleeting.db"
 AUDIO_DIR = DATA_DIR / "audio"
+ATTACHMENTS_DIR = DATA_DIR / "attachments"
 LOG_PATH = DATA_DIR / "fleeting.log"
 
 
@@ -330,6 +331,7 @@ def ensure_token(cfg: Config) -> str:
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 

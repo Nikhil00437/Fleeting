@@ -98,6 +98,25 @@ export const api = {
 
   createSamples: () => req<{ ok: boolean; created: number }>("/samples", { method: "POST" }),
 
+  attachments: (noteId: string) =>
+    req<{ id: string; filename: string; size: number; mime: string | null; created_at: string }[]>(
+      `/notes/${noteId}/attachments`,
+    ),
+
+  uploadAttachment: (noteId: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return req<{ id: string; filename: string }>(`/notes/${noteId}/attachments`, {
+      method: "POST",
+      body: fd,
+    });
+  },
+
+  deleteAttachment: (noteId: string, attId: string) =>
+    req<{ ok: boolean }>(`/notes/${noteId}/attachments/${attId}`, { method: "DELETE" }),
+
+  attachmentUrl: (noteId: string, attId: string) => `/api/notes/${noteId}/attachments/${attId}/file`,
+
   collection: (id: string) => req<Collection & { notes: Note[] }>(`/collections/${id}`),
 
   createCollection: (data: { name: string; kind?: string; description?: string; query?: Record<string, unknown> }) =>

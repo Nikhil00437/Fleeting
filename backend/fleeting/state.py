@@ -33,3 +33,9 @@ class AppState:
 
         ensure_dirs()
         return AUDIO_DIR
+
+    def cfg_attachments_dir(self):
+        from .config import ATTACHMENTS_DIR, ensure_dirs
+
+        ensure_dirs()
+        return ATTACHMENTS_DIR

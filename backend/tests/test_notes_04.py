@@ -304,3 +304,67 @@ def test_rules_fire_inside_the_pipeline(client):
     note = _note(client, "auto starred please")
     fresh = client.get(f"/api/notes/{note['id']}").json()
     assert fresh["starred"] is True
+
+
+# ---- #24 attachments -----------------------------------------------------
+
+def test_attachment_upload_list_download_delete(client):
+    note = _note(client, "attach a file to me")
+    files = {"file": ("notes.txt", b"meeting agenda here", "text/plain")}
+
+    r = client.post(f"/api/notes/{note['id']}/attachments", files=files)
+    assert r.status_code == 200
+    att = r.json()
+    assert att["filename"] == "notes.txt"
+    assert att["size"] == 19
+
+    listed = client.get(f"/api/notes/{note['id']}/attachments").json()
+    assert [a["id"] for a in listed] == [att["id"]]
+
+    dl = client.get(f"/api/notes/{note['id']}/attachments/{att['id']}/file")
+    assert dl.status_code == 200
+    assert dl.content == b"meeting agenda here"
+
+    assert client.delete(f"/api/notes/{note['id']}/attachments/{att['id']}").json()["ok"] is True
+    assert client.get(f"/api/notes/{note['id']}/attachments").json() == []
+    assert client.get(
+        f"/api/notes/{note['id']}/attachments/{att['id']}/file"
+    ).status_code == 404
+
+
+def test_attachment_rejects_empty_and_oversize(client):
+    note = _note(client, "attachment limits")
+    r = client.post(
+        f"/api/notes/{note['id']}/attachments",
+        files={"file": ("empty.txt", b"", "text/plain")},
+    )
+    assert r.status_code == 422
+
+    big = b"x" * (25 * 1024 * 1024 + 1)
+    r = client.post(
+        f"/api/notes/{note['id']}/attachments",
+        files={"file": ("big.bin", big, "application/octet-stream")},
+    )
+    assert r.status_code == 413
+
+
+def test_attachment_paths_cannot_escape_and_purge_cleans_files(client, tmp_path):
+    import pathlib
+
+    note = _note(client, "purge my attachments")
+    st = client.app.state.st
+
+    r = client.post(
+        f"/api/notes/{note['id']}/attachments",
+        files={"file": ("../../escape.txt", b"nope", "text/plain")},
+    )
+    assert r.status_code == 200
+    stored = pathlib.Path(r.json()["path"])
+    root = pathlib.Path(st.cfg_attachments_dir()).resolve()
+    assert stored.is_relative_to(root), "attachment escaped the attachments root"
+
+    # purge removes the file from disk and the row from the table
+    client.delete(f"/api/notes/{note['id']}")
+    client.post(f"/api/notes/{note['id']}/purge")
+    assert not stored.exists()
+    assert st.db.attachments_for(note["id"]) == []
