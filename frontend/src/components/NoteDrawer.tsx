@@ -144,6 +144,8 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
   const [regenModels, setRegenModels] = useState<string[] | null>(null);
   const [versions, setVersions] = useState<NoteVersion[] | null>(null);
   const [versionError, setVersionError] = useState<string | null>(null);
+  const [cfKey, setCfKey] = useState("");
+  const [cfValue, setCfValue] = useState("");
   const [links, setLinks] = useState<{ outgoing: Note[]; backlinks: Note[] } | null>(null);
   const [noteCollections, setNoteCollections] = useState<Collection[] | null>(null);
 
@@ -746,6 +748,75 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
                 </div>
               </div>
             )}
+
+            {/* #471: ad-hoc custom fields not covered by a template schema */}
+            <div className="glass rounded-xl p-3.5">
+              <p className="micro-label mb-2 !text-[9.5px]">Custom fields</p>
+              {(() => {
+                const covered = new Set((templateFields ?? []).map((f) => f.name));
+                const extra = Object.entries(note.fields ?? {}).filter(([k]) => !covered.has(k));
+                return (
+                  <>
+                    {extra.length > 0 && (
+                      <div className="mb-2 space-y-1.5">
+                        {extra.map(([k, v]) => (
+                          <div key={k} className="flex items-center gap-2">
+                            <span className="w-24 shrink-0 truncate font-mono text-[10px] text-ink-500">{k}</span>
+                            <input
+                              type={typeof v === "number" ? "number" : /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? "date" : "text"}
+                              value={String(v ?? "")}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const next = { ...(note.fields ?? {}), [k]: typeof v === "number" && raw !== "" ? Number(raw) : raw };
+                                void patch({ fields: next } as Partial<Note>);
+                              }}
+                              className="w-full rounded-lg border border-white/[0.08] bg-ink-950 px-2 py-1 text-[11.5px] text-ink-100 outline-none focus:border-ember-500/50"
+                            />
+                            <button
+                              onClick={() => {
+                                const next = { ...(note.fields ?? {}) };
+                                delete next[k];
+                                void patch({ fields: next } as Partial<Note>);
+                              }}
+                              className="text-ink-500 hover:text-red-300 text-xs"
+                              title={`Remove ${k}`}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={cfKey}
+                        onChange={(e) => setCfKey(e.target.value)}
+                        placeholder="name"
+                        className="w-24 rounded-lg border border-white/[0.08] bg-ink-950 px-2 py-1 text-[11.5px] text-ink-100 outline-none placeholder-ink-600"
+                      />
+                      <input
+                        value={cfValue}
+                        onChange={(e) => setCfValue(e.target.value)}
+                        placeholder="value"
+                        className="min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-ink-950 px-2 py-1 text-[11.5px] text-ink-100 outline-none placeholder-ink-600"
+                      />
+                      <button
+                        onClick={() => {
+                          const k = cfKey.trim();
+                          if (!k) return;
+                          void patch({ fields: { ...(note.fields ?? {}), [k]: cfValue } } as Partial<Note>);
+                          setCfKey("");
+                          setCfValue("");
+                        }}
+                        className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-ink-200 hover:border-ember-400/40"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
 
             {/* Interactive Action Items Checklist + Inline Creator */}
             <div className="glass rounded-xl p-3.5">
