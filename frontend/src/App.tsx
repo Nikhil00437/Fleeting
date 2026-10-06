@@ -14,6 +14,7 @@ import SettingsView from "./components/SettingsView";
 import TasksView from "./components/TasksView";
 import TodayView from "./components/TodayView";
 import ReviewView from "./components/ReviewView";
+import PlannerView from "./components/PlannerView";
 import TimelineView from "./components/TimelineView";
 import ReportsView from "./components/ReportsView";
 import CaptureHud from "./components/CaptureHud";
@@ -25,6 +26,7 @@ import {
  BotIcon,
  CalendarIcon,
  RefreshIcon,
+ GridIcon,
  ClockIcon,
  CpuIcon,
  MicIcon,
@@ -43,6 +45,7 @@ type View =
   | "inbox"
   | "today"
   | "review"
+  | "planner"
   | "timeline"
   | "reports"
   | "tasks"
@@ -308,6 +311,7 @@ export default function App() {
    } else if (e.key === "i") setView("inbox");
    else if (e.key === "y") setView("today");
   else if (e.key === "w") setView("review");
+  else if (e.key === "b") setView("planner");
    else if (e.key === "t") setView("tasks");
    else if (e.key === "a") setView("assistant");
    else if (e.key === "l") setView("timeline");
@@ -381,6 +385,12 @@ export default function App() {
    label: "Review",
    icon: <RefreshIcon className="h-4 w-4 text-iris-400" />,
    hint: "w",
+  },
+  {
+   id: "planner",
+   label: "Planner",
+   icon: <GridIcon className="h-4 w-4 text-cyan-400" />,
+   hint: "b",
   },
   {
    id: "inbox",
@@ -960,6 +970,9 @@ export default function App() {
        />
       ))}
      {view === "review" && <ReviewView onToast={toast} />}
+     {view === "planner" && (
+      <PlannerView onToast={toast} refreshKey={tasksKey} onTasksChanged={refreshStats} />
+     )}
      {view === "today" && (
       <TodayView
        refreshKey={tasksKey}
