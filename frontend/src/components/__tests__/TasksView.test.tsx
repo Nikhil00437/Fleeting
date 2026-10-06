@@ -14,6 +14,7 @@ import TasksView, {
   createQuickTaskAction,
   dropSortOrder,
   parseBlockedBy,
+  triageCursor,
 } from "../TasksView";
 import type { TaskItem, RepoInfo } from "../../types";
 import { api } from "../../api";
@@ -474,5 +475,26 @@ describe("parseBlockedBy", () => {
     expect(parseBlockedBy(null)).toEqual([]);
     expect(parseBlockedBy(undefined)).toEqual([]);
     expect(parseBlockedBy("")).toEqual([]);
+  });
+});
+
+/** #37 keyboard triage: the cursor is the only stateful part. */
+describe("triageCursor", () => {
+  it("moves and clamps at both ends", () => {
+    expect(triageCursor(0, { kind: "move", delta: 1 }, 3)).toBe(1);
+    expect(triageCursor(2, { kind: "move", delta: 1 }, 3)).toBe(2);
+    expect(triageCursor(1, { kind: "move", delta: -1 }, 3)).toBe(0);
+    expect(triageCursor(0, { kind: "move", delta: -1 }, 3)).toBe(0);
+  });
+  it("stays put when the row under it leaves the list", () => {
+    expect(triageCursor(1, { kind: "done", id: "a" }, 3)).toBe(1);
+    expect(triageCursor(2, { kind: "done", id: "a" }, 2)).toBe(1);
+  });
+  it("holds position for edit and escape", () => {
+    expect(triageCursor(1, { kind: "edit", id: "a" }, 3)).toBe(1);
+    expect(triageCursor(1, { kind: "escape" }, 3)).toBe(1);
+  });
+  it("survives an empty list", () => {
+    expect(triageCursor(0, { kind: "move", delta: 1 }, 0)).toBe(0);
   });
 });

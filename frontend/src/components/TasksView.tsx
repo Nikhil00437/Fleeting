@@ -13,6 +13,7 @@ import {
   SparkIcon,
   TaskIcon,
   XIcon,
+  ZapIcon,
 } from "./Icons";
 import { Ring, StackBar } from "./charts";
 import type { RepoInfo, TaskItem, TaskPriority } from "../types";
@@ -189,6 +190,29 @@ export function parseBlockedBy(csv?: string | null): string[] {
     .filter(Boolean);
 }
 
+/** #37 keyboard triage: one decision per key, one row at a time. */
+export type TriageAction =
+  | { kind: "move"; delta: number }
+  | { kind: "done"; id: string }
+  | { kind: "someday"; id: string }
+  | { kind: "edit"; id: string }
+  | { kind: "escape" };
+
+/** Cursor after an action, clamped to the visible rows. */
+export function triageCursor(
+  cursor: number,
+  action: TriageAction,
+  length: number
+): number {
+  if (length === 0) return 0;
+  if (action.kind === "done" || action.kind === "someday") {
+    // The row leaves the list; stay put so the next one slides up under you.
+    return Math.min(cursor, length - 1);
+  }
+  if (action.kind === "move") return Math.max(0, Math.min(cursor + action.delta, length - 1));
+  return cursor;
+}
+
 export async function toggleTaskAction(
   task: TaskItem,
   setTasks: (updater: (prev: TaskItem[]) => TaskItem[]) => void,
@@ -349,6 +373,10 @@ export default function TasksView({
   const updateTasks = (updater: (prev: TaskItem[]) => TaskItem[]) => {
     setTasks((prev) => updater(prev ?? []));
   };
+
+  // #37 keyboard triage mode
+  const [triage, setTriage] = useState(false);
+  const [triageIndex, setTriageIndex] = useState(0);
 
   // #277 dependency editor / #281 waiting-for editor, one open popover at a time
   const [blockedEditId, setBlockedEditId] = useState<string | null>(null);
@@ -563,6 +591,7 @@ export default function TasksView({
 
   const displayList = showingCompletedFallback ? completedFallback : filtered;
 
+
   // Stream sorting
   const streamSorted = useMemo(() => {
     return sortTasksStream(displayList);
@@ -577,6 +606,88 @@ export default function TasksView({
   const noteGrouped = useMemo(() => {
     return groupTasksByNote(displayList);
   }, [displayList]);
+
+  const triageRows = triage ? streamSorted : [];
+  const triageLeaves = triageRows.filter((t) => !t.parent_id);
+  const triageRowId = triage ? (triageLeaves[triageIndex]?.id ?? null) : null;
+
+  // #37 keyboard-only triage: j/k move, x done, s someday, e edit, Esc exits.
+  // Guards on triage being on and no text field focused, so typing "e" into the
+  // quick-add box never reorders tasks.
+  useEffect(() => {
+    if (!triage) return;
+    const onKey = (ev: KeyboardEvent) => {
+      const el = ev.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
+        if (ev.key === "Escape") (el as HTMLElement).blur();
+        return;
+      }
+      const rows = triageLeaves;
+      const current = rows[triageIndex];
+      const act = ((): TriageAction | null => {
+        switch (ev.key) {
+          case "j":
+            return { kind: "move", delta: 1 };
+          case "k":
+            return { kind: "move", delta: -1 };
+          case "x":
+            return current ? { kind: "done", id: current.id } : null;
+          case "s":
+            return current ? { kind: "someday", id: current.id } : null;
+          case "e":
+            return current ? { kind: "edit", id: current.id } : null;
+          case "Escape":
+            return { kind: "escape" };
+          default:
+            return null;
+        }
+      })();
+      if (!act) return;
+      ev.preventDefault();
+      if (act.kind === "escape") {
+        setTriage(false);
+        return;
+      }
+      if (act.kind === "move") {
+        setTriageIndex((c) => triageCursor(c, act, rows.length));
+        return;
+      }
+      if (act.kind === "done") {
+        void toggleTaskAction(
+          rows[triageIndex],
+          updateTasks,
+          onTasksChanged,
+          onToast
+        );
+        return;
+      }
+      if (act.kind === "someday") {
+        const next = (rows[triageIndex].list ?? "inbox") === "someday" ? "inbox" : "someday";
+        api
+          .updateTask(rows[triageIndex].id, { list: next })
+          .then((updated) => {
+            updateTasks((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)));
+            onTasksChanged();
+            onToast(next === "someday" ? "moved to someday" : "back in the inbox");
+          })
+          .catch((e) => onToast(e instanceof Error ? e.message : String(e), "err"));
+        return;
+      }
+      if (act.kind === "edit") {
+        setEditingTaskId(rows[triageIndex].id);
+        setEditText(rows[triageIndex].text);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [triage, triageIndex, triageRows, updateTasks, onTasksChanged, onToast]);
+
+  useEffect(() => {
+    if (triage && triageIndex > 0 && triageIndex >= triageLeaves.length) {
+      setTriageIndex(0);
+    }
+  }, [triage, triageIndex, triageLeaves.length]);
+
 
   if (tasks === null) {
     return (
@@ -783,6 +894,22 @@ export default function TasksView({
           </button>
         </div>
 
+        {/* #37 keyboard triage toggle */}
+        <button
+          onClick={() => {
+            setTriage((v) => !v);
+            setTriageIndex(0);
+          }}
+          className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs transition-all ${
+            triage
+              ? "border-ember-400/50 bg-ember-500/20 text-ember-300"
+              : "border-ink-800/90 bg-ink-950/85 text-ink-400 hover:text-ink-200"
+          }`}
+          title="Keyboard triage: j/k move · x done · s someday · e edit · Esc exit"
+        >
+          <ZapIcon className="h-3 w-3" /> Triage
+        </button>
+
         {/* Search Input */}
         <div className="relative ml-auto w-56">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
@@ -957,6 +1084,19 @@ export default function TasksView({
             </div>
             <span className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-1 font-mono text-[10.5px] font-semibold text-emerald-300">
               100% Complete
+            </span>
+          </div>
+        )}
+
+        {triage && (
+          <div className="flex items-center gap-3 rounded-xl border border-ember-400/25 bg-ember-500/8 px-3 py-1.5 font-mono text-[10.5px] text-ember-300/90">
+            <span>j/k move</span>
+            <span>x done</span>
+            <span>s someday</span>
+            <span>e edit</span>
+            <span>esc exit</span>
+            <span className="ml-auto text-ink-500">
+              {triageLeaves.length === 0 ? "nothing to triage" : `${Math.min(triageIndex + 1, triageLeaves.length)}/${triageLeaves.length}`}
             </span>
           </div>
         )}
@@ -1178,6 +1318,7 @@ function BlockedPicker({
     const isEditing = editingTaskId === t.id;
     const dueInfo = formatDueDate(t.due_date, undefined, isDone);
     const isDatePickerOpen = activeDatePickerTaskId === t.id;
+    const isTriageCursor = triageRowId === t.id;
 
     const prioBadgeClass =
       t.priority === "P1"
@@ -1191,7 +1332,7 @@ function BlockedPicker({
         key={t.id}
         className={`glass card-hover rise group relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5 transition-all ${
           isDone ? "opacity-75" : ""
-        }`}
+        } ${isTriageCursor ? "ring-1 ring-ember-400/70" : ""}`}
       >
         {/* Checkbox */}
         <button
