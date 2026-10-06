@@ -126,6 +126,12 @@ class TasksConfig:
     # #32/#442: the day-load bar and the weekly planner divide planned task
     # estimates by this budget. Focus hours, not clock hours.
     daily_capacity_min: int = 240
+    # #443: IANA zone for "today". Empty = the machine's local zone.
+    timezone: str = ""
+    # #444: extra non-working days as YYYY-MM-DD, comma-separated. Weekends
+    # are already excluded; this is for public holidays that should not break
+    # streaks or fill the planner.
+    holidays: str = ""
 
 
 @dataclass

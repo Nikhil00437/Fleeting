@@ -13,7 +13,7 @@ title); nothing here touches request state, which is what makes it testable.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 _PRIORITY_SCORE = {"P1": 0, "P2": 10, "P3": 20}
@@ -171,14 +171,22 @@ def build_streaks(
     tasks: list[dict[str, Any]],
     now: datetime,
     days: int = 112,
+    holidays: set[date] | None = None,
 ) -> dict[str, Any]:
     """#39 completion streaks and a heatmap, from completed_at dates alone.
 
     A day counts as active when at least one task was completed on it. The
     current streak walks back from today; today not being done yet does not
     break it (the day isn't over), but a missed *yesterday* does.
+
+    #444: weekends and configured holidays are skipped when walking the
+    streak — nobody owes completions on Christmas, so a gap there must not
+    read as a broken run.
     """
+    from .calendar_svc import is_workday
+
     today = now.strftime("%Y-%m-%d")
+    hol = holidays or set()
     counts: dict[str, int] = {}
     for t in tasks:
         if not t.get("done"):
@@ -198,9 +206,15 @@ def build_streaks(
     cursor = now
     if counts.get(today, 0) == 0:
         cursor = cursor - timedelta(days=1)  # today is still open
-    while counts.get(cursor.strftime("%Y-%m-%d"), 0) > 0:
-        streak += 1
-        cursor = cursor - timedelta(days=1)
+    while True:
+        if not is_workday(cursor.date(), hol):
+            cursor = cursor - timedelta(days=1)  # #444: skip non-working days
+            continue
+        if counts.get(cursor.strftime("%Y-%m-%d"), 0) > 0:
+            streak += 1
+            cursor = cursor - timedelta(days=1)
+            continue
+        break
 
     # Best streak anywhere in the window.
     best = run = 0

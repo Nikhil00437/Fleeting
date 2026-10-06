@@ -112,6 +112,12 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         cfg = load_config()
     cfg = cfg or Config()
 
+    # #443/#444: pin the process-wide "today" and holiday set before any
+    # date query can run.
+    from .services import calendar_svc
+
+    calendar_svc.configure(cfg.tasks.timezone, cfg.tasks.holidays)
+
     db = Database(_db_path())
     db.migrate()
     bus = EventBus()

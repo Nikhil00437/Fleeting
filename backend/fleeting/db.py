@@ -18,7 +18,12 @@ from pathlib import Path
 
 
 def datetime_now_local() -> datetime:
-    return datetime.now().astimezone()
+    """#443: 'now' in the configured zone, so a capture at 23:30 UTC lands on
+    the planner's date, not the box's. Single choke point — every date query
+    in the db layer and the task services routes through here."""
+    from .services.calendar_svc import now as _cal_now
+
+    return _cal_now()
 
 log = logging.getLogger("fleeting.db")
 
