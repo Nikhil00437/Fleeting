@@ -1636,6 +1636,9 @@ class Database:
         repo: str | None = None,
         due: str | None = None,
         q: str | None = None,
+        list: str | None = None,
+        context: str | None = None,
+        waiting: bool | None = None,
         limit: int = 200,
         offset: int = 0,
     ) -> list[dict]:
@@ -1646,6 +1649,23 @@ class Database:
             where.append("t.done = 0")
         elif status in ("done", "completed"):
             where.append("t.done = 1")
+
+        # The default view is the actionable inbox: someday/maybe (#282) stays
+        # out of it until explicitly asked for. Waiting-for filtering (#281)
+        # is orthogonal — waiting items are still inbox work.
+        if list is None:
+            where.append("t.list = 'inbox'")
+        else:
+            where.append("t.list = :tlist")
+            params["tlist"] = _norm_task_list(list)
+        if waiting is True:
+            where.append("t.waiting_for IS NOT NULL")
+        elif waiting is False:
+            where.append("t.waiting_for IS NULL")
+
+        if context:
+            where.append("t.context = :ctx")
+            params["ctx"] = _norm_task_context(context)
 
         if priority:
             if priority.upper() in ("P1", "P2", "P3"):

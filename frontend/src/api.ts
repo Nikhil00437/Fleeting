@@ -238,6 +238,9 @@ export const api = {
           repo?: string;
           due?: string;
           q?: string;
+          list?: string;
+          context?: string;
+          waiting?: boolean;
           limit?: number;
           offset?: number;
         }
@@ -254,6 +257,9 @@ export const api = {
     if (params.repo) sp.set("repo", params.repo);
     if (params.due) sp.set("due", params.due);
     if (params.q) sp.set("q", params.q);
+    if (params.list) sp.set("list", params.list);
+    if (params.context) sp.set("context", params.context);
+    if (params.waiting !== undefined) sp.set("waiting", String(params.waiting));
     if (params.limit !== undefined) sp.set("limit", String(params.limit));
     if (params.offset !== undefined) sp.set("offset", String(params.offset));
     const query = sp.toString();

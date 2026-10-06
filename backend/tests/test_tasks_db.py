@@ -779,3 +779,33 @@ def test_sort_order_persists(db):
 
     moved = db.update_task(t2["id"], {"sort_order": 0.5})
     assert moved["sort_order"] == 0.5
+
+
+def test_list_tasks_list_context_waiting_filters(db):
+    """#282/#283/#281: someday stays out by default; context and waiting filter."""
+    db.insert_task({"text": "inbox ctx", "context": "@home"})
+    db.insert_task({"text": "inbox nocli"})
+    db.insert_task({"text": "someday item", "list": "someday"})
+    db.insert_task({"text": "waiting on x", "waiting_for": "x"})
+
+    # Default view: the actionable inbox — someday is scoped out, but
+    # waiting-for items are still inbox work (Today hides them, not Tasks).
+    texts = [t["text"] for t in db.list_tasks(status="all")]
+    assert texts == ["inbox ctx", "inbox nocli", "waiting on x"]
+
+    someday = db.list_tasks(status="all", list="someday")
+    assert [t["text"] for t in someday] == ["someday item"]
+
+    assert [t["text"] for t in db.list_tasks(status="all", context="home")] == ["inbox ctx"]
+    assert [t["text"] for t in db.list_tasks(status="all", context="@home")] == ["inbox ctx"]
+
+    assert [t["text"] for t in db.list_tasks(status="all", waiting=True)] == ["waiting on x"]
+
+    # waiting=False + no list override still scopes to the inbox.
+    assert db.list_tasks(status="all", waiting=False) == [
+        t for t in db.list_tasks(status="all") if t["text"] != "waiting on x"
+    ]
+
+    # "all lists" escape hatch.
+    everything = db.list_tasks(status="all", list="inbox")
+    assert len(everything) == 3

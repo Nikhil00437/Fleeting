@@ -330,8 +330,21 @@ export default function TasksView({
   const [repoFilter, setRepoFilter] = useState<string>(initialRepoFilter);
   const [query, setQuery] = useState(initialQuery);
 
+  // Distinct contexts in the loaded list, for the chip row (#283).
+  const contexts = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of tasks ?? []) if (t.context) set.add(t.context);
+    return [...set].sort();
+  }, [tasks]);
+
   // Grouping mode: stream ("flat"), "priority", "note"
   const [groupMode, setGroupMode] = useState<"flat" | "priority" | "note">(initialGroupMode);
+
+  // 0.5 planning filters: someday/maybe list (#282), @context chips (#283),
+  // waiting-for (#281). The fetch itself is list-scoped server-side.
+  const [viewList, setViewList] = useState<"inbox" | "someday">("inbox");
+  const [contextFilter, setContextFilter] = useState<string | null>(null);
+  const [waitingOnly, setWaitingOnly] = useState(false);
 
   // Quick task creator state
   const [newTaskText, setNewTaskText] = useState("");
@@ -351,7 +364,7 @@ export default function TasksView({
   useEffect(() => {
     let active = true;
     api
-      .tasks({ status: "all" })
+      .tasks({ status: "all", list: viewList })
       .then((res) => {
         if (active) setTasks(res);
       })
@@ -368,7 +381,7 @@ export default function TasksView({
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, viewList]);
 
   async function handleCreateTask() {
     const trimmed = newTaskText.trim();
@@ -423,6 +436,10 @@ export default function TasksView({
         if ((t.repo || "").toLowerCase() !== repoFilter.toLowerCase()) return false;
       }
 
+      // Waiting-for (#281) and @context (#283)
+      if (waitingOnly && !t.waiting_for) return false;
+      if (contextFilter && (t.context || "") !== contextFilter) return false;
+
       // Query
       if (q) {
         const matchText = t.text.toLowerCase().includes(q);
@@ -433,7 +450,7 @@ export default function TasksView({
 
       return true;
     });
-  }, [tasks, statusFilter, priorityFilter, dueFilter, repoFilter, query]);
+  }, [tasks, statusFilter, priorityFilter, dueFilter, repoFilter, query, contextFilter, waitingOnly]);
 
   // Completed fallback when zero open tasks match but completed tasks exist
   const completedFallback = useMemo(() => {
@@ -579,6 +596,64 @@ export default function TasksView({
             ))}
           </select>
         </div>
+
+        {/* List scope (#282): the actionable inbox vs the someday/maybe shelf */}
+        <div className="flex rounded-xl border border-ink-800/90 bg-ink-950/85 p-0.5 text-xs">
+          <button
+            onClick={() => setViewList("inbox")}
+            className={`rounded-lg px-2.5 py-1 transition-all ${
+              viewList === "inbox"
+                ? "bg-ember-500/20 font-medium text-ember-300"
+                : "text-ink-400 hover:text-ink-200"
+            }`}
+          >
+            Inbox
+          </button>
+          <button
+            onClick={() => setViewList("someday")}
+            className={`rounded-lg px-2.5 py-1 transition-all ${
+              viewList === "someday"
+                ? "bg-iris-500/20 font-medium text-iris-300"
+                : "text-ink-400 hover:text-ink-200"
+            }`}
+          >
+            Someday
+          </button>
+        </div>
+
+        {/* Waiting-for filter (#281) */}
+        <button
+          onClick={() => setWaitingOnly((v) => !v)}
+          aria-pressed={waitingOnly}
+          className={`rounded-xl border px-2.5 py-1.5 text-xs transition-colors ${
+            waitingOnly
+              ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+              : "border-ink-800/90 bg-ink-950/85 text-ink-400 hover:text-ink-200"
+          }`}
+          title="Show only tasks waiting on someone"
+        >
+          Waiting
+        </button>
+
+        {/* Context chips (#283) — derived from the tasks in the current list */}
+        {contexts.length > 0 && (
+          <div className="flex items-center gap-1">
+            {contexts.map((c) => (
+              <button
+                key={c}
+                onClick={() => setContextFilter(contextFilter === c ? null : c)}
+                aria-pressed={contextFilter === c}
+                className={`rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors ${
+                  contextFilter === c
+                    ? "border-iris-400/50 bg-iris-500/20 text-iris-200"
+                    : "border-ink-800/90 bg-ink-950/85 text-ink-400 hover:text-ink-200"
+                }`}
+              >
+                @{c}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Grouping Modes */}
         <div className="flex rounded-xl border border-ink-800/90 bg-ink-950/85 p-0.5 text-xs">
@@ -992,6 +1067,47 @@ export default function TasksView({
               {t.repo}
             </button>
           )}
+
+          {/* Waiting-for badge (#281) */}
+          {t.waiting_for && (
+            <span
+              className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
+              title={`Waiting for: ${t.waiting_for}`}
+            >
+              ⏳ {t.waiting_for}
+            </span>
+          )}
+
+          {/* @context chip (#283) */}
+          {t.context && (
+            <button
+              onClick={() => setContextFilter(contextFilter === t.context ? null : (t.context ?? null))}
+              className="rounded border border-ink-800 bg-ink-950/70 px-1.5 py-0.5 font-mono text-[10px] text-iris-300 hover:border-iris-400/50"
+              title={`Filter by @${t.context}`}
+            >
+              @{t.context}
+            </button>
+          )}
+
+          {/* Someday ⇄ Inbox (#282) */}
+          <button
+            onClick={() => {
+              const nextList = t.list === "someday" ? "inbox" : "someday";
+              api
+                .updateTask(t.id, { list: nextList })
+                .then(() => {
+                  updateTasks((prev) => prev.filter((x) => x.id !== t.id));
+                  onTasksChanged();
+                  onToast(nextList === "someday" ? "moved to someday" : "back in the inbox");
+                })
+                .catch((e) => onToast(e instanceof Error ? e.message : String(e), "err"));
+            }}
+            className="text-[11px] text-ink-600 opacity-0 transition-opacity hover:text-ink-300 group-hover:opacity-100"
+            title={t.list === "someday" ? "Move back to the inbox" : "Put on the someday/maybe shelf"}
+            aria-label={t.list === "someday" ? "Move to inbox" : "Move to someday"}
+          >
+            {t.list === "someday" ? "← inbox" : "→ someday"}
+          </button>
 
           {/* Due Date Pill / Quick Picker */}
           <div className="relative">
