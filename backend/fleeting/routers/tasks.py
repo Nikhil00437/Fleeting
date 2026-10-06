@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -18,7 +19,7 @@ from ..models import (
     TodayOut,
     WeekPlan,
 )
-from ..services import calendar_svc, markdown, whatnow
+from ..services import calendar_svc, llm, markdown, whatnow
 from ..services.planner import plan_week
 from ..services.repos import discover_git_repos
 from ..services.task_text import parse_quick_add
@@ -81,7 +82,9 @@ def list_tasks(
 
 @router.post("", response_model=TaskOut)
 @router.post("/", response_model=TaskOut, include_in_schema=False)
-def create_task(body: TaskCreateIn, request: Request) -> TaskOut:
+async def create_task(body: TaskCreateIn, request: Request) -> TaskOut:
+    # async so #31 can schedule background priority inference; the Database
+    # is thread-local by design, so serving this off the loop is harmless.
     st = request.app.state.st
     if body.note_id:
         note = st.db.get_note(body.note_id)
@@ -95,7 +98,34 @@ def create_task(body: TaskCreateIn, request: Request) -> TaskOut:
         raise HTTPException(400, str(e))
     st.bus.publish("task.created", task)
     _sync_vault_and_notify_note(st, task["note_id"])
+    # #31: only rank tasks whose priority nobody chose.
+    if task.get("priority_source") != "manual" and task["priority"] == "P2":
+        asyncio.create_task(_infer_priority_after_create(st, task))
     return TaskOut(**task)
+
+
+async def _infer_priority_after_create(st: Any, task: dict) -> None:
+    """#31: rank a newly created task in the background.
+
+    The request already returned — capture must stay instant — so inference
+    lands as a second event. `priority_source='inferred'` records that the
+    model chose this, which is what lets a later manual edit lock it (#31's
+    "override that sticks").
+    """
+    task_id = task["id"]
+    try:
+        priority = await llm.infer_priority(task["text"], st.cfg.llm)
+    except Exception:  # never let a ranking hiccup surface as a capture error
+        log.warning("priority inference failed for task %s", task_id, exc_info=True)
+        return
+    if priority is None:
+        return
+    current = st.db.get_task(task_id)
+    if current is None or current.get("priority_source") == "manual":
+        return  # the user re-ranked it while the model was thinking
+    updated = st.db.update_task(task_id, {"priority": priority, "priority_source": "inferred"})
+    if updated:
+        st.bus.publish("task.updated", updated)
 
 
 @router.post("/quick-add", response_model=QuickAddOut)
@@ -249,6 +279,12 @@ def update_task(task_id: str, body: TaskUpdateIn, request: Request) -> TaskOut:
     changes = body.model_dump(exclude_unset=True)
     if not changes:
         return TaskOut(**task)
+
+    # #31: touching the priority by hand marks it manual, which no later
+    # inference is allowed to overwrite. Sending priority_source explicitly
+    # wins (the caller is a migration or the inference path itself).
+    if "priority" in changes and "priority_source" not in changes:
+        changes["priority_source"] = "manual"
 
     try:
         updated = st.db.update_task(task_id, changes)

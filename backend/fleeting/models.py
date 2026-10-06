@@ -62,6 +62,10 @@ class TaskOut(ActionItem):
     follow_up_at: str | None = None
     recurrence: str | None = None
     sort_order: float = 0.0
+    # #31: 'manual' priorities survive re-inference
+    priority_source: str | None = None
+    # #34: the app/window where this task can be done
+    app_hint: str | None = None
 
 
 def _coerce_blocked_by(v: Any) -> Any:
@@ -119,6 +123,10 @@ class TaskCreateIn(BaseModel):
     waiting_for: str | None = None
     follow_up_at: str | None = None
     recurrence: str | None = Field(default=None, max_length=120)
+    # #31: set when the caller picked the priority by hand
+    priority_source: Literal["inferred", "manual"] | None = None
+    # #34: where this task can be done ("firefox", "Terminal", a window title)
+    app_hint: str | None = Field(default=None, max_length=200)
 
     @field_validator("priority", mode="before")
     @classmethod
@@ -269,6 +277,8 @@ class TaskUpdateIn(BaseModel):
     follow_up_at: str | None = None
     recurrence: str | None = Field(default=None, max_length=120)
     sort_order: float | None = None
+    priority_source: Literal["inferred", "manual"] | None = None
+    app_hint: str | None = Field(default=None, max_length=200)
 
     @field_validator("priority", mode="before")
     @classmethod

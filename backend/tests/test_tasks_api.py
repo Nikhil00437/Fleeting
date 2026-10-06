@@ -600,3 +600,69 @@ def test_week_plan_endpoint_excludes_blocked_and_reports_capacity(client):
     for d in data["days"]:
         if not d["workday"]:
             assert d["capacity_min"] == 0
+
+
+def test_manual_priority_is_marked_manual(client):
+    """#31: a hand-set priority is recorded as manual."""
+    task = client.post("/api/tasks", json={"text": "call the bank"}).json()
+    assert task["priority_source"] is None
+    updated = client.patch(f"/api/tasks/{task['id']}", json={"priority": "P1"}).json()
+    assert updated["priority"] == "P1"
+    assert updated["priority_source"] == "manual"
+
+
+def test_explicit_priority_source_is_respected(client):
+    task = client.post("/api/tasks", json={"text": "ship it", "priority": "P1", "priority_source": "manual"}).json()
+    assert task["priority_source"] == "manual"
+    assert task["priority"] == "P1"
+
+
+def test_app_hint_roundtrips(client):
+    """#34: link a task to the app where it can be done."""
+    task = client.post("/api/tasks", json={"text": "reply to Sam", "app_hint": "Slack"}).json()
+    assert task["app_hint"] == "Slack"
+    fetched = client.get(f"/api/tasks/{task['id']}").json()
+    assert fetched["app_hint"] == "Slack"
+
+
+def test_priority_inference_skips_manual_priorities(client, monkeypatch):
+    """#31: inference never overwrites a priority the user chose."""
+    import asyncio
+
+    st = client.app.state.st
+    calls: list[str] = []
+
+    async def fake_infer(text, cfg):
+        calls.append(text)
+        return "P1"
+
+    monkeypatch.setattr("fleeting.routers.tasks.llm.infer_priority", fake_infer)
+    task = client.post("/api/tasks", json={"text": "manual one", "priority": "P1", "priority_source": "manual"}).json()
+    client.post("/api/tasks", json={"text": "auto one"})
+    # Let the background inference settle.
+    for _ in range(50):
+        if calls:
+            break
+        asyncio.sleep(0.01)
+    assert calls == ["auto one"]
+    refreshed = st.db.get_task(task["id"])
+    assert refreshed["priority"] == "P1"
+    assert refreshed["priority_source"] == "manual"
+
+
+def test_priority_inference_result_is_recorded(client, monkeypatch):
+    """#31: an inferred priority lands as a task.updated event."""
+    import asyncio
+
+    async def fake_infer(text, cfg):
+        return "P3"
+
+    monkeypatch.setattr("fleeting.routers.tasks.llm.infer_priority", fake_infer)
+    task = client.post("/api/tasks", json={"text": "water the plants"}).json()
+    for _ in range(100):
+        refreshed = client.get(f"/api/tasks/{task['id']}").json()
+        if refreshed["priority"] == "P3":
+            break
+        asyncio.sleep(0.01)
+    assert refreshed["priority"] == "P3"
+    assert refreshed["priority_source"] == "inferred"

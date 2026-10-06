@@ -181,6 +181,59 @@ async def request_chat(
     return content
 
 
+PRIORITY_SYSTEM_PROMPT = (
+    "You triage a to-do item. Reply with JSON only: "
+    '{"priority": "P1"|"P2"|"P3"}. '
+    "P1 = time-critical today or blocking someone; "
+    "P2 = matters this week; P3 = whenever. "
+    "Judge only urgency and consequence, never length or tone."
+)
+
+
+async def infer_priority(text: str, cfg: LLMConfig) -> str | None:
+    """#31: ask the local model to rank a task. Returns None when it cannot.
+
+    Deliberately raises nothing: an unavailable model must leave the task at
+    P2, not fail the capture. Callers treat None as "no opinion".
+    """
+    if cfg.provider == "none" or not text.strip():
+        return None
+    base = normalize_base_url(cfg.base_url)
+    snippet = text[:400]
+    messages = [
+        {"role": "system", "content": PRIORITY_SYSTEM_PROMPT},
+        {"role": "user", "content": snippet},
+    ]
+    if cfg.provider in ("lmstudio", "custom"):
+        payload: dict = {
+            "model": cfg.model,
+            "messages": messages,
+            "temperature": 0,
+            "max_tokens": 32,
+            "response_format": {"type": "json_object"},
+        }
+        url = f"{base}/v1/chat/completions"
+    else:
+        payload = {
+            "model": cfg.model,
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "format": '{"priority": "P1|P2|P3"}',
+            "options": {"temperature": 0},
+        }
+        url = f"{base}/api/chat"
+    try:
+        content = await request_chat(
+            url, payload, cfg.timeout_secs, provider=cfg.provider, headers=auth_headers(cfg)
+        )
+    except LLMUnavailable:
+        return None
+    parsed = _parse_json_loose(content) or {}
+    value = str(parsed.get("priority", "")).strip().upper()
+    return value if value in ("P1", "P2", "P3") else None
+
+
 async def enrich(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
     """Return {title, summary, tags, action_items} from the local LLM.
 

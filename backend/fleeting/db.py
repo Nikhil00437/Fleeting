@@ -307,6 +307,15 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_tasks_list ON tasks(list);
     CREATE INDEX idx_tasks_parent_id ON tasks(parent_id);
     """,
+    # v17 — #31 priority provenance, #34 where a task can be done. Both are
+    # advisory metadata the task list reads but never overwrites: a manual
+    # priority (priority_source='manual') must survive re-inference, which is
+    # why provenance is stored rather than inferred at read time.
+    """
+    ALTER TABLE tasks ADD COLUMN priority_source TEXT;
+    ALTER TABLE tasks ADD COLUMN app_hint TEXT;
+    CREATE INDEX idx_tasks_priority_source ON tasks(priority_source);
+    """,
 ]
 
 
@@ -1457,10 +1466,12 @@ class Database:
             """
             INSERT INTO tasks (id, note_id, text, done, priority, due_date, repo, created_at, completed_at,
                                parent_id, blocked_by, estimate_min, spent_min, list, context,
-                               waiting_for, follow_up_at, recurrence, sort_order)
+                               waiting_for, follow_up_at, recurrence, sort_order,
+                               priority_source, app_hint)
             VALUES (:id, :note_id, :text, :done, :priority, :due_date, :repo, :created_at, :completed_at,
                     :parent_id, :blocked_by, :estimate_min, :spent_min, :list, :context,
-                    :waiting_for, :follow_up_at, :recurrence, :sort_order)
+                    :waiting_for, :follow_up_at, :recurrence, :sort_order,
+                    :priority_source, :app_hint)
             """,
             {
                 "id": task_id,
@@ -1482,6 +1493,9 @@ class Database:
                 "follow_up_at": _norm_task_date(task.get("follow_up_at")),
                 "recurrence": _norm_task_recurrence(task.get("recurrence")),
                 "sort_order": float(task.get("sort_order") or 0.0),
+                # #31: provenance is what makes a manual priority stick
+                "priority_source": _norm_task_priority_source(task.get("priority_source")),
+                "app_hint": _norm_task_text_field(task.get("app_hint")),
             },
         )
         self.commit()
@@ -1512,6 +1526,9 @@ class Database:
             "text", "priority", "due_date", "repo", "completed_at", "note_id",
             "parent_id", "blocked_by", "estimate_min", "spent_min", "list",
             "context", "waiting_for", "follow_up_at", "recurrence", "sort_order",
+            # #31/#34: whitelist lives here — a key missing from it is dropped
+            # silently and the PATCH looks like it did nothing.
+            "priority_source", "app_hint",
         ):
             if key in changes:
                 clean_changes[key] = changes[key]
@@ -1560,6 +1577,10 @@ class Database:
                 clean_changes["sort_order"] = float(clean_changes["sort_order"] or 0.0)
             except (TypeError, ValueError):
                 clean_changes["sort_order"] = 0.0
+        if "priority_source" in clean_changes:
+            clean_changes["priority_source"] = _norm_task_priority_source(clean_changes["priority_source"])
+        if "app_hint" in clean_changes:
+            clean_changes["app_hint"] = _norm_task_text_field(clean_changes["app_hint"])
 
         if "done" in changes:
             new_done = bool(changes["done"])
@@ -2216,6 +2237,8 @@ def _row_to_task(row: sqlite3.Row) -> dict:
         "follow_up_at": row["follow_up_at"],
         "recurrence": row["recurrence"],
         "sort_order": row["sort_order"] if row["sort_order"] is not None else 0.0,
+        "priority_source": row["priority_source"] if "priority_source" in row.keys() else None,
+        "app_hint": row["app_hint"] if "app_hint" in row.keys() else None,
     }
 
 
@@ -2223,6 +2246,18 @@ def _row_to_task(row: sqlite3.Row) -> dict:
 # anything not 'inbox' as out of the daily view, so a typo'd value would
 # silently strand tasks.
 TASK_LISTS = ("inbox", "someday")
+
+# #31: where a priority came from. 'manual' means the user set it, and no
+# later inference may overwrite it — that is the whole point of storing it.
+TASK_PRIORITY_SOURCES = ("inferred", "manual")
+
+
+def _norm_task_priority_source(value: object) -> str | None:
+    if value is None:
+        return None
+    v_str = str(value).strip().lower()
+    return v_str if v_str in TASK_PRIORITY_SOURCES else None
+
 
 _RECURRENCE_FREQS = ("DAILY", "WEEKLY", "MONTHLY", "YEARLY")
 _RECURRENCE_RE = re.compile(
