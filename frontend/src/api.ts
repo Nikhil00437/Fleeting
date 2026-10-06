@@ -277,6 +277,8 @@ export const api = {
     due_date?: string | null;
     repo?: string | null;
     note_id?: string;
+    parent_id?: string;
+    list?: "inbox" | "someday";
   }) => req<TaskItem>("/tasks", { method: "POST", body: JSON.stringify(data) }),
 
   /** #278 natural-language quick-add; explicit fields override parsed ones. */

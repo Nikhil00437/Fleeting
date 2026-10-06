@@ -38,6 +38,25 @@ export function cyclePriority(current: TaskPriority): TaskPriority {
   return "P1";
 }
 
+/**
+ * #29 drag-to-reorder: the sort_order for the dragged task when it takes
+ * `target`'s slot. Real-valued midpoints mean only the dragged row is
+ * written — neighbours never renumber.
+ */
+export function dropSortOrder(
+  dragged: TaskItem,
+  target: TaskItem,
+  siblings: TaskItem[]
+): number {
+  const rest = siblings.filter((t) => t.id !== dragged.id);
+  const idx = rest.findIndex((t) => t.id === target.id);
+  if (idx === -1) return target.sort_order ?? 0;
+  const before = idx > 0 ? rest[idx - 1] : null;
+  const prev = before ? (before.sort_order ?? 0) : (target.sort_order ?? 0) - 1;
+  const next = target.sort_order ?? 0;
+  return (prev + next) / 2;
+}
+
 export function toLocalDateString(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -330,6 +349,63 @@ export default function TasksView({
   const [repoFilter, setRepoFilter] = useState<string>(initialRepoFilter);
   const [query, setQuery] = useState(initialQuery);
 
+  // Top-level tasks with their subtasks attached (#29). Children render
+  // indented under their parent; siblings keep each other for reordering.
+  const attachChildren = (list: TaskItem[]) => {
+    const tops = list.filter((t) => !t.parent_id);
+    const kids = list.filter((t) => t.parent_id);
+    const byOrder = (a: TaskItem, b: TaskItem) =>
+      (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+      a.created_at.localeCompare(b.created_at);
+    return tops.map((t) => {
+      const children = kids
+        .filter((c) => c.parent_id === t.id)
+        .sort(byOrder);
+      return { task: t, children, siblings: tops };
+    });
+  };
+
+  const reorder = (dragged: TaskItem, target: TaskItem, siblings: TaskItem[]) => {
+    if (dragged.id === target.id) return;
+    const newOrder = dropSortOrder(dragged, target, siblings);
+    updateTasks((prev) =>
+      prev.map((t) => (t.id === dragged.id ? { ...t, sort_order: newOrder } : t))
+    );
+    api
+      .updateTask(dragged.id, { sort_order: newOrder })
+      .catch((e) => onToast(e instanceof Error ? e.message : String(e), "err"));
+  };
+
+  const createSubtask = async (parent: TaskItem) => {
+    const text = subtaskText.trim();
+    if (!text) {
+      setSubtaskFor(null);
+      return;
+    }
+    try {
+      const created = await api.createTask({
+        text,
+        parent_id: parent.id,
+        note_id: parent.note_id,
+        list: viewList,
+      });
+      updateTasks((prev) => [...prev, created]);
+      onTasksChanged();
+      onToast("subtask added");
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : String(e), "err");
+    }
+    setSubtaskText("");
+    setSubtaskFor(null);
+  };
+
+  const handleDrop = (target: TaskItem, siblings: TaskItem[]) => {
+    if (!dragId) return;
+    const dragged = (tasks ?? []).find((t) => t.id === dragId);
+    setDragId(null);
+    if (dragged && dragged.parent_id === target.parent_id) reorder(dragged, target, siblings);
+  };
+
   // Distinct contexts in the loaded list, for the chip row (#283).
   const contexts = useMemo(() => {
     const set = new Set<string>();
@@ -352,6 +428,11 @@ export default function TasksView({
   const [newTaskRepo, setNewTaskRepo] = useState<string>("");
   const [newTaskDueDate, setNewTaskDueDate] = useState<string>("");
   const [creating, setCreating] = useState(false);
+
+  // #29 subtasks: inline "add subtask" input + drag-to-reorder.
+  const [subtaskFor, setSubtaskFor] = useState<string | null>(null);
+  const [subtaskText, setSubtaskText] = useState("");
+  const [dragId, setDragId] = useState<string | null>(null);
 
   // Inline editing state
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -881,7 +962,7 @@ export default function TasksView({
         ) : groupMode === "flat" ? (
           // Stream Mode
           <div className="space-y-2">
-            {streamSorted.map((t) => renderTaskRow(t))}
+            {attachChildren(streamSorted).map((entry) => renderTaskWithChildren(entry))}
           </div>
         ) : groupMode === "priority" ? (
           // By Priority Mode: Separate sections for P1, P2, P3
@@ -908,7 +989,7 @@ export default function TasksView({
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {items.map((t) => renderTaskRow(t))}
+                    {attachChildren(items).map((entry) => renderTaskWithChildren(entry))}
                   </div>
                 </div>
               );
@@ -939,7 +1020,7 @@ export default function TasksView({
                       </div>
                     </div>
                     <div className="space-y-2">
-                      {g.items.map((t) => renderTaskRow(t, true))}
+                      {attachChildren(g.items).map((entry) => renderTaskWithChildren(entry, true))}
                     </div>
                   </div>
                 </div>
@@ -952,6 +1033,81 @@ export default function TasksView({
   );
 
   // Task Row Renderer
+  function renderTaskWithChildren(
+    entry: { task: TaskItem; children: TaskItem[]; siblings: TaskItem[] },
+    compact = false
+  ) {
+    const { task, children, siblings } = entry;
+    const canDrag = siblings.length > 1;
+    return (
+      <div key={task.id} className="space-y-1.5">
+        <div
+          draggable={canDrag}
+          onDragStart={(e) => {
+            if (canDrag) {
+              setDragId(task.id);
+              e.dataTransfer.effectAllowed = "move";
+            }
+          }}
+          onDragOver={(e) => {
+            if (dragId && dragId !== task.id) e.preventDefault();
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            handleDrop(task, siblings);
+          }}
+          className={dragId === task.id ? "opacity-40" : undefined}
+        >
+          {renderTaskRow(task, compact)}
+        </div>
+        {subtaskFor === task.id && (
+          <input
+            autoFocus
+            value={subtaskText}
+            onChange={(e) => setSubtaskText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void createSubtask(task);
+              else if (e.key === "Escape") setSubtaskFor(null);
+            }}
+            onBlur={() => void createSubtask(task)}
+            placeholder="Subtask…"
+            aria-label="New subtask text"
+            className="ml-8 h-7 w-[calc(100%-2rem)] rounded-lg border border-ember-500/50 bg-ink-950/90 px-2 text-xs text-ink-100 placeholder-ink-500 outline-none"
+          />
+        )}
+        {children.length > 0 && (
+          <div className="ml-8 space-y-1.5 border-l border-ink-800/70 pl-3">
+            {children.map((c) => {
+              const kidCanDrag = children.length > 1;
+              return (
+                <div
+                  key={c.id}
+                  draggable={kidCanDrag}
+                  onDragStart={(e) => {
+                    if (kidCanDrag) {
+                      setDragId(c.id);
+                      e.dataTransfer.effectAllowed = "move";
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    if (dragId && dragId !== c.id) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDrop(c, children);
+                  }}
+                  className={dragId === c.id ? "opacity-40" : undefined}
+                >
+                  {renderTaskRow(c, compact)}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderTaskRow(t: TaskItem, compact = false) {
     const isDone = Boolean(t.done);
     const isEditing = editingTaskId === t.id;
@@ -1042,6 +1198,19 @@ export default function TasksView({
               >
                 <EditIcon className="h-3 w-3" />
               </button>
+              {!t.parent_id && (
+                <button
+                  onClick={() => {
+                    setSubtaskFor(subtaskFor === t.id ? null : t.id);
+                    setSubtaskText("");
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-ink-500 hover:text-ember-300"
+                  title="Add subtask"
+                  aria-label="Add subtask"
+                >
+                  +
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -12,6 +12,7 @@ import TasksView, {
   updateTaskDueDateAction,
   updateTaskTextAction,
   createQuickTaskAction,
+  dropSortOrder,
 } from "../TasksView";
 import type { TaskItem, RepoInfo } from "../../types";
 import { api } from "../../api";
@@ -419,5 +420,46 @@ describe("TasksView Component & Helpers", () => {
       expect(onTasksChanged).toHaveBeenCalled();
       expect(currentList[0].id).toBe("task-new");
     });
+  });
+});
+
+
+describe("dropSortOrder (#29)", () => {
+  const row = (id: string, sort_order: number): TaskItem => ({
+    id,
+    note_id: "n",
+    text: id,
+    done: false,
+    priority: "P2",
+    due_date: null,
+    repo: null,
+    created_at: "",
+    completed_at: null,
+    sort_order,
+  });
+
+  it("midpoints between neighbours so only the dragged row is written", () => {
+    const siblings = [row("a", 1), row("b", 2), row("c", 3)];
+    // Move "c" between a and b.
+    const order = dropSortOrder(row("c", 3), row("b", 2), siblings);
+    expect(order).toBe(1.5);
+  });
+
+  it("drops at the top of the list", () => {
+    const siblings = [row("a", 10), row("b", 20)];
+    const order = dropSortOrder(row("b", 20), row("a", 10), siblings);
+    expect(order).toBe(9.5);
+  });
+
+  it("ignores the dragged row's own slot when measuring", () => {
+    const siblings = [row("a", 1), row("b", 2), row("c", 3)];
+    // Dropping b on a: b takes a's slot.
+    const order = dropSortOrder(row("b", 2), row("a", 1), siblings);
+    expect(order).toBe(0.5);
+  });
+
+  it("midpoints above the only sibling when dropping before it", () => {
+    const siblings = [row("a", 7)];
+    expect(dropSortOrder(row("b", 0), row("a", 7), siblings)).toBe(6.5);
   });
 });
