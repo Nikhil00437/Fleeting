@@ -67,6 +67,14 @@ function TaskRow({
           {task.estimate_min}m
         </span>
       ) : null}
+      {task.recurrence && (
+        <span
+          className="text-[10px] text-ink-500"
+          title={`Repeats (${task.recurrence.toLowerCase()})`}
+        >
+          ↻
+        </span>
+      )}
       {task.context && (
         <span className="rounded bg-iris-500/15 px-1.5 py-0.5 font-mono text-[10px] text-iris-300">
           @{task.context}

@@ -1587,6 +1587,33 @@ class Database:
         self._sync_note_action_items(task["note_id"])
         return self.get_task(task_id)
 
+    def spawn_next_occurrence(self, task_id: str) -> dict | None:
+        """#28: materialise the next occurrence of a completed recurring task.
+
+        Called by the router when a task transitions open→done, so the SSE
+        task.created event fires from there. The clone keeps the work-shaping
+        fields (text, priority, repo, context, estimate, recurrence, list)
+        but starts fresh: done=0, spent_min=0, no waiting_for/follow_up.
+        """
+        task = self.get_task(task_id)
+        if not task or not task["recurrence"] or not task["done"]:
+            return None
+        from .services.recurrence import next_anchor, next_due
+
+        today = datetime_now_local().date()
+        anchor = next_anchor(task["due_date"], today)
+        return self.insert_task({
+            "text": task["text"],
+            "note_id": task["note_id"],
+            "priority": task["priority"],
+            "due_date": next_due(task["recurrence"], anchor).isoformat(),
+            "repo": task["repo"],
+            "list": task["list"],
+            "context": task["context"],
+            "estimate_min": task["estimate_min"],
+            "recurrence": task["recurrence"],
+        })
+
     def delete_task(self, task_id: str) -> dict | None:
         task = self.get_task(task_id)
         if not task:

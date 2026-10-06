@@ -973,6 +973,15 @@ export default function TasksView({
 
         {/* Right Controls: Repo, Due Date, Source Note */}
         <div className="flex shrink-0 items-center gap-2">
+          {/* Recurring marker (#28) — completing it schedules the next one */}
+          {t.recurrence && (
+            <span
+              className="text-[11px] text-ink-500"
+              title={`Repeats (${t.recurrence.toLowerCase()})`}
+            >
+              ↻
+            </span>
+          )}
           {/* Repo Tag */}
           {t.repo && (
             <button

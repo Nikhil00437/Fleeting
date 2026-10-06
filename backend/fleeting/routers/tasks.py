@@ -224,20 +224,39 @@ def update_task(task_id: str, body: TaskUpdateIn, request: Request) -> TaskOut:
         raise HTTPException(404, "task not found")
 
     st.bus.publish("task.updated", updated)
+    _spawn_recurrence_if_due(st, task, updated)
     _sync_vault_and_notify_note(st, updated["note_id"])
     return TaskOut(**updated)
+
+
+def _spawn_recurrence_if_due(st: Any, previous: dict, updated: dict) -> None:
+    """#28: completing a recurring task schedules its next occurrence.
+
+    `previous` is the pre-toggle snapshot; the spawn only fires on a real
+    open→done transition, never on un-completing or a no-op PATCH.
+    """
+    if previous.get("done") or not updated.get("done") or not updated.get("recurrence"):
+        return
+    spawned = st.db.spawn_next_occurrence(updated["id"])
+    if spawned:
+        st.bus.publish("task.created", spawned)
 
 
 @router.post("/{task_id}/toggle", response_model=TaskOut)
 def toggle_task(task_id: str, request: Request) -> TaskOut:
     st = request.app.state.st
-    task = st.db.toggle_task(task_id)
+    task = st.db.get_task(task_id)
     if not task:
         raise HTTPException(404, "task not found")
 
-    st.bus.publish("task.updated", task)
-    _sync_vault_and_notify_note(st, task["note_id"])
-    return TaskOut(**task)
+    updated = st.db.toggle_task(task_id)
+    if not updated:
+        raise HTTPException(404, "task not found")
+
+    st.bus.publish("task.updated", updated)
+    _spawn_recurrence_if_due(st, task, updated)
+    _sync_vault_and_notify_note(st, updated["note_id"])
+    return TaskOut(**updated)
 
 
 @router.delete("/{task_id}")

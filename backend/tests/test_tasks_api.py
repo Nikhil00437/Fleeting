@@ -539,3 +539,40 @@ def test_today_endpoint(client):
     assert data["next_action"]["text"] in ("overdue thing", "due now")
     assert data["load"]["estimated_min"] == 30
     assert data["load"]["capacity_min"] > 0
+
+
+def test_completing_recurring_task_spawns_next(client, monkeypatch):
+    events = _capture_events(client, monkeypatch)
+    resp = client.post(
+        "/api/tasks",
+        json={"text": "weekly review", "recurrence": "FREQ=WEEKLY", "due_date": "2026-10-06"},
+    )
+    assert resp.status_code == 200
+    task_id = resp.json()["id"]
+
+    toggled = client.post(f"/api/tasks/{task_id}/toggle")
+    assert toggled.status_code == 200
+    assert toggled.json()["done"] is True
+
+    # The next occurrence exists and is open, with a due date at or past the old one.
+    tasks = client.get("/api/tasks", params={"status": "all"}).json()
+    occurrences = [t for t in tasks if t["text"] == "weekly review"]
+    assert len(occurrences) == 2
+    next_occ = next(t for t in occurrences if t["id"] != task_id)
+    assert next_occ["done"] is False
+    assert next_occ["recurrence"] == "FREQ=WEEKLY"
+    assert next_occ["due_date"] >= "2026-10-06"
+    assert any(e["type"] == "task.created" for e in events)
+
+    # Un-completing does not spawn a third occurrence.
+    client.post(f"/api/tasks/{task_id}/toggle")
+    tasks = client.get("/api/tasks", params={"status": "all"}).json()
+    assert len([t for t in tasks if t["text"] == "weekly review"]) == 2
+
+
+def test_patch_done_true_spawns_recurring_next(client):
+    resp = client.post("/api/tasks", json={"text": "daily stretch", "recurrence": "FREQ=DAILY"})
+    task_id = resp.json()["id"]
+    client.patch(f"/api/tasks/{task_id}", json={"done": True})
+    tasks = client.get("/api/tasks", params={"status": "all"}).json()
+    assert len([t for t in tasks if t["text"] == "daily stretch"]) == 2
