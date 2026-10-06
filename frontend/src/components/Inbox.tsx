@@ -424,6 +424,19 @@ export default function Inbox({
     else groups.push([label, [note]]);
   }
 
+  // #419 inbox-zero: today's captures, and how many are already filed.
+  const inboxZero = useMemo(() => {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todays = healthyNotes.filter((n) => new Date(n.created_at) >= startOfDay);
+    const filed = todays.filter((n) => n.review_state !== "raw" || n.status === "done").length;
+    return {
+      total: todays.length,
+      filed,
+      progress: todays.length ? filed / todays.length : 1,
+    };
+  }, [healthyNotes]);
+
   const reviewQueueCount = useMemo(
     () => healthyNotes.filter((n) => n.review_state === "raw").length,
     [healthyNotes],
@@ -607,6 +620,26 @@ export default function Inbox({
               <span className="font-mono">{triageQueue.length}</span>
             </button>
           )}
+
+          {/* #419 the daily inbox-zero ritual: a ring, and the count it stands for */}
+          <button
+            onClick={() => {
+              setTriageOpen(true);
+              setTriageDone(new Set());
+            }}
+            className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-ink-950/80 px-2 py-1 hover:border-ember-400/30"
+            title={`Inbox zero: ${inboxZero.filed}/${inboxZero.total} of today's captures filed. Click to triage.`}
+          >
+            <Ring
+              progress={inboxZero.progress}
+              color={inboxZero.progress >= 1 ? "#10b981" : "#d8784c"}
+              size={22}
+              thickness={3}
+            />
+            <span className="font-mono text-[10.5px] text-ink-400">
+              {inboxZero.filed}/{inboxZero.total}
+            </span>
+          </button>
 
           <button
             onClick={() => {
