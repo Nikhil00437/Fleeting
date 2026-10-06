@@ -74,3 +74,8 @@ export function flattenTagTree(nodes: TagNode[], depth = 0): Array<{ node: TagNo
   }
   return out;
 }
+
+/** #420: normalise what triage's tag box produced ("#Health" -> "health"). */
+export function normalizeTag(input: string): string {
+  return input.trim().replace(/^#/, "").toLowerCase();
+}

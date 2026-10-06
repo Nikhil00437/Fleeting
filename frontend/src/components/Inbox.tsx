@@ -4,7 +4,7 @@ import { dayGroup } from "../time";
 import { AreaTrend, Bars, Ring, StackBar } from "./charts";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
-import { buildTagTree, flattenTagTree, tagMatches } from "./tagTree";
+import { buildTagTree, flattenTagTree, normalizeTag, tagMatches } from "./tagTree";
 import { inboxZeroProgress } from "./inboxZero";
 import { relTime } from "../time";
 import { activationProps } from "./a11y";
@@ -86,6 +86,8 @@ export default function Inbox({
   // #271: triage — one note at a time, a decision before the next appears.
   const [triageOpen, setTriageOpen] = useState(false);
   const [triageDone, setTriageDone] = useState<Set<string>>(new Set());
+  // #420: the tag action needs a free-text box, so it holds its own state
+  const [triageTagText, setTriageTagText] = useState("");
   // #421: monthly cleanup assistant.
   const [showCleanup, setShowCleanup] = useState(false);
   const [cleanupSuggestions, setCleanupSuggestions] = useState<Suggestion[] | null>(null);
@@ -455,6 +457,37 @@ export default function Inbox({
     markTriageDone(note.id);
     try {
       onNoteUpdated?.(await api.updateNote(note.id, { review_state: "reviewed" }));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  /** #420: promote a capture into a task without leaving the review deck. */
+  async function triageToTask(note: Note) {
+    markTriageDone(note.id);
+    try {
+      const text = (note.title || note.summary || note.raw_text || "").trim().slice(0, 200);
+      if (!text) {
+        toast("nothing to turn into a task", "err");
+        return;
+      }
+      await api.createTask({ text, note_id: note.id });
+      onNoteUpdated?.(await api.updateNote(note.id, { review_state: "reviewed" }));
+      toast("added to tasks");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  /** #420: tag inline, then keep. */
+  async function triageTag(note: Note, tag: string) {
+    const clean = normalizeTag(tag);
+    if (!clean) return;
+    try {
+      const tags = [...new Set([...note.tags, clean])].slice(0, 8);
+      onNoteUpdated?.(await api.updateNote(note.id, { tags, review_state: "reviewed" }));
+      markTriageDone(note.id);
+      toast(`tagged #${clean}`);
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
     }
@@ -1325,6 +1358,32 @@ export default function Inbox({
                   >
                     Keep
                   </button>
+                  <button
+                    onClick={() => void triageToTask(triageCurrent)}
+                    className="rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/25"
+                    title="Turn this capture into a task (#420)"
+                  >
+                    To task
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      value={triageTagText}
+                      onChange={(e) => setTriageTagText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void triageTag(triageCurrent, triageTagText);
+                      }}
+                      placeholder="tag…"
+                      aria-label="Tag this capture and keep it"
+                      className="w-24 rounded-lg border border-white/[0.08] bg-ink-950 px-2 py-1 text-[11px] text-ink-100 outline-none placeholder-ink-600 focus:border-ember-500/40"
+                    />
+                    <button
+                      onClick={() => void triageTag(triageCurrent, triageTagText)}
+                      className="rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-[11px] text-ink-300 hover:text-ink-100"
+                      title="Add the tag and keep the note (#420)"
+                    >
+                      Tag
+                    </button>
+                  </div>
                   <button
                     onClick={() => void triageArchive(triageCurrent)}
                     className="rounded-lg border border-white/[0.08] bg-ink-900 px-3 py-1.5 text-xs font-medium text-ink-200 hover:text-ink-100"
