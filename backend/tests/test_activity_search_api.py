@@ -128,6 +128,7 @@ def _rewind_to_v7(path, *, drop_activity: bool = False) -> None:
         "DROP TABLE IF EXISTS note_versions",
         "DROP TABLE IF EXISTS collections",
         "DROP TABLE IF EXISTS collection_items",
+        "DROP TABLE IF EXISTS filing_rules",
     ]
     stmts += [
         f"DROP INDEX IF EXISTS {r[1]}"

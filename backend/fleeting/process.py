@@ -279,6 +279,11 @@ class Processor:
             self.db._sync_note_action_items(note_id)
             note = self.db.get_note(note_id)
 
+            # 4.5) #272 auto-filing: rules run before the mirror so the vault
+            # copy already reflects the filed state.
+            if note:
+                note, _filed = self.db.apply_filing_rules(note)
+
             # 4) embedding + vault mirror + notify
             await self._set_stage(note_id, "syncing")
             if note:

@@ -255,6 +255,20 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_collection_items_note ON collection_items(note_id);
     """,
+    # v14 — #272 auto-filing rules: when a note matches (tag or type), file it
+    # (add a tag, star, archive, colour, or drop into a collection). Applied at
+    # the end of the pipeline and on demand via POST /api/rules/run.
+    """
+    CREATE TABLE filing_rules (
+      id INTEGER PRIMARY KEY,
+      match_field TEXT NOT NULL,
+      match_value TEXT NOT NULL,
+      action TEXT NOT NULL,
+      action_value TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -1657,6 +1671,92 @@ class Database:
             (note_id,),
         ).fetchall()
         return [_row_to_collection(r) for r in rows]
+
+    # ---- auto-filing rules (#272) ---------------------------------------
+
+    FILING_MATCH_FIELDS = ("tag", "type", "title")
+    FILING_ACTIONS = ("add_tag", "star", "archive", "set_color", "add_to_collection")
+
+    def filing_rules(self) -> list[dict]:
+        rows = self.execute("SELECT * FROM filing_rules ORDER BY id ASC").fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_filing_rule(
+        self, match_field: str, match_value: str, action: str, action_value: str | None
+    ) -> dict:
+        if match_field not in self.FILING_MATCH_FIELDS:
+            raise ValueError(f"unknown match field {match_field!r}")
+        if action not in self.FILING_ACTIONS:
+            raise ValueError(f"unknown action {action!r}")
+        cur = self.execute(
+            "INSERT INTO filing_rules (match_field, match_value, action, action_value, enabled, created_at) "
+            "VALUES (?, ?, ?, ?, 1, ?)",
+            (match_field, match_value, action, action_value, now_iso()),
+        )
+        self.commit()
+        return dict(
+            self.execute("SELECT * FROM filing_rules WHERE id = ?", (cur.lastrowid,)).fetchone()
+        )
+
+    def set_filing_rule_enabled(self, rule_id: int, enabled: bool) -> bool:
+        cur = self.execute(
+            "UPDATE filing_rules SET enabled = ? WHERE id = ?",
+            (1 if enabled else 0, rule_id),
+        )
+        self.commit()
+        return (cur.rowcount or 0) > 0
+
+    def delete_filing_rule(self, rule_id: int) -> bool:
+        cur = self.execute("DELETE FROM filing_rules WHERE id = ?", (rule_id,))
+        self.commit()
+        return (cur.rowcount or 0) > 0
+
+    def _rule_matches(self, note: dict, rule: dict) -> bool:
+        field, want = rule["match_field"], rule["match_value"]
+        if field == "tag":
+            return any(t == want or t.startswith(f"{want}/") for t in note.get("tags", []))
+        if field == "type":
+            return note.get("type") == want
+        if field == "title":
+            return want.lower() in (note.get("title") or "").lower()
+        return False
+
+    def apply_filing_rules(self, note: dict) -> tuple[dict, bool]:
+        """Run every enabled rule against one note. Returns (note, changed).
+
+        Idempotent per rule — add_tag dedupes, star/archive are idempotent
+        flags, add_to_collection uses INSERT OR IGNORE — so replaying rules on
+        reprocess or backfill cannot stack up duplicates. `changed` is True
+        when anything was written, including collection membership (which
+        does not touch the note row itself).
+        """
+        rules = [r for r in self.filing_rules() if r["enabled"]]
+        if not rules:
+            return note, False
+        changes: dict = {}
+        membership_changed = False
+        for rule in rules:
+            if not self._rule_matches(note, rule):
+                continue
+            action, value = rule["action"], rule["action_value"]
+            if action == "add_tag" and value:
+                tags = list(note.get("tags") or [])
+                if value not in tags:
+                    tags.append(value)
+                    changes["tags"] = tags
+            elif action == "star" and not note.get("starred"):
+                changes["starred"] = True
+            elif action == "archive" and not note.get("archived"):
+                changes["archived"] = True
+            elif action == "set_color" and value and note.get("color") != value:
+                changes["color"] = value
+            elif action == "add_to_collection" and value:
+                if self.add_note_to_collection(value, note["id"]):
+                    membership_changed = True
+        if not changes:
+            return note, membership_changed
+        updated = self.update_note(note["id"], changes)
+        return (updated or note), True
 
     # ---- note embeddings ------------------------------------------------
 

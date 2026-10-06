@@ -258,3 +258,49 @@ def test_sample_notes_fill_an_empty_vault_and_are_trashable(client):
     # samples are ordinary notes: trash one and it is gone from the inbox
     client.delete(f"/api/notes/{notes[0]['id']}")
     assert len(client.get("/api/notes").json()) == 3
+
+
+# ---- #272 auto-filing rules ----------------------------------------------
+
+def test_filing_rules_apply_on_pipeline_and_backfill(client):
+    note = _note(client, "cooking: tomato soup recipe")
+    client.patch(f"/api/notes/{note['id']}", json={"tags": ["cooking"]})
+    coll = client.post("/api/collections", json={"name": "kitchen"}).json()
+
+    r = client.post(
+        "/api/rules",
+        json={"match_field": "tag", "match_value": "cooking", "action": "add_tag", "action_value": "recipes"},
+    )
+    assert r.status_code == 200
+    client.post("/api/rules", json={"match_field": "type", "match_value": "text", "action": "add_to_collection", "action_value": coll["id"]})
+
+    # backfill run files the existing note
+    run = client.post("/api/rules/run").json()
+    assert run["ok"] is True
+    assert run["changed"] >= 1
+
+    fresh = client.get(f"/api/notes/{note['id']}").json()
+    assert "recipes" in fresh["tags"]
+    assert coll["id"] in [c["id"] for c in client.get(f"/api/notes/{note['id']}/collections").json()]
+
+
+def test_filing_rule_validation_and_toggle(client):
+    assert client.post(
+        "/api/rules", json={"match_field": "galaxy", "match_value": "x", "action": "star"}
+    ).status_code == 422
+    assert client.post(
+        "/api/rules", json={"match_field": "tag", "match_value": "x", "action": "explode"}
+    ).status_code == 422
+
+    rule = client.post("/api/rules", json={"match_field": "type", "match_value": "voice", "action": "star"}).json()
+    assert client.post(f"/api/rules/{rule['id']}/enabled", json={"enabled": False}).json()["ok"] is True
+    assert client.get("/api/rules").json()[0]["enabled"] == 0
+    assert client.delete(f"/api/rules/{rule['id']}").json()["ok"] is True
+
+
+def test_rules_fire_inside_the_pipeline(client):
+    """A note captured after the rule exists gets filed without any manual run."""
+    client.post("/api/rules", json={"match_field": "type", "match_value": "text", "action": "star"})
+    note = _note(client, "auto starred please")
+    fresh = client.get(f"/api/notes/{note['id']}").json()
+    assert fresh["starred"] is True

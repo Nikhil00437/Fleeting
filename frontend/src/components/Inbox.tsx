@@ -92,6 +92,9 @@ export default function Inbox({
   const [showCollections, setShowCollections] = useState(false);
   const [collections, setCollections] = useState<Collection[] | null>(null);
   const [activeCollection, setActiveCollection] = useState<(Collection & { notes: Note[] }) | null>(null);
+  // #272: filing rules live beside collections — both are "where notes go".
+  const [rules, setRules] = useState<Awaited<ReturnType<typeof api.filingRules>> | null>(null);
+  const [ruleForm, setRuleForm] = useState({ field: "tag", value: "", action: "add_tag", actionValue: "" });
   const togglePick = (id: string) =>
     setPicked((s) => {
       const next = new Set(s);
@@ -139,6 +142,41 @@ export default function Inbox({
 
   function loadCollections() {
     api.collections().then(setCollections).catch(() => setCollections([]));
+    api.filingRules().then(setRules).catch(() => setRules([]));
+  }
+
+  async function addRule() {
+    if (!ruleForm.value.trim()) return;
+    try {
+      await api.createFilingRule({
+        match_field: ruleForm.field,
+        match_value: ruleForm.value.trim(),
+        action: ruleForm.action,
+        action_value: ruleForm.actionValue.trim() || null,
+      });
+      setRuleForm({ field: "tag", value: "", action: "add_tag", actionValue: "" });
+      api.filingRules().then(setRules).catch(() => {});
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function runRules() {
+    try {
+      const r = await api.runFilingRules();
+      toast(`Rules applied to ${r.changed} note${r.changed === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function deleteRule(id: number) {
+    try {
+      await api.deleteFilingRule(id);
+      api.filingRules().then(setRules).catch(() => {});
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
   }
 
   // Refetch whenever a collections.changed SSE lands while the dropdown is open,
@@ -681,6 +719,94 @@ export default function Inbox({
           </div>
         </div>
       </div>
+
+      {/* #272 Filing rules section (inside the Collections panel) */}
+      {showCollections && (
+        <div className="relative z-20 shrink-0 border-b border-ink-800 bg-ink-950/95 px-4 pb-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="micro-label">Auto-filing rules — applied to new captures</p>
+            <button
+              onClick={() => void runRules()}
+              className="rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-[11px] text-ink-200 hover:text-ink-100"
+              title="Apply all enabled rules to existing notes"
+            >
+              Run on existing notes
+            </button>
+          </div>
+          {rules && rules.length > 0 && (
+            <div className="mb-2 space-y-1">
+              {rules.map((r) => (
+                <div key={r.id} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-2.5 py-1 text-[11px]">
+                  <span className="font-mono text-ink-300">
+                    {r.match_field}:{r.match_value}
+                  </span>
+                  <span className="text-ink-600">→</span>
+                  <span className="font-mono text-ink-300">
+                    {r.action}
+                    {r.action_value ? `:${r.action_value}` : ""}
+                  </span>
+                  {!r.enabled && <span className="text-ink-600">(off)</span>}
+                  <button
+                    onClick={() => void deleteRule(r.id)}
+                    className="ml-auto text-ink-500 hover:text-red-300"
+                    aria-label={`Delete rule ${r.match_field}:${r.match_value}`}
+                  >
+                    <XIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <select
+              value={ruleForm.field}
+              onChange={(e) => setRuleForm((f) => ({ ...f, field: e.target.value }))}
+              className="rounded-lg border border-white/[0.08] bg-ink-950 px-2 py-1 text-[11px] text-ink-200 outline-none"
+              aria-label="Rule match field"
+            >
+              <option value="tag">tag</option>
+              <option value="type">type</option>
+              <option value="title">title contains</option>
+            </select>
+            <input
+              value={ruleForm.value}
+              onChange={(e) => setRuleForm((f) => ({ ...f, value: e.target.value }))}
+              placeholder={ruleForm.field === "type" ? "voice" : "cooking"}
+              className="h-7 w-28 rounded-lg border border-white/[0.08] bg-ink-950 px-2 text-[11px] text-ink-200 placeholder-ink-500 outline-none"
+              aria-label="Rule match value"
+            />
+            <span className="text-ink-600">→</span>
+            <select
+              value={ruleForm.action}
+              onChange={(e) => setRuleForm((f) => ({ ...f, action: e.target.value }))}
+              className="rounded-lg border border-white/[0.08] bg-ink-950 px-2 py-1 text-[11px] text-ink-200 outline-none"
+              aria-label="Rule action"
+            >
+              <option value="add_tag">add tag</option>
+              <option value="star">star</option>
+              <option value="archive">archive</option>
+              <option value="set_color">set colour</option>
+              <option value="add_to_collection">add to collection</option>
+            </select>
+            {(ruleForm.action === "add_tag" || ruleForm.action === "set_color" || ruleForm.action === "add_to_collection") && (
+              <input
+                value={ruleForm.actionValue}
+                onChange={(e) => setRuleForm((f) => ({ ...f, actionValue: e.target.value }))}
+                placeholder={ruleForm.action === "add_to_collection" ? "collection id" : ruleForm.action === "set_color" ? "ember" : "recipes"}
+                className="h-7 w-28 rounded-lg border border-white/[0.08] bg-ink-950 px-2 text-[11px] text-ink-200 placeholder-ink-500 outline-none"
+                aria-label="Rule action value"
+              />
+            )}
+            <button
+              onClick={() => void addRule()}
+              disabled={!ruleForm.value.trim()}
+              className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200 disabled:opacity-40"
+            >
+              Add rule
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* #270 Tag tree panel */}
       {showTagTree && (

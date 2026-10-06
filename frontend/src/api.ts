@@ -84,6 +84,18 @@ export const api = {
 
   noteCollections: (id: string) => req<Collection[]>(`/notes/${id}/collections`),
 
+  filingRules: () =>
+    req<
+      { id: number; match_field: string; match_value: string; action: string; action_value: string | null; enabled: number }[]
+    >("/rules"),
+
+  createFilingRule: (data: { match_field: string; match_value: string; action: string; action_value?: string | null }) =>
+    req<{ id: number }>("/rules", { method: "POST", body: JSON.stringify(data) }),
+
+  deleteFilingRule: (id: number) => req<{ ok: boolean }>(`/rules/${id}`, { method: "DELETE" }),
+
+  runFilingRules: () => req<{ ok: boolean; changed: number }>("/rules/run", { method: "POST" }),
+
   createSamples: () => req<{ ok: boolean; created: number }>("/samples", { method: "POST" }),
 
   collection: (id: string) => req<Collection & { notes: Note[] }>(`/collections/${id}`),
