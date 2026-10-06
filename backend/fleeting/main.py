@@ -176,6 +176,29 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         digest_lock = asyncio.Lock()
         st.digest_lock = digest_lock
 
+        async def remind_due_tasks() -> None:
+            """#27: one boot-time desktop nudge about overdue/due-today tasks."""
+            from . import notify
+            from .services.task_reminders import due_task_summary
+
+            await asyncio.sleep(8)
+            try:
+                s = due_task_summary(db)
+                if not s["total"]:
+                    return
+                lines = "\n".join(f"• {t}" for t in s["top"])
+                more = s["total"] - len(s["top"])
+                if more > 0:
+                    lines += f"\n…and {more} more"
+                notify.send(
+                    f"Fleeting — {s['overdue']} overdue, {s['today']} due today",
+                    lines,
+                )
+            except Exception:
+                log.exception("task due reminder failed")
+
+        asyncio.get_running_loop().create_task(remind_due_tasks())
+
         async def generate_milestone_digest(day: str, hours: int) -> None:
             if digest_lock.locked():
                 log.info("milestone digest generation for %s (%d hrs) skipped: already in progress", day, hours)
