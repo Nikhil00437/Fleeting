@@ -579,3 +579,24 @@ def test_patch_done_true_spawns_recurring_next(client):
     client.patch(f"/api/tasks/{task_id}", json={"done": True})
     tasks = client.get("/api/tasks", params={"status": "all"}).json()
     assert len([t for t in tasks if t["text"] == "daily stretch"]) == 2
+
+
+def test_week_plan_endpoint_excludes_blocked_and_reports_capacity(client):
+    """#284/#442: /api/tasks/plan packs work and gauges the week."""
+    blocker = client.post("/api/tasks", json={"text": "waiting on the api"}).json()
+    blocked = client.post("/api/tasks", json={"text": "needs review first"}).json()
+    client.post("/api/tasks", json={"text": "does the thing", "estimate_min": 45})
+    # The blocker exists and is open, so this task is genuinely blocked.
+    client.patch(f"/api/tasks/{blocked['id']}", json={"blocked_by": blocker["id"]})
+
+    data = client.get("/api/tasks/plan").json()
+    assert len(data["days"]) == 7
+    assert data["totals"]["capacity_min"] > 0
+    assert data["totals"]["utilization"] >= 0
+    placed = [tid for d in data["days"] for tid in d["task_ids"]]
+    assert blocked["id"] not in placed
+    assert blocker["id"] in placed  # the blocker itself is plannable
+    # Weekend days carry no capacity.
+    for d in data["days"]:
+        if not d["workday"]:
+            assert d["capacity_min"] == 0

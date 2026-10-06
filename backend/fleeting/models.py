@@ -194,6 +194,32 @@ class TodayLoad(BaseModel):
     capacity_min: int
 
 
+class PlanDay(BaseModel):
+    day: str
+    workday: bool
+    capacity_min: int
+    planned_min: int
+    task_ids: list[str] = []
+
+
+class PlanTotals(BaseModel):
+    """#442 capacity gauge: planned minutes against available minutes."""
+
+    capacity_min: int
+    planned_min: int
+    over_capacity: bool
+    utilization: float
+
+
+class WeekPlan(BaseModel):
+    """#284 weekly planner."""
+
+    week_start: str
+    days: list[PlanDay]
+    unscheduled: list[str] = []
+    totals: PlanTotals
+
+
 class StreakDay(BaseModel):
     day: str
     count: int

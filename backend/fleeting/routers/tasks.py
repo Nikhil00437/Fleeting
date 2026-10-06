@@ -16,8 +16,10 @@ from ..models import (
     TaskOut,
     TaskUpdateIn,
     TodayOut,
+    WeekPlan,
 )
-from ..services import markdown, whatnow
+from ..services import calendar_svc, markdown, whatnow
+from ..services.planner import plan_week
 from ..services.repos import discover_git_repos
 from ..services.task_text import parse_quick_add
 
@@ -165,6 +167,21 @@ def get_today(request: Request) -> TodayOut:
         load=result["load"],
         streak=StreakOut(**whatnow.build_streaks(tasks, now=now)),
     )
+
+
+@router.get("/plan", response_model=WeekPlan)
+def get_week_plan(request: Request) -> WeekPlan:
+    """#284/#442: distribute open work across the week and gauge its load."""
+    st = request.app.state.st
+    from ..db import datetime_now_local
+
+    result = plan_week(
+        st.db.list_tasks(status="open", limit=1000),
+        now=datetime_now_local(),
+        capacity_min=st.cfg.tasks.daily_capacity_min,
+        holidays=calendar_svc.current_holidays(),
+    )
+    return WeekPlan(**result)
 
 
 @router.get("/repos")
