@@ -126,6 +126,10 @@ export interface TaskItem {
   /** GTD context, stored without the leading @ ("home", "computer", …). */
   context?: string | null;
   waiting_for?: string | null;
+  /** #31: "manual" means the user ranked it; inference never overwrites that. */
+  priority_source?: "inferred" | "manual" | null;
+  /** #34: the app/window this task can be done in. */
+  app_hint?: string | null;
   follow_up_at?: string | null;
   recurrence?: string | null;
   sort_order?: number;
@@ -312,6 +316,7 @@ export interface FleetingDesktopBridge {
   onHudTrigger?: (cb: () => void) => () => void;
   undoLastType?: () => Promise<boolean>;
   activeAppClass?: () => Promise<string | null>;
+  activeWindow?: () => Promise<{ app: string | null; title: string | null }>;
 }
 
 declare global {

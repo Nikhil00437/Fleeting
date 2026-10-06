@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("fleetingDesktop", {
   typeText: (text) => ipcRenderer.invoke("hud:type-text", text),
   undoLastType: () => ipcRenderer.invoke("hud:undo-last-type"),
   activeAppClass: () => ipcRenderer.invoke("hud:active-app"),
+  activeWindow: () => ipcRenderer.invoke("window:active"),
   onHudTrigger: (cb) => {
     const handler = () => cb();
     ipcRenderer.on("hud:trigger", handler);

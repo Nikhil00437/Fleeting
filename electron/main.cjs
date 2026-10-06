@@ -616,6 +616,16 @@ if (!gotLock) {
         return null;
       }
     });
+    // #34: capture the live window so a task can record where it can be done.
+    ipcMain.handle("window:active", async () => {
+      const raw = await runCmd("hyprctl", ["activewindow", "-j"]);
+      try {
+        const data = JSON.parse(raw);
+        return { app: data.class || data.appClass || null, title: data.title || null };
+      } catch {
+        return { app: null, title: null };
+      }
+    });
 
     // Register global shortcut
     try {

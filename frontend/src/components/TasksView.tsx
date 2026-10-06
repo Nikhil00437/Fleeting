@@ -1313,6 +1313,27 @@ function BlockedPicker({
   );
 }
 
+  /** #34: record the live window as the place this task can be done. */
+  async function pinToCurrentWindow(t: TaskItem) {
+    const desktop = typeof window !== "undefined" ? window.fleetingDesktop : undefined;
+    let hint: string | null = t.app_hint ?? null;
+    if (desktop?.activeWindow) {
+      try {
+        const win = await desktop.activeWindow();
+        hint = win.app ?? null;
+      } catch {
+        /* no bridge (browser) — fall back to clearing */
+      }
+    }
+    try {
+      const updated = await api.updateTask(t.id, { app_hint: hint });
+      updateTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...updated } : x)));
+      onToast(hint ? `pinned to ${hint}` : "cleared app hint");
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
   function renderTaskRow(t: TaskItem, compact = false) {
     const isDone = Boolean(t.done);
     const isEditing = editingTaskId === t.id;
@@ -1357,6 +1378,12 @@ function BlockedPicker({
           title={`Priority ${t.priority} — click to cycle (P1 -> P2 -> P3)`}
         >
           {t.priority}
+          {/* #31: mark priorities the model chose, so a manual override reads as deliberate */}
+          {t.priority_source === "inferred" && (
+            <span className="ml-0.5 text-[9px] text-ink-500" title="Priority inferred by the local model">
+              ✦
+            </span>
+          )}
         </button>
 
         {/* Task Text / Inline Editor */}
@@ -1524,6 +1551,22 @@ function BlockedPicker({
               </button>
             </div>
           )}
+
+          {/* #34: pin this task to the window you are in right now */}
+          <button
+            onClick={() => void pinToCurrentWindow(t)}
+            className={`text-[11px] transition-opacity ${
+              t.app_hint ? "text-iris-300" : "text-ink-600 opacity-0 hover:text-iris-300 group-hover:opacity-100"
+            }`}
+            title={
+              t.app_hint
+                ? `Do this in: ${t.app_hint} — click to re-pin to the current window`
+                : "Pin to the app/window you are in now"
+            }
+            aria-label="Pin task to current window"
+          >
+            ⌘
+          </button>
 
           {/* @context chip (#283) */}
           {t.context && (
