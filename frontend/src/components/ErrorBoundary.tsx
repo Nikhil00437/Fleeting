@@ -65,18 +65,18 @@ export default class ErrorBoundary extends Component<Props, State> {
         role="alert"
         className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
       >
-        <p className="text-sm font-semibold text-red-200">{errorHeadline(error)}</p>
+        <p className="text-sm font-semibold text-red-700">{errorHeadline(error)}</p>
         <p className="max-w-md text-xs text-ink-400">{describeError(error, this.props.context)}</p>
         <div className="flex items-center gap-2">
           <button
             onClick={this.retry}
-            className="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+            className="rounded-lg border border-ink-700 bg-white px-3 py-1.5 text-xs font-semibold text-ink-100 shadow-xs hover:bg-ink-850"
           >
             Try again
           </button>
           <button
             onClick={() => window.location.reload()}
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-ink-300 hover:bg-white/5"
+            className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs text-ink-400 hover:bg-ink-850 hover:text-ink-200"
           >
             Reload app
           </button>

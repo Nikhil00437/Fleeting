@@ -1218,7 +1218,7 @@ export default function App() {
        key={t.id}
        className={`rise pointer-events-auto relative overflow-hidden rounded-xl border px-3.5 py-1.5 text-xs shadow-xl backdrop-blur ${
         t.kind === "err"
-         ? "border-red-500/40 bg-red-950/90 text-red-200"
+         ? "border-red-600 bg-red-600 font-medium text-white"
          : "border-ink-700 bg-ink-900/95 text-ink-100"
        }`}
       >

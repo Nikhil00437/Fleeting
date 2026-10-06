@@ -196,7 +196,7 @@ export default function CaptureBar({ inputRef, onCaptured, onError, onCapturedTa
 
   return (
     <div
-      className={`flex w-full max-w-2xl flex-col gap-1 rounded-xl transition-shadow ${dragOver ? "ring-2 ring-ember-400/70" : ""}`}
+      className={`flex w-full max-w-2xl items-center gap-1.5 rounded-xl transition-shadow ${dragOver ? "ring-2 ring-ember-400/70" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -204,7 +204,29 @@ export default function CaptureBar({ inputRef, onCaptured, onError, onCapturedTa
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => void handleDrop(e)}
     >
-      <div className="flex w-full items-center gap-1.5">
+      {/* #5 destination picker sits inline: the old stacked second row made the
+          bar ~54px tall inside the 56px titlebar, so the input touched the
+          window top edge and the chips collided with the toolbar below. */}
+      <div className="flex shrink-0 overflow-hidden rounded-lg border border-ink-800 text-[10px] font-semibold">
+        {(["inbox", "task"] as const).map((d) => (
+          <button
+            key={d}
+            onClick={() => setDestination(d)}
+            className={`flex h-8 items-center px-2.5 capitalize transition-colors ${destination === d ? "bg-ember-500/25 text-ember-300" : "text-ink-500 hover:text-ink-300"}`}
+          >
+            {d === "inbox" ? "Inbox" : "Task"}
+          </button>
+        ))}
+      </div>
+      {destination === "task" && (
+        <input
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          placeholder="repo (optional)"
+          aria-label="Git repo for captured task"
+          className="h-8 w-24 shrink-0 rounded-lg border border-ink-800 bg-ink-950/90 px-2 text-[10px] text-ink-300 placeholder-ink-500 outline-none focus:border-ember-500/40"
+        />
+      )}
       {recording ? (
         <div className="flex h-8 flex-1 items-center gap-2.5 rounded-xl border border-ember-500/45 bg-ink-950/95 px-3 shadow-[0_0_20px_rgb(245_158_11/0.12)]">
           <button
@@ -242,7 +264,7 @@ export default function CaptureBar({ inputRef, onCaptured, onError, onCapturedTa
           </button>
         </div>
       ) : (
-        <div className="relative flex-1">
+        <div className="relative min-w-0 flex-1">
           <div className="pointer-events-none absolute top-1/2 left-3 flex -translate-y-1/2 items-center">
             {isYT ? (
               <LinkIcon className="h-3.5 w-3.5 text-cyan-400" />
@@ -303,28 +325,6 @@ export default function CaptureBar({ inputRef, onCaptured, onError, onCapturedTa
           <MicIcon className="h-3.5 w-3.5" />
         </button>
       )}
-      </div>
-      <div className="flex items-center gap-2 px-1">
-        <div className="flex overflow-hidden rounded-md border border-ink-800 text-[9.5px] font-semibold">
-          {(["inbox", "task"] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => setDestination(d)}
-              className={`px-2 py-0.5 capitalize transition-colors ${destination === d ? "bg-ember-500/25 text-ember-300" : "text-ink-500 hover:text-ink-300"}`}
-            >
-              {d === "inbox" ? "Inbox" : "Task"}
-            </button>
-          ))}
-        </div>
-        {destination === "task" && (
-          <input
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            placeholder="repo (optional)"
-            className="w-28 rounded-md border border-ink-800 bg-ink-950/90 px-2 py-0.5 text-[10px] text-ink-300 placeholder-ink-500 outline-none focus:border-ember-500/40"
-          />
-        )}
-      </div>
     </div>
   );
 }
