@@ -138,6 +138,25 @@ def _rewind_to_v7(path, *, drop_activity: bool = False) -> None:
         if not r[1].startswith("sqlite_")
     ]
     stmts += [f"ALTER TABLE notes DROP COLUMN {c}" for c in cols if c not in base_cols]
+    # Same treatment for tasks: later migrations ALTER TABLE new columns in
+    # (e.g. v16's planning fields), so rewind those too or the replay fails
+    # with a duplicate-column error.
+    task_base_cols = {
+        "id", "note_id", "text", "done", "priority", "due_date",
+        "repo", "created_at", "completed_at",
+    }
+    task_cols = [r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()]
+    # Drop task indexes too — later migrations add (index, column) pairs such
+    # as v16's idx_tasks_parent_id, and DROP COLUMN fails while an index
+    # references the column. The replay recreates the ones v5 ships.
+    stmts += [
+        f"DROP INDEX IF EXISTS {r[1]}"
+        for r in conn.execute("PRAGMA index_list(tasks)").fetchall()
+        if not r[1].startswith("sqlite_")
+    ]
+    stmts += [
+        f"ALTER TABLE tasks DROP COLUMN {c}" for c in task_cols if c not in task_base_cols
+    ]
     stmts.append("DELETE FROM schema_version WHERE version >= 8")
     conn.executescript(";".join(stmts) + ";")
     conn.commit()

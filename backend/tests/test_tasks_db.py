@@ -605,3 +605,177 @@ def test_migration_malformed_json_resilience(tmp_path):
     database = Database(db_path)
     database.migrate()
     assert database.list_tasks(status="all") == []
+
+
+# ---- 0.5 planning fields (v16) ---------------------------------------------
+
+
+def test_planning_columns_on_migrate(tmp_path):
+    """v16 adds the 0.5 planning columns and their indexes."""
+    database = Database(tmp_path / "plan_schema.db")
+    database.migrate()
+
+    columns = {
+        row["name"]
+        for row in database.conn.execute("PRAGMA table_info(tasks)").fetchall()
+    }
+    for col in (
+        "parent_id", "blocked_by", "estimate_min", "spent_min", "list",
+        "context", "waiting_for", "follow_up_at", "recurrence", "sort_order",
+    ):
+        assert col in columns, col
+
+    indexes = [
+        row[0]
+        for row in database.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='tasks'"
+        ).fetchall()
+    ]
+    assert "idx_tasks_list" in indexes
+    assert "idx_tasks_parent_id" in indexes
+
+
+def test_planning_fields_roundtrip(db):
+    """Every new planning field survives insert, get and update."""
+    parent = db.insert_task({"text": "Plan the trip"})
+    task = db.insert_task({
+        "text": "Book flights",
+        "parent_id": parent["id"],
+        "estimate_min": 90,
+        "spent_min": 30,
+        "list": "someday",
+        "context": "@computer",
+        "waiting_for": "price drop",
+        "follow_up_at": "2026-10-20",
+        "recurrence": "FREQ=WEEKLY;BYDAY=MO,WE",
+    })
+    fetched = db.get_task(task["id"])
+    assert fetched["parent_id"] == parent["id"]
+    assert fetched["estimate_min"] == 90
+    assert fetched["spent_min"] == 30
+    assert fetched["list"] == "someday"
+    assert fetched["context"] == "computer"
+    assert fetched["waiting_for"] == "price drop"
+    assert fetched["follow_up_at"] == "2026-10-20"
+    assert fetched["recurrence"] == "FREQ=WEEKLY;BYDAY=MO,WE"
+
+    updated = db.update_task(task["id"], {"estimate_min": 45, "context": "@errands", "list": "inbox"})
+    assert updated["estimate_min"] == 45
+    assert updated["context"] == "errands"
+    assert updated["list"] == "inbox"
+
+    cleared = db.update_task(task["id"], {"context": None, "waiting_for": None})
+    assert cleared["context"] is None
+    assert cleared["waiting_for"] is None
+
+
+def test_task_list_defaults_and_normalization(db):
+    """list falls back to inbox for junk values; context strips @ and case."""
+    task = db.insert_task({"text": "Junk list value", "list": "nope", "context": " @Home "})
+    assert task["list"] == "inbox"
+    assert task["context"] == "home"
+
+    flipped = db.update_task(task["id"], {"list": "SOMEDAY"})
+    assert flipped["list"] == "someday"
+
+
+def test_subtask_validation(db):
+    """Parents must exist, cannot be the task itself, and nest one level deep."""
+    parent = db.insert_task({"text": "Parent"})
+    child = db.insert_task({"text": "Child", "parent_id": parent["id"]})
+    assert child["parent_id"] == parent["id"]
+
+    with pytest.raises(ValueError, match="one level"):
+        db.insert_task({"text": "Grandchild", "parent_id": child["id"]})
+    with pytest.raises(ValueError, match="not found"):
+        db.insert_task({"text": "Orphan", "parent_id": "missing_id"})
+    with pytest.raises(ValueError, match="own parent"):
+        db.insert_task({"text": "Self", "parent_id": "self_ref", "id": "self_ref"})
+
+    # Re-parenting a task under its own child is rejected too.
+    with pytest.raises(ValueError, match="one level"):
+        db.update_task(parent["id"], {"parent_id": child["id"]})
+
+    # ...but moving a child between parents is fine.
+    other = db.insert_task({"text": "Other parent"})
+    moved = db.update_task(child["id"], {"parent_id": other["id"]})
+    assert moved["parent_id"] == other["id"]
+
+
+def test_delete_parent_promotes_children(db):
+    """Deleting a parent promotes its subtasks instead of orphaning them."""
+    parent = db.insert_task({"text": "Parent"})
+    child = db.insert_task({"text": "Child", "parent_id": parent["id"]})
+
+    db.delete_task(parent["id"])
+
+    assert db.get_task(parent["id"]) is None
+    promoted = db.get_task(child["id"])
+    assert promoted is not None
+    assert promoted["parent_id"] is None
+
+
+def test_blocked_by_validation(db):
+    """Dependencies must reference real tasks, never the task itself, and never cycle."""
+    a = db.insert_task({"text": "A"})
+    b = db.insert_task({"text": "B"})
+    c = db.insert_task({"text": "C"})
+
+    t = db.insert_task({"text": "Blocked", "blocked_by": f"{a['id']}, {b['id']},{a['id']}"})
+    assert t["blocked_by"] == f"{a['id']},{b['id']}"
+
+    with pytest.raises(ValueError, match="not found"):
+        db.insert_task({"text": "Dangling dep", "blocked_by": "ghost"})
+    with pytest.raises(ValueError, match="block itself"):
+        db.insert_task({"text": "Self dep", "blocked_by": "selfish", "id": "selfish"})
+
+    # t already depends on a: making a depend on t would deadlock both.
+    with pytest.raises(ValueError, match="cycle"):
+        db.update_task(a["id"], {"blocked_by": t["id"]})
+
+    # A transitive chain is caught too: t depends on a, a depends on c, so
+    # making c depend on t would close the loop c <- t <- a <- c.
+    db.update_task(a["id"], {"blocked_by": c["id"]})
+    with pytest.raises(ValueError, match="cycle"):
+        db.update_task(c["id"], {"blocked_by": t["id"]})
+
+    # Clearing dependencies is allowed.
+    cleared = db.update_task(t["id"], {"blocked_by": None})
+    assert cleared["blocked_by"] is None
+
+
+def test_recurrence_normalization(db):
+    """RRULE-ish recurrence strings are uppercased and lightly validated."""
+    weekly = db.insert_task({"text": "Weekly", "recurrence": "freq=weekly;byday=mo,we"})
+    assert weekly["recurrence"] == "FREQ=WEEKLY;BYDAY=MO,WE"
+
+    bad = db.insert_task({"text": "Bad rrule", "recurrence": "every tuesday maybe"})
+    assert bad["recurrence"] is None
+
+    byday_on_daily = db.insert_task({"text": "BYDAY misuse", "recurrence": "FREQ=DAILY;BYDAY=MO"})
+    assert byday_on_daily["recurrence"] is None
+
+    cleared = db.update_task(weekly["id"], {"recurrence": None})
+    assert cleared["recurrence"] is None
+
+
+def test_minutes_normalization(db):
+    """Estimates and spent minutes are clamped to sane non-negative ints; junk → NULL."""
+    task = db.insert_task({"text": "Minutes", "estimate_min": -5, "spent_min": "junk"})
+    assert task["estimate_min"] == 0
+    assert task["spent_min"] is None
+
+    updated = db.update_task(task["id"], {"spent_min": 25, "estimate_min": 100_001})
+    assert updated["spent_min"] == 25
+    assert updated["estimate_min"] == 100_000
+
+
+def test_sort_order_persists(db):
+    """sort_order backs #29 drag-to-reorder."""
+    t1 = db.insert_task({"text": "First", "sort_order": 1.0})
+    t2 = db.insert_task({"text": "Second", "sort_order": 2.0})
+    assert t1["sort_order"] == 1.0
+    assert t2["sort_order"] == 2.0
+
+    moved = db.update_task(t2["id"], {"sort_order": 0.5})
+    assert moved["sort_order"] == 0.5

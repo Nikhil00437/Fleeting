@@ -416,3 +416,77 @@ def test_get_tasks_repos(client, tmp_path):
     service_entry = next(rp for rp in repos if rp["name"] == "my-service")
     assert service_entry["task_count"] == 0
     assert service_entry["path"] == str(local_repo.resolve())
+
+
+# ---- 0.5 planning fields ----------------------------------------------------
+
+
+def test_task_planning_fields_roundtrip(client):
+    st = client.app.state.st
+    parent = st.db.insert_task({"text": "Parent task"})
+
+    resp = client.post(
+        "/api/tasks",
+        json={
+            "text": "Plan sprint",
+            "parent_id": parent["id"],
+            "estimate_min": 120,
+            "list": "someday",
+            "context": "@computer",
+            "waiting_for": "design review",
+            "follow_up_at": "2026-10-20",
+            "recurrence": "FREQ=WEEKLY;BYDAY=MO",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["parent_id"] == parent["id"]
+    assert data["estimate_min"] == 120
+    assert data["list"] == "someday"
+    assert data["context"] == "computer"
+    assert data["waiting_for"] == "design review"
+    assert data["follow_up_at"] == "2026-10-20"
+    assert data["recurrence"] == "FREQ=WEEKLY;BYDAY=MO"
+
+    patch = client.patch(f"/api/tasks/{data['id']}", json={"estimate_min": 30, "context": "@errands"})
+    assert patch.status_code == 200
+    assert patch.json()["estimate_min"] == 30
+    assert patch.json()["context"] == "errands"
+
+
+def test_task_blocked_by_as_list(client):
+    """blocked_by accepts an array of ids from the UI and stores CSV."""
+    st = client.app.state.st
+    a = st.db.insert_task({"text": "A"})
+    b = st.db.insert_task({"text": "B"})
+
+    resp = client.post("/api/tasks", json={"text": "Blocked", "blocked_by": [a["id"], b["id"]]})
+    assert resp.status_code == 200
+    assert resp.json()["blocked_by"] == f"{a['id']},{b['id']}"
+
+
+def test_task_invalid_parent_is_400(client):
+    resp = client.post("/api/tasks", json={"text": "Orphan", "parent_id": "missing"})
+    assert resp.status_code == 400
+    assert "not found" in resp.json()["detail"]
+
+
+def test_task_dependency_cycle_is_400(client):
+    st = client.app.state.st
+    a = st.db.insert_task({"text": "A"})
+    b = st.db.insert_task({"text": "B", "blocked_by": a["id"]})
+
+    resp = client.patch(f"/api/tasks/{a['id']}", json={"blocked_by": [b["id"]]})
+    assert resp.status_code == 400
+    assert "cycle" in resp.json()["detail"]
+
+
+def test_task_planning_field_validation(client):
+    resp = client.post("/api/tasks", json={"text": "Bad minutes", "estimate_min": -10})
+    assert resp.status_code == 422
+
+    resp = client.post("/api/tasks", json={"text": "Bad date", "follow_up_at": "next tuesday"})
+    assert resp.status_code == 422
+
+    resp = client.post("/api/tasks", json={"text": "Bad list", "list": "later"})
+    assert resp.status_code == 422

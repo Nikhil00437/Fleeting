@@ -52,6 +52,56 @@ class TaskOut(ActionItem):
     note_id: str
     note_title: str = ""
     created_at: str
+    parent_id: str | None = None
+    blocked_by: str | None = None
+    estimate_min: int | None = None
+    spent_min: int | None = None
+    list: str = "inbox"
+    context: str | None = None
+    waiting_for: str | None = None
+    follow_up_at: str | None = None
+    recurrence: str | None = None
+    sort_order: float = 0.0
+
+
+def _coerce_blocked_by(v: Any) -> Any:
+    """Accept a CSV string or a list of ids; the db layer stores CSV."""
+    if isinstance(v, (list, tuple)):
+        return ",".join(str(p).strip() for p in v if str(p).strip())
+    return v
+
+
+def _validate_plan_date(field: str):
+    @field_validator(field, mode="before")
+    @classmethod
+    def _check(cls, v: Any) -> str | None:
+        if not v:
+            return None
+        v_str = str(v).strip()
+        try:
+            datetime.strptime(v_str, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError(f"{field} must be in 'YYYY-MM-DD' format")
+        return v_str
+
+    return _check
+
+
+def _validate_minutes(field: str):
+    @field_validator(field, mode="before")
+    @classmethod
+    def _check(cls, v: Any) -> int | None:
+        if v in (None, ""):
+            return None
+        try:
+            n = int(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise ValueError(f"{field} must be a whole number of minutes")
+        if n < 0:
+            raise ValueError(f"{field} must not be negative")
+        return n
+
+    return _check
 
 
 class TaskCreateIn(BaseModel):
@@ -60,6 +110,15 @@ class TaskCreateIn(BaseModel):
     due_date: str | None = None
     repo: str | None = None
     note_id: str | None = None
+    parent_id: str | None = None
+    blocked_by: str | None = None
+    estimate_min: int | None = None
+    spent_min: int | None = None
+    list: Literal["inbox", "someday"] = "inbox"
+    context: str | None = None
+    waiting_for: str | None = None
+    follow_up_at: str | None = None
+    recurrence: str | None = Field(default=None, max_length=120)
 
     @field_validator("priority", mode="before")
     @classmethod
@@ -91,6 +150,23 @@ class TaskCreateIn(BaseModel):
             raise ValueError("due_date must be in 'YYYY-MM-DD' format")
         return v_str
 
+    @field_validator("blocked_by", mode="before")
+    @classmethod
+    def normalize_blocked_by(cls, v: Any) -> str | None:
+        return _coerce_blocked_by(v) or None
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def normalize_context(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        v_str = str(v).strip().lstrip("@").strip().lower()
+        return v_str[:64] or None
+
+    _check_estimate = _validate_minutes("estimate_min")
+    _check_spent = _validate_minutes("spent_min")
+    _check_follow_up = _validate_plan_date("follow_up_at")
+
 
 class TaskUpdateIn(BaseModel):
     text: str | None = Field(default=None, min_length=1, max_length=2000)
@@ -98,6 +174,16 @@ class TaskUpdateIn(BaseModel):
     priority: Literal["P1", "P2", "P3"] | None = None
     due_date: str | None = None
     repo: str | None = None
+    parent_id: str | None = None
+    blocked_by: str | None = None
+    estimate_min: int | None = None
+    spent_min: int | None = None
+    list: Literal["inbox", "someday", None] = None
+    context: str | None = None
+    waiting_for: str | None = None
+    follow_up_at: str | None = None
+    recurrence: str | None = Field(default=None, max_length=120)
+    sort_order: float | None = None
 
     @field_validator("priority", mode="before")
     @classmethod
@@ -128,6 +214,23 @@ class TaskUpdateIn(BaseModel):
         except ValueError:
             raise ValueError("due_date must be in 'YYYY-MM-DD' format")
         return v_str
+
+    @field_validator("blocked_by", mode="before")
+    @classmethod
+    def normalize_blocked_by(cls, v: Any) -> str | None:
+        return _coerce_blocked_by(v) or None
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def normalize_context(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        v_str = str(v).strip().lstrip("@").strip().lower()
+        return v_str[:64] or None
+
+    _check_estimate = _validate_minutes("estimate_min")
+    _check_spent = _validate_minutes("spent_min")
+    _check_follow_up = _validate_plan_date("follow_up_at")
 
 
 REVIEW_STATES = ("raw", "enriched", "reviewed", "final")

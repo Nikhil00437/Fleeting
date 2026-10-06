@@ -62,6 +62,8 @@ export interface TagCount {
 
 export type TaskPriority = "P1" | "P2" | "P3";
 
+export type TaskList = "inbox" | "someday";
+
 export interface TaskItem {
   id: string;
   note_id: string;
@@ -73,6 +75,19 @@ export interface TaskItem {
   repo: string | null;
   created_at: string;
   completed_at: string | null;
+  /** 0.5 planning fields (backend v16). parent_id nests one level deep. */
+  parent_id?: string | null;
+  /** CSV of task ids this task is blocked by. */
+  blocked_by?: string | null;
+  estimate_min?: number | null;
+  spent_min?: number | null;
+  list?: TaskList;
+  /** GTD context, stored without the leading @ ("home", "computer", …). */
+  context?: string | null;
+  waiting_for?: string | null;
+  follow_up_at?: string | null;
+  recurrence?: string | null;
+  sort_order?: number;
 }
 
 export interface TaskStats {

@@ -71,7 +71,10 @@ def create_task(body: TaskCreateIn, request: Request) -> TaskOut:
             raise HTTPException(404, f"note {body.note_id} not found")
 
     task_data = body.model_dump(exclude_unset=True)
-    task = st.db.insert_task(task_data)
+    try:
+        task = st.db.insert_task(task_data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     st.bus.publish("task.created", task)
     _sync_vault_and_notify_note(st, task["note_id"])
     return TaskOut(**task)
@@ -143,7 +146,10 @@ def update_task(task_id: str, body: TaskUpdateIn, request: Request) -> TaskOut:
     if not changes:
         return TaskOut(**task)
 
-    updated = st.db.update_task(task_id, changes)
+    try:
+        updated = st.db.update_task(task_id, changes)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     if not updated:
         raise HTTPException(404, "task not found")
 

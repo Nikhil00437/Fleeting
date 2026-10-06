@@ -283,6 +283,25 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_note_attachments_note ON note_attachments(note_id);
     """,
+    # v16 — 0.5 tasks & day planning: schedulable, reviewable tasks. parent_id
+    # is one nesting level only (no FK possible via ALTER TABLE; enforced in
+    # CRUD). blocked_by is a CSV of task ids (cycle-checked in CRUD). list
+    # separates the someday/maybe backlog from the actionable inbox; sort_order
+    # backs #29 drag-to-reorder within a sibling group.
+    """
+    ALTER TABLE tasks ADD COLUMN parent_id TEXT;
+    ALTER TABLE tasks ADD COLUMN blocked_by TEXT;
+    ALTER TABLE tasks ADD COLUMN estimate_min INTEGER;
+    ALTER TABLE tasks ADD COLUMN spent_min INTEGER;
+    ALTER TABLE tasks ADD COLUMN list TEXT NOT NULL DEFAULT 'inbox';
+    ALTER TABLE tasks ADD COLUMN context TEXT;
+    ALTER TABLE tasks ADD COLUMN waiting_for TEXT;
+    ALTER TABLE tasks ADD COLUMN follow_up_at TEXT;
+    ALTER TABLE tasks ADD COLUMN recurrence TEXT;
+    ALTER TABLE tasks ADD COLUMN sort_order REAL NOT NULL DEFAULT 0;
+    CREATE INDEX idx_tasks_list ON tasks(list);
+    CREATE INDEX idx_tasks_parent_id ON tasks(parent_id);
+    """,
 ]
 
 
@@ -1372,6 +1391,42 @@ class Database:
         })
         return str(new_note["id"])
 
+    def _validate_task_parent(self, parent_id: str | None, task_id: str | None = None) -> None:
+        """Subtasks nest one level deep: a parent may not itself be a subtask."""
+        if parent_id is None:
+            return
+        if task_id and parent_id == task_id:
+            raise ValueError("a task cannot be its own parent")
+        parent = self.get_task(parent_id)
+        if not parent:
+            raise ValueError(f"parent task {parent_id} not found")
+        if parent["parent_id"]:
+            raise ValueError("subtasks cannot nest more than one level deep")
+
+    def _validate_task_blocked_by(self, blocked_by: str | None, task_id: str | None = None) -> None:
+        if not blocked_by:
+            return
+        deps = [p.strip() for p in blocked_by.split(",") if p.strip()]
+        for dep in deps:
+            if task_id and dep == task_id:
+                raise ValueError("a task cannot block itself")
+            if not self.get_task(dep):
+                raise ValueError(f"blocking task {dep} not found")
+        # Follow the chain breadth-first: if this task is reachable through the
+        # blockers' own blocked_by edges, accepting the edge would deadlock both.
+        if task_id:
+            frontier, seen = list(deps), set()
+            while frontier:
+                cur = frontier.pop()
+                if cur == task_id:
+                    raise ValueError("task dependencies would form a cycle")
+                if cur in seen:
+                    continue
+                seen.add(cur)
+                row = self.execute("SELECT blocked_by FROM tasks WHERE id = ?", (cur,)).fetchone()
+                if row and row["blocked_by"]:
+                    frontier.extend(p.strip() for p in row["blocked_by"].split(",") if p.strip())
+
     def insert_task(self, task: dict) -> dict:
         task_id = task.get("id") or new_id()
         note_id = task.get("note_id")
@@ -1388,10 +1443,19 @@ class Database:
         created_at = task.get("created_at") or now_iso()
         completed_at = task.get("completed_at") or (now_iso() if done else None)
 
+        parent_id = task.get("parent_id") or None
+        self._validate_task_parent(parent_id, task_id=task_id)
+        blocked_by = _norm_blocked_by(task.get("blocked_by"))
+        self._validate_task_blocked_by(blocked_by, task_id=task_id)
+
         self.execute(
             """
-            INSERT INTO tasks (id, note_id, text, done, priority, due_date, repo, created_at, completed_at)
-            VALUES (:id, :note_id, :text, :done, :priority, :due_date, :repo, :created_at, :completed_at)
+            INSERT INTO tasks (id, note_id, text, done, priority, due_date, repo, created_at, completed_at,
+                               parent_id, blocked_by, estimate_min, spent_min, list, context,
+                               waiting_for, follow_up_at, recurrence, sort_order)
+            VALUES (:id, :note_id, :text, :done, :priority, :due_date, :repo, :created_at, :completed_at,
+                    :parent_id, :blocked_by, :estimate_min, :spent_min, :list, :context,
+                    :waiting_for, :follow_up_at, :recurrence, :sort_order)
             """,
             {
                 "id": task_id,
@@ -1403,6 +1467,16 @@ class Database:
                 "repo": repo,
                 "created_at": created_at,
                 "completed_at": completed_at,
+                "parent_id": parent_id,
+                "blocked_by": blocked_by,
+                "estimate_min": _norm_task_minutes(task.get("estimate_min")),
+                "spent_min": _norm_task_minutes(task.get("spent_min")),
+                "list": _norm_task_list(task.get("list")),
+                "context": _norm_task_context(task.get("context")),
+                "waiting_for": _norm_task_text_field(task.get("waiting_for")),
+                "follow_up_at": _norm_task_date(task.get("follow_up_at")),
+                "recurrence": _norm_task_recurrence(task.get("recurrence")),
+                "sort_order": float(task.get("sort_order") or 0.0),
             },
         )
         self.commit()
@@ -1429,7 +1503,11 @@ class Database:
             return current
 
         clean_changes = {}
-        for key in ("text", "priority", "due_date", "repo", "completed_at", "note_id"):
+        for key in (
+            "text", "priority", "due_date", "repo", "completed_at", "note_id",
+            "parent_id", "blocked_by", "estimate_min", "spent_min", "list",
+            "context", "waiting_for", "follow_up_at", "recurrence", "sort_order",
+        ):
             if key in changes:
                 clean_changes[key] = changes[key]
 
@@ -1447,6 +1525,36 @@ class Database:
         if "due_date" in clean_changes:
             val = clean_changes["due_date"]
             clean_changes["due_date"] = str(val).strip() if val else None
+
+        if "parent_id" in clean_changes:
+            self._validate_task_parent(clean_changes["parent_id"], task_id=task_id)
+            if clean_changes["parent_id"] is None:
+                clean_changes["sort_order"] = clean_changes.get("sort_order", 0.0)
+
+        if "blocked_by" in clean_changes:
+            clean_changes["blocked_by"] = _norm_blocked_by(clean_changes["blocked_by"])
+            self._validate_task_blocked_by(clean_changes["blocked_by"], task_id=task_id)
+
+        if "estimate_min" in clean_changes:
+            clean_changes["estimate_min"] = _norm_task_minutes(clean_changes["estimate_min"])
+        if "spent_min" in clean_changes:
+            clean_changes["spent_min"] = _norm_task_minutes(clean_changes["spent_min"])
+
+        if "list" in clean_changes:
+            clean_changes["list"] = _norm_task_list(clean_changes["list"])
+        if "context" in clean_changes:
+            clean_changes["context"] = _norm_task_context(clean_changes["context"])
+        if "waiting_for" in clean_changes:
+            clean_changes["waiting_for"] = _norm_task_text_field(clean_changes["waiting_for"])
+        if "follow_up_at" in clean_changes:
+            clean_changes["follow_up_at"] = _norm_task_date(clean_changes["follow_up_at"])
+        if "recurrence" in clean_changes:
+            clean_changes["recurrence"] = _norm_task_recurrence(clean_changes["recurrence"])
+        if "sort_order" in clean_changes:
+            try:
+                clean_changes["sort_order"] = float(clean_changes["sort_order"] or 0.0)
+            except (TypeError, ValueError):
+                clean_changes["sort_order"] = 0.0
 
         if "done" in changes:
             new_done = bool(changes["done"])
@@ -1483,6 +1591,12 @@ class Database:
         task = self.get_task(task_id)
         if not task:
             return None
+        # Subtasks have no FK on parent_id (ALTER TABLE can't add one), so
+        # promote them to top level instead of orphaning or cascading them.
+        self.execute(
+            "UPDATE tasks SET parent_id = NULL, sort_order = 0.0 WHERE parent_id = :id",
+            {"id": task_id},
+        )
         self.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         self.commit()
         self._sync_note_action_items(task["note_id"])
@@ -2037,7 +2151,100 @@ def _row_to_task(row: sqlite3.Row) -> dict:
         "repo": row["repo"],
         "created_at": row["created_at"],
         "completed_at": row["completed_at"],
+        "parent_id": row["parent_id"],
+        "blocked_by": row["blocked_by"],
+        "estimate_min": row["estimate_min"],
+        "spent_min": row["spent_min"],
+        "list": row["list"] or "inbox",
+        "context": row["context"],
+        "waiting_for": row["waiting_for"],
+        "follow_up_at": row["follow_up_at"],
+        "recurrence": row["recurrence"],
+        "sort_order": row["sort_order"] if row["sort_order"] is not None else 0.0,
     }
+
+
+# 0.5 planning fields. list is deliberately closed: the Today query treats
+# anything not 'inbox' as out of the daily view, so a typo'd value would
+# silently strand tasks.
+TASK_LISTS = ("inbox", "someday")
+
+_RECURRENCE_FREQS = ("DAILY", "WEEKLY", "MONTHLY", "YEARLY")
+_RECURRENCE_RE = re.compile(
+    r"^FREQ=(?P<freq>" + "|".join(_RECURRENCE_FREQS) + r")"
+    r"(;INTERVAL=(?P<interval>[2-9]\d*))?"
+    r"(;BYDAY=(?P<byday>[A-Z]{2}(,[A-Z]{2})*))?$",
+    re.ASCII,
+)
+
+
+def _norm_task_list(value: object) -> str:
+    v = str(value or "inbox").strip().lower()
+    return v if v in TASK_LISTS else "inbox"
+
+
+def _norm_task_context(value: object) -> str | None:
+    """@Home / ' home ' → 'home'; empty → NULL."""
+    if value is None:
+        return None
+    v = str(value).strip().lstrip("@").strip().lower()
+    return v[:64] or None
+
+
+def _norm_task_minutes(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(n, 100_000))
+
+
+def _norm_task_date(value: object) -> str | None:
+    if value is None:
+        return None
+    v = str(value).strip()
+    return v or None
+
+
+def _norm_task_text_field(value: object, limit: int = 200) -> str | None:
+    """Free-text planning fields (waiting_for). Empty → NULL."""
+    if value is None:
+        return None
+    v = str(value).strip()
+    return v[:limit] or None
+
+
+def _norm_task_recurrence(value: object) -> str | None:
+    """Accept an RFC-5545-style RRULE subset: FREQ=DAILY|WEEKLY|MONTHLY|YEARLY
+    with optional INTERVAL=n (≥2; 1 is the same as no interval) and, for
+    WEEKLY, BYDAY=MO,TU,…. Empty/None → NULL; anything unparseable → NULL
+    rather than an error, so a bad string never blocks saving the task."""
+    if value in (None, ""):
+        return None
+    v = str(value).strip().upper()
+    m = _RECURRENCE_RE.match(v)
+    if not m:
+        return None
+    if m.group("byday") and m.group("freq") != "WEEKLY":
+        return None
+    return v
+
+
+def _norm_blocked_by(value: object) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (list, tuple)):
+        parts = [str(p).strip() for p in value]
+    else:
+        parts = str(value).split(",")
+    seen: dict[str, None] = {}
+    for p in parts:
+        p = p.strip()
+        if p:
+            seen.setdefault(p, None)
+    return ",".join(seen) or None
 
 
 def _activity_fts_query(raw: str) -> str:
