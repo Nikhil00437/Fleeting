@@ -368,3 +368,58 @@ def test_attachment_paths_cannot_escape_and_purge_cleans_files(client, tmp_path)
     client.post(f"/api/notes/{note['id']}/purge")
     assert not stored.exists()
     assert st.db.attachments_for(note["id"]) == []
+
+
+# ---- #421 cleanup assistant ---------------------------------------------
+
+def test_cleanup_flags_stale_untagged_untitled_and_dupes(client):
+    from datetime import datetime, timedelta, timezone
+
+    note = _note(client, "stale finished note")
+    fresh = _note(client, "recent note")
+    st = client.app.state.st
+
+    # make one note look 60 days stale
+    old = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat(timespec="seconds")
+    st.db.update_note(note["id"], {"updated_at": old})
+
+    body = client.get("/api/cleanup").json()
+    kinds = {(s["kind"], s["note_id"]) for s in body}
+    assert ("archive", note["id"]) in kinds
+    # the recent note is untouched for too short a time to be proposed
+    assert ("archive", fresh["id"]) not in kinds
+
+    # untagged + untitled flags
+    client.patch(f"/api/notes/{fresh['id']}", json={"tags": [], "title": ""})
+    body = client.get("/api/cleanup").json()
+    kinds_by_note = {s["note_id"]: s["kind"] for s in body}
+    assert kinds_by_note.get(fresh["id"]) in ("add_tag", "rename")
+
+    # duplicate titles surface a merge candidate
+    a = _note(client, "same title note")
+    b = _note(client, "same title note")
+    client.patch(f"/api/notes/{a['id']}", json={"title": "Duplicated"})
+    client.patch(f"/api/notes/{b['id']}", json={"title": "duplicated"})
+    body = client.get("/api/cleanup").json()
+    merges = [s for s in body if s["kind"] == "merge"]
+    assert merges and merges[0]["title"] == "Duplicated"
+    assert set(merges[0]["extra_note_ids"]) >= {a["id"], b["id"]} - {merges[0]["note_id"]}
+
+
+def test_cleanup_apply_archives_and_tags(client):
+    note = _note(client, "apply cleanup to me")
+
+    r = client.post("/api/cleanup/apply", json={"note_id": note["id"], "action": "archive"})
+    assert r.json()["ok"] is True
+    assert client.get(f"/api/notes/{note['id']}").json()["archived"] is True
+
+    r = client.post(
+        "/api/cleanup/apply",
+        json={"note_id": note["id"], "action": "add_tag", "value": "voice"},
+    )
+    assert r.json()["ok"] is True
+    assert "voice" in client.get(f"/api/notes/{note['id']}").json()["tags"]
+
+    assert client.post(
+        "/api/cleanup/apply", json={"note_id": note["id"], "action": "explode"}
+    ).status_code == 422

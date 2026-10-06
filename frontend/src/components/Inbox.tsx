@@ -42,6 +42,15 @@ interface Props {
   onToast?: (message: string, kind?: "ok" | "err") => void;
 }
 
+type Suggestion = {
+  kind: "archive" | "add_tag" | "rename" | "merge";
+  note_id: string;
+  title: string;
+  reason: string;
+  value?: string;
+  extra_note_ids?: string[];
+};
+
 function dayLabel(d: string, total: number) {
   const dt = new Date(d + "T12:00:00");
   if (total <= 7) return dt.toLocaleDateString([], { weekday: "short" });
@@ -76,6 +85,9 @@ export default function Inbox({
   // #271: triage — one note at a time, a decision before the next appears.
   const [triageOpen, setTriageOpen] = useState(false);
   const [triageDone, setTriageDone] = useState<Set<string>>(new Set());
+  // #421: monthly cleanup assistant.
+  const [showCleanup, setShowCleanup] = useState(false);
+  const [cleanupSuggestions, setCleanupSuggestions] = useState<Suggestion[] | null>(null);
   // #424: review queue — notes whose enrichment used the heuristic fallback.
   const [reviewOnly, setReviewOnly] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
@@ -135,6 +147,21 @@ export default function Inbox({
     () => api.stats(rangeDays).then(setStats).catch(() => {}),
     [rangeDays],
   );
+
+  function loadCleanup() {
+    api.cleanupSuggestions().then(setCleanupSuggestions).catch(() => setCleanupSuggestions([]));
+  }
+
+  async function applySuggestion(s: Suggestion) {
+    if (s.kind !== "archive" && s.kind !== "add_tag") return;
+    try {
+      await api.applyCleanup(s.note_id, s.kind, s.value);
+      setCleanupSuggestions((list) => (list ?? []).filter((x) => !(x.note_id === s.note_id && x.kind === s.kind)));
+      toast(s.kind === "archive" ? "Note archived" : `Tagged #${s.value}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
 
   function loadTagCounts() {
     api.tags().then(setTagCounts).catch(() => setTagCounts([]));
@@ -680,6 +707,23 @@ export default function Inbox({
 
           <button
             onClick={() => {
+              const next = !showCleanup;
+              setShowCleanup(next);
+              if (next) loadCleanup();
+            }}
+            className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+              showCleanup
+                ? "border-violet-400/40 bg-violet-500/15 text-violet-200"
+                : "border-white/[0.07] bg-ink-950/80 text-ink-400 hover:text-ink-200"
+            }`}
+            title="Cleanup suggestions — archive, tag, rename, merge"
+          >
+            <SparkIcon className="h-3 w-3" />
+            <span className="hidden lg:inline">Cleanup</span>
+          </button>
+
+          <button
+            onClick={() => {
               setSelectMode((v) => !v);
               setPicked(new Set());
             }}
@@ -805,6 +849,60 @@ export default function Inbox({
               Add rule
             </button>
           </div>
+        </div>
+      )}
+
+      {/* #421 Cleanup suggestions panel */}
+      {showCleanup && (
+        <div className="relative z-30 shrink-0 border-b border-ink-800 bg-ink-950/95 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="micro-label">Cleanup assistant — nothing changes until you apply it</p>
+            <button
+              onClick={loadCleanup}
+              className="rounded-lg border border-white/[0.08] bg-ink-900 px-2.5 py-1 text-[11px] text-ink-200 hover:text-ink-100"
+            >
+              Refresh
+            </button>
+          </div>
+          {!cleanupSuggestions ? (
+            <div className="shimmer h-10 rounded-xl" />
+          ) : cleanupSuggestions.length === 0 ? (
+            <p className="py-2 text-xs text-ink-500">Nothing to clean up right now. Tidy vault.</p>
+          ) : (
+            <div className="max-h-56 space-y-1 overflow-y-auto">
+              {cleanupSuggestions.map((s, i) => (
+                <div key={`${s.kind}-${s.note_id}-${i}`} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-2.5 py-1.5 text-[11.5px]">
+                  <span
+                    className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase ${
+                      s.kind === "archive"
+                        ? "bg-amber-500/15 text-amber-300"
+                        : s.kind === "merge"
+                          ? "bg-red-500/15 text-red-300"
+                          : "bg-iris-500/15 text-iris-300"
+                    }`}
+                  >
+                    {s.kind}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-ink-200">{s.title || s.note_id}</span>
+                  <span className="hidden shrink-0 text-[10.5px] text-ink-500 lg:inline">{s.reason}</span>
+                  {(s.kind === "archive" || s.kind === "add_tag") && (
+                    <button
+                      onClick={() => void applySuggestion(s)}
+                      className="shrink-0 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-medium text-emerald-200 hover:bg-emerald-500/20"
+                    >
+                      Apply
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onOpen(s.note_id)}
+                    className="shrink-0 rounded-lg border border-white/[0.08] bg-ink-900 px-2 py-0.5 text-[10.5px] text-ink-200 hover:text-ink-100"
+                  >
+                    {s.kind === "merge" || s.kind === "rename" ? "Open" : "View"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

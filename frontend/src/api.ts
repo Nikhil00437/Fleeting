@@ -97,6 +97,17 @@ export const api = {
 
   runFilingRules: () => req<{ ok: boolean; changed: number }>("/rules/run", { method: "POST" }),
 
+  cleanupSuggestions: () =>
+    req<
+      { kind: "archive" | "add_tag" | "rename" | "merge"; note_id: string; title: string; reason: string; value?: string; extra_note_ids?: string[] }[]
+    >("/cleanup"),
+
+  applyCleanup: (noteId: string, action: "archive" | "add_tag", value?: string) =>
+    req<{ ok: boolean }>("/cleanup/apply", {
+      method: "POST",
+      body: JSON.stringify({ note_id: noteId, action, value }),
+    }),
+
   createSamples: () => req<{ ok: boolean; created: number }>("/samples", { method: "POST" }),
 
   attachments: (noteId: string) =>
