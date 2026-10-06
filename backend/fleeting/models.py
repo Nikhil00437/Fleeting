@@ -194,6 +194,20 @@ class TodayLoad(BaseModel):
     capacity_min: int
 
 
+class StreakDay(BaseModel):
+    day: str
+    count: int
+
+
+class StreakOut(BaseModel):
+    """#39 completion streaks + heatmap."""
+
+    current_streak: int
+    best_streak: int
+    active_days: int
+    cells: list[StreakDay] = []
+
+
 class TodayOut(BaseModel):
     """#30 Today view / #33 next action — one backend ranking, two views."""
 
@@ -205,6 +219,7 @@ class TodayOut(BaseModel):
     next_action: TaskOut | None = None
     up_next: list[TaskOut] = []
     load: TodayLoad
+    streak: StreakOut | None = None
 
 
 class QuickAddOut(BaseModel):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fleeting.services.whatnow import build_today
+from fleeting.services.whatnow import build_streaks, build_today
 
 # A Wednesday afternoon, local.
 NOW = datetime(2026, 10, 7, 14, 0, 0)
@@ -124,3 +124,47 @@ def test_empty_day():
     assert r["next_action"] is None
     assert r["up_next"] == []
     assert r["load"]["estimated_min"] == 0
+
+
+# ---------------------------------------------------------------------------
+# #39 streaks + heatmap
+# ---------------------------------------------------------------------------
+
+
+def _done(day: str) -> dict:
+    return make(done=True, completed_at=f"{day}T09:00:00+00:00")
+
+
+def test_streak_counts_back_from_today():
+    tasks = [_done("2026-10-07"), _done("2026-10-06"), _done("2026-10-05")]
+    r = build_streaks(tasks, now=NOW, days=10)
+    assert r["current_streak"] == 3
+    assert r["active_days"] == 3
+
+
+def test_today_being_empty_does_not_break_the_streak():
+    """The day isn't over yet — an empty today keeps yesterday's run alive."""
+    tasks = [_done("2026-10-06"), _done("2026-10-05")]
+    assert build_streaks(tasks, now=NOW, days=10)["current_streak"] == 2
+
+
+def test_missed_yesterday_ends_the_streak():
+    tasks = [_done("2026-10-05"), _done("2026-10-04")]
+    assert build_streaks(tasks, now=NOW, days=10)["current_streak"] == 0
+
+
+def test_best_streak_survives_a_gap():
+    tasks = [_done("2026-10-06"), _done("2026-10-07"), _done("2026-10-02"), _done("2026-10-03")]
+    r = build_streaks(tasks, now=NOW, days=10)
+    assert r["current_streak"] == 2  # today + yesterday
+    assert r["best_streak"] == 2  # the Oct 2-3 pair is the same length
+
+
+def test_heatmap_cells_are_dense_and_oldest_first():
+    tasks = [_done("2026-10-07"), _done("2026-10-05")]
+    cells = build_streaks(tasks, now=NOW, days=7)["cells"]
+    assert len(cells) == 7
+    assert cells[0]["day"] == "2026-10-01"  # 6 days before NOW
+    assert cells[-1]["day"] == "2026-10-07"  # NOW's date
+    assert [c["day"] for c in cells] == sorted(c["day"] for c in cells)
+    assert [c["count"] for c in cells if c["count"]] == [1, 1]

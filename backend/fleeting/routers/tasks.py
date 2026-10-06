@@ -7,7 +7,16 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..models import QuickAddIn, QuickAddOut, QuickAddParseView, TaskCreateIn, TaskOut, TaskUpdateIn, TodayOut
+from ..models import (
+    QuickAddIn,
+    QuickAddOut,
+    QuickAddParseView,
+    StreakOut,
+    TaskCreateIn,
+    TaskOut,
+    TaskUpdateIn,
+    TodayOut,
+)
 from ..services import markdown, whatnow
 from ..services.repos import discover_git_repos
 from ..services.task_text import parse_quick_add
@@ -138,8 +147,9 @@ def get_today(request: Request) -> TodayOut:
         current_title = " ".join(
             x for x in (current_session.get("app_class"), current_session.get("title")) if x
         )
+    tasks = st.db.list_tasks(status="all", limit=1000)
     result = whatnow.build_today(
-        st.db.list_tasks(status="all", limit=1000),
+        tasks,
         now=now,
         capacity_min=st.cfg.tasks.daily_capacity_min,
         current_title=current_title,
@@ -153,6 +163,7 @@ def get_today(request: Request) -> TodayOut:
         next_action=TaskOut(**result["next_action"]) if result["next_action"] else None,
         up_next=[TaskOut(**t) for t in result["up_next"]],
         load=result["load"],
+        streak=StreakOut(**whatnow.build_streaks(tasks, now=now)),
     )
 
 

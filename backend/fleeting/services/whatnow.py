@@ -166,3 +166,60 @@ def build_today(
             "capacity_min": capacity_min,
         },
     }
+
+def build_streaks(
+    tasks: list[dict[str, Any]],
+    now: datetime,
+    days: int = 112,
+) -> dict[str, Any]:
+    """#39 completion streaks and a heatmap, from completed_at dates alone.
+
+    A day counts as active when at least one task was completed on it. The
+    current streak walks back from today; today not being done yet does not
+    break it (the day isn't over), but a missed *yesterday* does.
+    """
+    today = now.strftime("%Y-%m-%d")
+    counts: dict[str, int] = {}
+    for t in tasks:
+        if not t.get("done"):
+            continue
+        day = (t.get("completed_at") or "")[:10]
+        if day:
+            counts[day] = counts.get(day, 0) + 1
+
+    # Heatmap cells, oldest first, one per day in the window.
+    cells = []
+    for i in range(days - 1, -1, -1):
+        day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+        cells.append({"day": day, "count": counts.get(day, 0)})
+
+    # Current streak: consecutive active days ending today or yesterday.
+    streak = 0
+    cursor = now
+    if counts.get(today, 0) == 0:
+        cursor = cursor - timedelta(days=1)  # today is still open
+    while counts.get(cursor.strftime("%Y-%m-%d"), 0) > 0:
+        streak += 1
+        cursor = cursor - timedelta(days=1)
+
+    # Best streak anywhere in the window.
+    best = run = 0
+    prev: str | None = None
+    for cell in cells:
+        if cell["count"] > 0 and (prev is None or cell["day"] == _next_day(prev)):
+            run += 1
+        else:
+            run = 1 if cell["count"] > 0 else 0
+        best = max(best, run)
+        prev = cell["day"]
+
+    return {
+        "current_streak": streak,
+        "best_streak": best,
+        "active_days": sum(1 for c in cells if c["count"] > 0),
+        "cells": cells,
+    }
+
+
+def _next_day(day: str) -> str:
+    return (datetime.fromisoformat(day) + timedelta(days=1)).strftime("%Y-%m-%d")

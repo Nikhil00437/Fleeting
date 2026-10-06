@@ -85,6 +85,13 @@ export interface TodayLoad {
   capacity_min: number;
 }
 
+export interface StreakData {
+  current_streak: number;
+  best_streak: number;
+  active_days: number;
+  cells: Array<{ day: string; count: number }>;
+}
+
 export interface TodayData {
   day: string;
   overdue: TaskItem[];
@@ -94,6 +101,8 @@ export interface TodayData {
   next_action: TaskItem | null;
   up_next: TaskItem[];
   load: TodayLoad;
+  /** #39 completion streaks + heatmap. */
+  streak?: StreakData | null;
 }
 
 export interface TaskItem {

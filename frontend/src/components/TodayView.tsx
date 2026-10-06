@@ -7,8 +7,9 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { streakLevel, toWeeks } from "./streaks";
 import { api } from "../api";
-import type { TaskItem, TodayData } from "../types";
+import type { StreakData, TaskItem, TodayData } from "../types";
 import { CheckIcon, ClockIcon } from "../components/Icons";
 import { cyclePriority, formatDueDate } from "./TasksView";
 
@@ -139,6 +140,49 @@ function LoadBar({ load }: { load: TodayData["load"] }) {
   );
 }
 
+
+/** #39: streak counters + a completion heatmap. */
+function StreakPanel({ streak }: { streak: StreakData }) {
+  const weeks = toWeeks(streak.cells);
+  return (
+    <section className="glass-studio rounded-2xl p-3.5" aria-label="Completion streak">
+      <div className="flex items-baseline justify-between">
+        <span className="micro-label">Streak</span>
+        <span className="font-mono text-[10px] text-ink-500">
+          best {streak.best_streak} · {streak.active_days} active
+        </span>
+      </div>
+      <p className="mt-1.5 text-2xl font-semibold text-ember-300">
+        {streak.current_streak}
+        <span className="ml-1 text-[11px] font-normal text-ink-500">
+          day{streak.current_streak === 1 ? "" : "s"} in a row
+        </span>
+      </p>
+      <div className="mt-2.5 flex gap-[3px] overflow-hidden" role="img" aria-label={`${streak.active_days} active days in the last ${streak.cells.length}`}>
+        {weeks.map((week, wi) => (
+          <div key={wi} className="flex flex-col gap-[3px]">
+            {week.map((c) => (
+              <span
+                key={c.day}
+                title={`${c.day}: ${c.count} done`}
+                className={`h-[9px] w-[9px] rounded-[2px] ${HEAT[streakLevel(c.count)]}`}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const HEAT = [
+  "bg-ink-900", // 0
+  "bg-ember-500/25", // 1-2
+  "bg-ember-500/45", // 3-4
+  "bg-ember-500/70", // 5-7
+  "bg-ember-400", // 8+
+];
+
 export default function TodayView({
   refreshKey,
   onToast,
@@ -198,6 +242,8 @@ export default function TodayView({
           {data.day} · {openCount} open · {data.completed_today.length} done
         </span>
       </header>
+
+      {data.streak && <StreakPanel streak={data.streak} />}
 
       {next ? (
         <section className="glass-studio rounded-2xl p-4" aria-label="Next action">

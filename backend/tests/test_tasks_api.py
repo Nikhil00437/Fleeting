@@ -539,6 +539,9 @@ def test_today_endpoint(client):
     assert data["next_action"]["text"] in ("overdue thing", "due now")
     assert data["load"]["estimated_min"] == 30
     assert data["load"]["capacity_min"] > 0
+    # #39 streaks ride the same payload
+    assert data["streak"]["current_streak"] == 0
+    assert len(data["streak"]["cells"]) == 112
 
 
 def test_completing_recurring_task_spawns_next(client, monkeypatch):
