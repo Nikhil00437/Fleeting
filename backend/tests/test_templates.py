@@ -63,3 +63,58 @@ def test_templates_api(client, tmp_path, monkeypatch):
     assert r.status_code == 200
     assert (tmp_path / "templates.json").exists()
     assert client.get("/api/templates").json()["bug"]["mode"] == "bullets"
+
+
+# ---- #472 template fields -------------------------------------------------
+
+def test_template_with_typed_fields_round_trips(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(tmpl, "TEMPLATES_PATH", tmp_path / "templates.json")
+    body = {
+        "review": {
+            "type": "text",
+            "fields": [
+                {"name": "Rating", "type": "rating"},
+                {"name": "Status", "type": "status", "options": ["to watch", "watched"]},
+                {"name": "URL", "type": "url"},
+                {"name": "Cost", "type": "cost"},
+            ],
+        }
+    }
+    client.put("/api/templates", json=body)
+    stored = client.get("/api/templates").json()["review"]
+    assert [f["name"] for f in stored["fields"]] == ["rating", "status", "url", "cost"]
+    assert stored["fields"][1]["options"] == ["to watch", "watched"]
+
+
+def test_template_field_validation(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(tmpl, "TEMPLATES_PATH", tmp_path / "templates.json")
+    client.put(
+        "/api/templates",
+        json={"bad": {"fields": [{"name": "s", "type": "status"}]}},
+    )
+    # status without options is rejected, so the template must not have been saved
+    assert "bad" not in client.get("/api/templates").json()
+
+    client.put(
+        "/api/templates",
+        json={"bad2": {"fields": [{"name": "x", "type": "hologram"}]}},
+    )
+    assert "bad2" not in client.get("/api/templates").json()
+
+
+def test_notes_carry_typed_fields_values(client, tmp_path, monkeypatch):
+    """A note created from a template exposes source.template.name for the
+    drawer to resolve the field schema; values live in note.fields."""
+    monkeypatch.setattr(tmpl, "TEMPLATES_PATH", tmp_path / "templates.json")
+    client.put(
+        "/api/templates",
+        json={"book": {"type": "text", "tags": ["reading"], "fields": [{"name": "rating", "type": "rating"}]}},
+    )
+    r = client.post("/api/capture/text", json={"text": "notes on a book", "template": "book"})
+    assert r.status_code == 200
+    note = r.json()
+    assert note["source"]["template"]["name"] == "book"
+    assert note["fields"] == {}
+
+    patched = client.patch(f"/api/notes/{note['id']}", json={"fields": {"rating": 4}}).json()
+    assert patched["fields"] == {"rating": 4}

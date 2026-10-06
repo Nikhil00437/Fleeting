@@ -1,6 +1,7 @@
 import type {
   Note,
   Collection,
+  TemplateFieldDef,
   Settings,
   Stats,
   TagCount,
@@ -190,7 +191,8 @@ export const api = {
 
   profiles: () => req<Record<string, { language?: string; template?: string; mode?: string }>>("/profiles"),
 
-  templates: () => req<Record<string, { type?: string; tags?: string[]; prompt?: string; mode?: string }>>("/templates"),
+  templates: () =>
+    req<Record<string, { type?: string; tags?: string[]; prompt?: string; mode?: string; fields?: TemplateFieldDef[] }>>("/templates"),
 
   search: (
     q: string,

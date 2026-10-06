@@ -266,6 +266,12 @@ declare global {
 
 export type SearchMode = "hybrid" | "keyword" | "semantic";
 
+export interface TemplateFieldDef {
+  name: string;
+  type: "text" | "number" | "rating" | "status" | "url" | "date" | "cost";
+  options?: string[];
+}
+
 export interface Collection {
   id: string;
   kind: "manual" | "saved_query" | "project";

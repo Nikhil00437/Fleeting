@@ -16,6 +16,8 @@ class TemplateIn(BaseModel):
     tags: list[str] = Field(default_factory=list)
     prompt: str | None = None
     mode: str | None = None
+    # #472: typed custom fields rendered on notes created from this template.
+    fields: list[dict] | None = None
 
 
 @router.get("")
@@ -25,10 +27,18 @@ def list_templates() -> dict[str, dict]:
 
 @router.put("")
 def replace_templates(body: dict[str, TemplateIn], request: Request) -> dict:
+    data: dict[str, dict] = {}
     for name, t in body.items():
         if t.mode is not None and t.mode not in tmpl.OUTPUT_MODES:
             raise HTTPException(422, f"template '{name}': mode must be one of {', '.join(tmpl.OUTPUT_MODES)}")
-    data = {name: t.model_dump(exclude_none=True) for name, t in body.items()}
+        entry = t.model_dump(exclude_none=True)
+        try:
+            fields = tmpl.validate_template_fields(t.fields)
+        except ValueError as exc:
+            raise HTTPException(422, f"template '{name}': {exc}") from exc
+        if fields is not None:
+            entry["fields"] = fields
+        data[name] = entry
     tmpl.save_templates(data)
     return data
 

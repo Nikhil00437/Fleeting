@@ -27,7 +27,7 @@ import { runNoteAction } from "./actionRunner";
 import { errorMessage } from "./settingsState";
 import { NOTE_COLORS, colorHex } from "./noteColors";
 import { diffStats, diffText } from "./textDiff";
-import type { Collection, Note } from "../types";
+import type { Collection, Note, TemplateFieldDef } from "../types";
 
 interface Attachment {
   id: string;
@@ -138,6 +138,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
   const [pickerOpen, setPickerOpen] = useState(false);
   const [allCollections, setAllCollections] = useState<Collection[] | null>(null);
   const [attachments, setAttachments] = useState<Attachment[] | null>(null);
+  const [templateFields, setTemplateFields] = useState<TemplateFieldDef[] | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [regenModels, setRegenModels] = useState<string[] | null>(null);
@@ -159,6 +160,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
     setPickerOpen(false);
     setAttachments(null);
     setDropActive(false);
+    setTemplateFields(null);
     setNewTaskText("");
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -197,6 +199,23 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
       success: until ? `Snoozed until ${until.replace("_", " ")}` : "Note woken up",
       onDone: (updated) => onUpdate(updated),
     });
+  }
+
+  // #472: resolve the capture template's typed-fields schema, if any.
+  useEffect(() => {
+    const tname = note.source?.template?.name;
+    if (!tname) {
+      setTemplateFields(null);
+      return;
+    }
+    api
+      .templates()
+      .then((all) => setTemplateFields(all[tname]?.fields ?? []))
+      .catch(() => setTemplateFields(null));
+  }, [note.id, note.source?.template?.name]);
+
+  function setFieldValue(name: string, value: unknown) {
+    void patch({ fields: { ...(note.fields ?? {}), [name]: value } } as Partial<Note>);
   }
 
   // #24: attachment list travels with the note.
@@ -658,6 +677,75 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
                 className="w-full resize-none bg-transparent text-xs leading-relaxed text-ink-200 placeholder-ink-500 outline-none"
               />
             </div>
+
+            {/* #472: template-defined typed fields */}
+            {templateFields && templateFields.length > 0 && (
+              <div className="glass rounded-xl p-3.5">
+                <p className="micro-label mb-2 !text-[9.5px]">Fields</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {templateFields.map((f) => {
+                    const value = (note.fields ?? {})[f.name];
+                    const inputCls =
+                      "w-full rounded-lg border border-white/[0.08] bg-ink-950 px-2 py-1 text-[11.5px] text-ink-100 outline-none focus:border-ember-500/50";
+                    return (
+                      <label key={f.name} className="block">
+                        <span className="mb-0.5 block font-mono text-[9.5px] text-ink-500">{f.name}</span>
+                        {f.type === "status" ? (
+                          <select
+                            value={String(value ?? "")}
+                            onChange={(e) => setFieldValue(f.name, e.target.value || undefined)}
+                            className={inputCls}
+                          >
+                            <option value="">—</option>
+                            {(f.options ?? []).map((o) => (
+                              <option key={o} value={o}>
+                                {o}
+                              </option>
+                            ))}
+                          </select>
+                        ) : f.type === "date" ? (
+                          <input
+                            type="date"
+                            value={String(value ?? "")}
+                            onChange={(e) => setFieldValue(f.name, e.target.value || undefined)}
+                            className={inputCls}
+                          />
+                        ) : f.type === "rating" ? (
+                          <select
+                            value={value === undefined || value === null ? "" : String(value)}
+                            onChange={(e) => setFieldValue(f.name, e.target.value ? Number(e.target.value) : undefined)}
+                            className={inputCls}
+                          >
+                            <option value="">—</option>
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <option key={n} value={n}>
+                                {"★".repeat(n)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={f.type === "number" || f.type === "cost" ? "number" : f.type === "url" ? "url" : "text"}
+                            value={value === undefined || value === null ? "" : String(value)}
+                            onChange={(e) =>
+                              setFieldValue(
+                                f.name,
+                                e.target.value === ""
+                                  ? undefined
+                                  : f.type === "number" || f.type === "cost"
+                                    ? Number(e.target.value)
+                                    : e.target.value,
+                              )
+                            }
+                            className={inputCls}
+                          />
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Interactive Action Items Checklist + Inline Creator */}
             <div className="glass rounded-xl p-3.5">

@@ -25,6 +25,38 @@ TEMPLATES_PATH = CONFIG_DIR / "templates.json"
 
 OUTPUT_MODES = ("raw", "cleaned", "bullets")
 
+# #472: typed custom fields a template declares for its notes. The drawer
+# renders an editor per field and stores values on the note's `fields` JSON.
+FIELD_TYPES = ("text", "number", "rating", "status", "url", "date", "cost")
+
+
+def validate_template_fields(fields: list[dict] | None) -> list[dict] | None:
+    """Normalise a template's fields declaration; raises ValueError on junk."""
+    if fields is None:
+        return None
+    if not isinstance(fields, list):
+        raise ValueError("fields must be a list")
+    out = []
+    seen = set()
+    for f in fields:
+        if not isinstance(f, dict) or not f.get("name"):
+            raise ValueError("each field needs a name")
+        name = str(f["name"]).strip().lower().replace(" ", "_")
+        if not name or name in seen:
+            raise ValueError(f"field name {name!r} is empty or duplicated")
+        seen.add(name)
+        ftype = f.get("type") or "text"
+        if ftype not in FIELD_TYPES:
+            raise ValueError(f"field {name!r}: type must be one of {', '.join(FIELD_TYPES)}")
+        entry: dict[str, Any] = {"name": name, "type": ftype}
+        if ftype == "status":
+            options = [str(o) for o in (f.get("options") or []) if str(o).strip()]
+            if not options:
+                raise ValueError(f"status field {name!r} needs options")
+            entry["options"] = options
+        out.append(entry)
+    return out
+
 _FILLER_RE = re.compile(r"\b(um+|uh+|er+|ah+|like|you know|i mean|sort of|kind of)\b[,]?\s*", re.IGNORECASE)
 
 
