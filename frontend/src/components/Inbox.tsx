@@ -4,6 +4,7 @@ import { dayGroup } from "../time";
 import { AreaTrend, Bars, Ring, StackBar } from "./charts";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
+import { buildTagTree, flattenTagTree, tagMatches } from "./tagTree";
 import {
   ActivityIcon,
   FilterIcon,
@@ -21,7 +22,7 @@ import {
   TrashIcon,
   XIcon,
 } from "./Icons";
-import type { Collection, Note, Stats } from "../types";
+import type { Collection, Note, Stats, TagCount } from "../types";
 
 interface Props {
   refreshNotes?: () => void;
@@ -66,6 +67,9 @@ export default function Inbox({
   const [starredOnly, setStarredOnly] = useState(false);
   // #305: Alt-clicked tag — everything carrying it is hidden until cleared.
   const [excludedTag, setExcludedTag] = useState<string | null>(null);
+  // #270: tag tree panel.
+  const [showTagTree, setShowTagTree] = useState(false);
+  const [tagCounts, setTagCounts] = useState<TagCount[] | null>(null);
   // #424: review queue — notes whose enrichment used the heuristic fallback.
   const [reviewOnly, setReviewOnly] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
@@ -122,6 +126,10 @@ export default function Inbox({
     () => api.stats(rangeDays).then(setStats).catch(() => {}),
     [rangeDays],
   );
+
+  function loadTagCounts() {
+    api.tags().then(setTagCounts).catch(() => setTagCounts([]));
+  }
 
   function loadCollections() {
     api.collections().then(setCollections).catch(() => setCollections([]));
@@ -319,8 +327,9 @@ export default function Inbox({
       if (starredOnly && !n.starred) return false;
       if (reviewOnly && n.review_state !== "raw") return false;
       if (typeFilter !== "all" && n.type !== typeFilter) return false;
-      if (tagFilter && !n.tags.includes(tagFilter)) return false;
-      if (excludedTag && n.tags.includes(excludedTag)) return false;
+      // #270: a selected parent tag covers its descendants (work -> work/x).
+      if (tagFilter && !n.tags.some((t) => tagMatches(t, tagFilter))) return false;
+      if (excludedTag && n.tags.some((t) => tagMatches(t, excludedTag))) return false;
       if (q) {
         return (
           (n.title || "").toLowerCase().includes(q) ||
@@ -468,6 +477,23 @@ export default function Inbox({
             <StarIcon filled={starredOnly} className="h-3 w-3" />
           </button>
 
+          <button
+            onClick={() => {
+              const next = !showTagTree;
+              setShowTagTree(next);
+              if (next) loadTagCounts();
+            }}
+            className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+              showTagTree
+                ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200"
+                : "border-white/[0.07] bg-ink-950/80 text-ink-400 hover:text-ink-200"
+            }`}
+            title="Browse tags (nested tags show as a tree)"
+          >
+            <FilterIcon className="h-3 w-3" />
+            <span className="hidden lg:inline">Tags</span>
+          </button>
+
           {reviewQueueCount > 0 && (
             <button
               onClick={() => setReviewOnly((v) => !v)}
@@ -589,6 +615,56 @@ export default function Inbox({
           </div>
         </div>
       </div>
+
+      {/* #270 Tag tree panel */}
+      {showTagTree && (
+        <div className="relative z-30 shrink-0 border-b border-ink-800 bg-ink-950/95 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="micro-label">Tags — click to filter, Alt-click to exclude</p>
+          </div>
+          {!tagCounts ? (
+            <div className="shimmer h-10 rounded-xl" />
+          ) : tagCounts.length === 0 ? (
+            <p className="py-2 text-xs text-ink-500">No tags yet — tags come from captures and edits.</p>
+          ) : (
+            <div className="max-h-56 overflow-y-auto">
+              {flattenTagTree(buildTagTree(tagCounts)).map(({ node, depth }) => {
+                const active = tagMatches(node.full, tagFilter ?? "") && tagFilter === node.full;
+                const excluded = excludedTag === node.full;
+                return (
+                  <button
+                    key={node.full}
+                    onClick={() => setTagFilter((cur) => (cur === node.full ? null : node.full))}
+                    onClickCapture={(e) => {
+                      if (e.altKey) {
+                        e.stopPropagation();
+                        setExcludedTag((cur) => (cur === node.full ? null : node.full));
+                        setTagFilter(null);
+                      }
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-xs transition-colors ${
+                      excluded
+                        ? "text-red-300 line-through hover:bg-red-500/10"
+                        : active
+                          ? "bg-ember-500/15 font-medium text-ember-200"
+                          : "text-ink-300 hover:bg-white/[0.04] hover:text-ink-100"
+                    }`}
+                    style={{ paddingLeft: `${8 + depth * 18}px` }}
+                  >
+                    <span className="truncate font-mono">{node.name}</span>
+                    {node.children.length > 0 && (
+                      <span className="font-mono text-[9px] text-ink-600">{node.children.length}▾</span>
+                    )}
+                    <span className="ml-auto font-mono text-[10px] tabular-nums text-ink-500">
+                      {node.total}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Collections dropdown */}
       {showCollections && (
