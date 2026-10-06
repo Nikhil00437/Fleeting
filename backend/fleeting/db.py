@@ -1652,8 +1652,11 @@ class Database:
 
         # The default view is the actionable inbox: someday/maybe (#282) stays
         # out of it until explicitly asked for. Waiting-for filtering (#281)
-        # is orthogonal — waiting items are still inbox work.
-        if list is None:
+        # is orthogonal — waiting items are still inbox work. list="all"
+        # removes the scoping entirely (bulk operations, assistant recall).
+        if list == "all":
+            pass
+        elif list is None:
             where.append("t.list = 'inbox'")
         else:
             where.append("t.list = :tlist")

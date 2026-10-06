@@ -111,23 +111,23 @@ def build_assistant_context(
     tasks: list[dict] = []
     try:
         if repo:
-            tasks = db.list_tasks(status="open", repo=repo, limit=6)
+            tasks = db.list_tasks(status="open", repo=repo, list="all", limit=6)
         else:
             if clean_query:
-                matching = db.list_tasks(status="open", q=clean_query, limit=6)
+                matching = db.list_tasks(status="open", q=clean_query, list="all", limit=6)
                 if not matching:
                     keywords = _extract_keywords(clean_query)
                     for kw in keywords:
                         if len(kw) >= 3:
-                            matching = db.list_tasks(status="open", q=kw, limit=6)
+                            matching = db.list_tasks(status="open", q=kw, list="all", limit=6)
                             if matching:
                                 break
                 if matching:
                     tasks = matching
                 else:
-                    tasks = db.list_tasks(status="open", limit=6)
+                    tasks = db.list_tasks(status="open", list="all", limit=6)
             else:
-                tasks = db.list_tasks(status="open", limit=6)
+                tasks = db.list_tasks(status="open", list="all", limit=6)
     except Exception as exc:
         log.warning("Task retrieval failed in assistant context: %s", exc)
         tasks = []

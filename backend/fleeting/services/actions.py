@@ -56,7 +56,7 @@ def delete_tasks(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict
     if all_tasks:
         status_filter = params.get("status") or "all"
         repo_filter = params.get("repo")
-        tasks_to_delete = db.list_tasks(status=status_filter, repo=repo_filter, limit=100_000)
+        tasks_to_delete = db.list_tasks(status=status_filter, repo=repo_filter, list="all", limit=100_000)
     elif task_ids:
         for tid in task_ids:
             t = db.get_task(str(tid))
