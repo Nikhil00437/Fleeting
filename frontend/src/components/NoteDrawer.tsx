@@ -147,6 +147,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
   const [cfKey, setCfKey] = useState("");
   const [cfValue, setCfValue] = useState("");
   const [links, setLinks] = useState<{ outgoing: Note[]; backlinks: Note[] } | null>(null);
+  const [similar, setSimilar] = useState<Note[] | null>(null);
   const [noteCollections, setNoteCollections] = useState<Collection[] | null>(null);
 
   useEffect(() => {
@@ -158,6 +159,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
     setVersions(null);
     setVersionError(null);
     setLinks(null);
+    setSimilar(null);
     setNoteCollections(null);
     setPickerOpen(false);
     setAttachments(null);
@@ -259,6 +261,15 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
       .then(setLinks)
       .catch(() => setLinks(null));
   }, [note.id, note.raw_text]);
+
+  // #23/#275: auto-suggested related notes from embedding neighbours.
+  // updated_at in the deps so a re-embed after an edit refreshes the strip.
+  useEffect(() => {
+    api
+      .similarNotes(note.id)
+      .then(setSimilar)
+      .catch(() => setSimilar(null));
+  }, [note.id, note.updated_at]);
 
   async function toggleCollectionMembership(collId: string, member: boolean) {
     try {
@@ -963,6 +974,30 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* #23/#275/#276: see-also — embedding neighbours of this note */}
+            {similar && similar.length > 0 && (
+              <div>
+                <p className="micro-label mb-1.5 !text-[9.5px]">Related notes</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {similar.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => onOpenNote?.(s.id)}
+                      title={`${Math.round((s.score ?? 0) * 100)}% similar — click to open`}
+                      className="flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-0.5 font-mono text-[11px] text-ink-200 hover:border-cyan-400/40 hover:text-cyan-200"
+                    >
+                      <span className="text-[9px] text-cyan-400/80">
+                        {Math.round((s.score ?? 0) * 100)}%
+                      </span>
+                      <span className="max-w-[180px] truncate">
+                        {s.title || s.raw_text.slice(0, 40) || "Untitled"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

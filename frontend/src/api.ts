@@ -152,6 +152,10 @@ export const api = {
   noteLinks: (id: string) =>
     req<{ outgoing: Note[]; backlinks: Note[] }>(`/notes/${id}/links`),
 
+  /** #320/#23: nearest notes by embedding cosine (drawer related strip). */
+  similarNotes: (id: string, limit = 8) =>
+    req<Note[]>(`/notes/${id}/similar?limit=${limit}`),
+
   noteVersions: (id: string) =>
     req<
       { id: number; title: string; summary: string; raw_text: string; origin: string; created_at: string }[]

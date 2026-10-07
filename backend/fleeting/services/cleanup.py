@@ -1,12 +1,10 @@
 """Monthly cleanup assistant (#421).
 
 Proposes low-risk, human-approved maintenance: archiving untouched notes,
-tagging untagged ones, reviewing empty titles, and looking at exact-duplicate
-titles. Deliberately heuristic — no embeddings, no LLM call — and every
-suggestion needs an explicit apply.
-
-Merge-duplicates (#16) stays deferred to 0.6: without tuned embeddings the
-best we can do honestly is surface identical titles, not near-duplicates.
+tagging untagged ones, reviewing empty titles, and looking at duplicate
+titles (exact ones here, near-duplicates via similar.near_duplicate_titles
+— #16 landed with 0.6's find-similar work). Deliberately heuristic — no
+LLM call — and every suggestion needs an explicit apply.
 """
 
 from __future__ import annotations
@@ -14,6 +12,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from ..db import Database, now_iso
+from .similar import near_duplicate_titles
 
 # Notes untouched for this long with nothing pending are archive candidates.
 STALE_DAYS = 45
@@ -113,6 +112,10 @@ def cleanup_suggestions(db: Database, limit_per_kind: int = 25) -> list[dict]:
             "title": titles["title"] if titles else r["key"],
             "reason": f"{r['c']} notes share this title — review for duplicates",
         })
+
+    # 4b) Near-duplicate titles (#16): SequenceMatcher over normalised
+    # titles — the content-level neighbours are find_similar's job.
+    suggestions.extend(near_duplicate_titles(db, limit=limit_per_kind))
 
     return suggestions
 

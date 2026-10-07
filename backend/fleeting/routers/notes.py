@@ -304,6 +304,23 @@ def get_note_links(note_id: str, request: Request) -> dict:
     return {"outgoing": [_out(n) for n in outgoing], "backlinks": [_out(n) for n in backlinks]}
 
 
+@router.get("/{note_id}/similar")
+def get_similar_notes(
+    note_id: str,
+    request: Request,
+    limit: int = Query(8, ge=1, le=50),
+) -> list[NoteOut]:
+    """#320/#23: nearest notes by embedding cosine, for the drawer's
+    related-notes strip. Notes without a stored embedding get a query-time
+    vector — nothing is persisted here."""
+    from ..services.similar import find_similar
+
+    st = request.app.state.st
+    if not st.db.get_note(note_id):
+        raise HTTPException(404, "note not found")
+    return [NoteOut(**n) for n in find_similar(st.db, st.cfg, note_id, limit=limit)]
+
+
 @router.get("/{note_id}/versions")
 def list_note_versions(note_id: str, request: Request) -> list[dict]:
     """#19: snapshots of title/summary/raw_text, oldest first."""

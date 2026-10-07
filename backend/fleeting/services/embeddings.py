@@ -162,12 +162,13 @@ def embed_text(text: str, cfg: Config | None = None) -> list[float]:
     return vec
 
 
-def embed_note(
-    note: dict | sqlite3.Row, db: Database, cfg: Config | None = None
-) -> list[float] | None:
-    """Compose note content, compute embedding, upsert into database, and return vector.
+def embedding_text_for(note: dict) -> str:
+    """The text a note is embedded from: title + #tags + summary + raw[:2000].
 
-    Returns None if the note has no textual content.
+    Shared by embed_note (persisting) and find_similar (query-time vectors
+    for notes without a stored embedding) so both produce the same content
+    shape — neighbours computed from a differently-shaped text would not be
+    comparable with the stored corpus.
     """
     if not isinstance(note, dict):
         note = dict(note)
@@ -205,7 +206,20 @@ def embed_note(
     if raw_snippet:
         parts.append(raw_snippet)
 
-    combined = "\n\n".join(parts).strip()
+    return "\n\n".join(parts).strip()
+
+
+def embed_note(
+    note: dict | sqlite3.Row, db: Database, cfg: Config | None = None
+) -> list[float] | None:
+    """Compose note content, compute embedding, upsert into database, and return vector.
+
+    Returns None if the note has no textual content.
+    """
+    if not isinstance(note, dict):
+        note = dict(note)
+
+    combined = embedding_text_for(note)
     if not combined:
         return None
 
