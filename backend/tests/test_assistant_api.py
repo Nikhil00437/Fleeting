@@ -829,3 +829,55 @@ def test_api_chat_stream_endpoint(client: TestClient) -> None:
     assert events[-1]["type"] == "done"
     assert events[-1]["message"]["role"] == "assistant"
     assert len(events[-1]["message"]["content"]) > 0
+
+
+def test_time_scope_filters_notes_by_created_at(db: Database, cfg: Config) -> None:
+    """#45: 'last week' scopes note retrieval to notes created in that window."""
+    from datetime import datetime, timedelta, timezone
+
+    old = db.insert_note({
+        "title": "router rollback plan",
+        "type": "text",
+        "summary": "How to roll back the router",
+        "raw_text": "router rollback plan details",
+        "tags": [],
+    })
+    recent = datetime.now(timezone.utc) - timedelta(days=3)
+    db.execute(
+        "UPDATE notes SET created_at = ? WHERE id = ?",
+        (recent.strftime("%Y-%m-%dT%H:%M:%SZ"), old["id"]),
+    )
+    db.commit()
+
+    context_text, sources, used = build_assistant_context("what did I decide about the router last week?", db, cfg)
+    # No time-scope → this query has an explicit scope; the old note (3d ago)
+    # is inside "last week" and must surface.
+    titles = [s["title"] for s in sources if s["kind"] == "note"]
+    assert "router rollback plan" in titles
+
+
+def test_time_scope_excludes_out_of_window_notes(db: Database, cfg: Config) -> None:
+    """#45: 'today' does not pull in a month-old note as if it were recent."""
+    from datetime import datetime, timedelta, timezone
+
+    old = db.insert_note({
+        "title": "ancient database migration",
+        "type": "text",
+        "summary": "details",
+        "raw_text": "ancient database migration notes",
+        "tags": [],
+    })
+    aged = datetime.now(timezone.utc) - timedelta(days=40)
+    db.execute("UPDATE notes SET created_at = ? WHERE id = ?", (aged.strftime("%Y-%m-%dT%H:%M:%SZ"), old["id"]))
+    db.commit()
+
+    _, sources, _ = build_assistant_context("what happened today?", db, cfg)
+    titles = [s["title"] for s in sources if s["kind"] == "note"]
+    assert "ancient database migration" not in titles
+
+
+def test_general_query_is_not_scoped() -> None:
+    from fleeting.services.assistant import extract_time_scope
+
+    assert extract_time_scope("show me the router decision") == (None, None)
+    assert extract_time_scope("") == (None, None)

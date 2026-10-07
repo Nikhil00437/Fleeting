@@ -30,6 +30,53 @@ log = logging.getLogger("fleeting.assistant")
 
 LOG_KEYWORDS = ("today", "yesterday", "week", "work", "activity", "log", "summary")
 
+# #45 time scopes. Extract **the** first recognised phrase; multiple time
+# phrases in one question fall through to the first one and the rest stay in
+# the query text, because AND-ing guesses narrows results unpredictably.
+_TIME_SCOPE_PATTERNS: tuple[tuple[re.Pattern[str], int], ...] = tuple(
+    (re.compile(pat, re.IGNORECASE), days)
+    for pat, days in (
+        (r"\blast week\b", 7),
+        (r"\blast month\b", 30),
+        (r"\bthis week\b", 7),
+        (r"\byesterday\b", 1),
+        (r"\btoday\b", 1),
+        (r"\b(?:last|past)\s+(\d+)\s*days?\b", -1),
+        (r"\b(?:last|past)\s+(\d+)\s*weeks?\b", -2),
+        (r"\b(?:last|past)\s+(\d+)\s*months?\b", -3),
+    )
+)
+
+
+def extract_time_scope(query: str) -> tuple[str | None, str | None]:
+    """Map 'last week'/'yesterday'/'past 3 days' onto a [start, end) ISO window.
+
+    Returns (None, None) when nothing temporal is mentioned, so callers leave
+    their retrieval filters untouched — the assistant answers general
+    questions exactly as before.
+    """
+    from datetime import datetime, timedelta
+
+    now = datetime.now().astimezone()
+    for pattern, days in _TIME_SCOPE_PATTERNS:
+        m = pattern.search(query)
+        if not m:
+            continue
+        if days < 0:
+            n = int(m.group(1))
+            if n <= 0 or n > 3650:
+                return None, None
+            days = n * {-1: 1, -2: 7, -3: 30}[days]
+        # "today"/"yesterday" are relative, so the window is just "now back N"
+        # days; ends at today. Good enough for retrieval scoping — the model
+        # re-reads the timestamps in the notes it cites.
+        start = now - timedelta(days=days)
+        return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
+    return None, None
+
+
+
+
 CHAT_STOPWORDS = frozenset(
     """a an and are as at be but by for from get got has have he her his how i if in
     into is it its just like me my no not of on or our so some than that the
@@ -60,21 +107,38 @@ def build_assistant_context(
     """
     clean_query = (query or "").strip()
 
+    # #45: when the question mentions a time window, scope retrieval to it.
+    # Without an explicit scope the filters stay off — the assistant must
+    # answer general questions exactly as before.
+    scope_start, scope_end = extract_time_scope(clean_query)
+
+    def in_scope(note: dict) -> bool:
+        if not scope_start or not scope_end:
+            return True
+        created = (note.get("created_at") or "")[:10]
+        return scope_start <= created <= scope_end
+
     # 1. Notes via hybrid search
     notes: list[dict] = []
     if clean_query:
         try:
-            notes = hybrid_search(
+            raw_notes = hybrid_search(
                 db,
                 clean_query,
                 cfg,
                 mode="hybrid",
-                limit=5,
+                limit=12,
                 repo=repo,
                 filter_type=filter_type,
             )
-            # If conversational natural language query returned no notes, try extracted keywords
+            notes = [n for n in raw_notes if in_scope(n)][:5] if (scope_start or scope_end) else raw_notes[:5]
+            if (scope_start or scope_end) and not notes:
+                # The temporal filter emptied the result; fall back to the
+                # unscoped matches rather than answering from nothing.
+                notes = raw_notes[:5]
             if not notes:
+                # If a conversational NL query returned no notes, fall back to
+                # the extracted keyword phrase, then individual keywords.
                 keywords = _extract_keywords(clean_query)
                 if keywords:
                     kw_phrase = " ".join(keywords)
@@ -88,7 +152,6 @@ def build_assistant_context(
                             repo=repo,
                             filter_type=filter_type,
                         )
-                # If still no notes, try searching individual significant keywords
                 if not notes and keywords:
                     for kw in keywords:
                         if len(kw) >= 4:
@@ -137,8 +200,20 @@ def build_assistant_context(
     query_tokens = set(re.findall(r"\b[a-zA-Z0-9_\-#]+\b", clean_query.lower()))
     if any(kw in query_tokens for kw in LOG_KEYWORDS):
         try:
-            cursor = db.execute("SELECT day, summary_md FROM daily_logs ORDER BY day DESC LIMIT 2")
-            logs = [dict(row) for row in cursor.fetchall()]
+            if scope_start and scope_end:
+                cursor = db.execute(
+                    "SELECT day, summary_md FROM daily_logs WHERE day BETWEEN ? AND ? ORDER BY day DESC LIMIT 7",
+                    (scope_start, scope_end),
+                )
+                logs = [dict(row) for row in cursor.fetchall()]
+                if not logs:
+                    # Scope matched nothing — fall back to the most recent
+                    # logs rather than answering from an empty page.
+                    cursor = db.execute("SELECT day, summary_md FROM daily_logs ORDER BY day DESC LIMIT 2")
+                    logs = [dict(row) for row in cursor.fetchall()]
+            else:
+                cursor = db.execute("SELECT day, summary_md FROM daily_logs ORDER BY day DESC LIMIT 2")
+                logs = [dict(row) for row in cursor.fetchall()]
         except Exception as exc:
             log.warning("Daily logs retrieval failed in assistant context: %s", exc)
             logs = []
