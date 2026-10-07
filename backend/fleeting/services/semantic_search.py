@@ -15,6 +15,7 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from .embeddings import cosine_similarity, embed_text, unpack_vector
+from .query_parser import note_matches_parsed, parse_query
 
 if TYPE_CHECKING:
     from ..config import Config
@@ -101,7 +102,9 @@ def hybrid_search(
 
     Args:
         db: Database instance.
-        query: User search text.
+        query: User search text. Parsed by services.query_parser first
+            (#313): operators become FTS MATCH syntax / SQL filters in the
+            keyword leg, and the Python-side filter in the semantic leg.
         cfg: App configuration.
         mode: Search mode - 'hybrid' (default), 'keyword', or 'semantic'.
         limit: Maximum results to return (default 50).
@@ -115,14 +118,30 @@ def hybrid_search(
     if not query or not query.strip():
         return []
 
+    p = parse_query(query)
+    if not p.has_constraints:
+        return []
+
     clamped_limit = min(max(1, int(limit)), 200)
     clamped_alpha = max(0.0, min(1.0, float(alpha)))
-    fetch_limit = max(100, clamped_limit * 3) if (filter_type or repo) else clamped_limit * 2
+    has_facets = bool(
+        filter_type
+        or repo
+        or p.tags
+        or p.types
+        or p.before
+        or p.after
+        or p.starred
+        or p.has_audio
+        or p.excluded
+        or p.excluded_phrases
+    )
+    fetch_limit = max(100, clamped_limit * 3) if has_facets else clamped_limit * 2
     search_mode = (mode or "hybrid").strip().lower()
 
     if search_mode == "keyword":
         try:
-            kw_results = db.search(query, limit=fetch_limit)
+            kw_results = db.search(query, limit=fetch_limit, parsed=p)
         except Exception as exc:
             log.warning("Keyword FTS search failed for query %r: %s", query, exc)
             kw_results = []
@@ -148,7 +167,24 @@ def hybrid_search(
         return filtered
 
     elif search_mode == "semantic":
-        query_vec = embed_text(query, cfg)
+        # The embedder must see the text of the query, not its operator
+        # syntax — "tag:work router" is about routers.
+        embed_text_input = p.free_text()
+        if not embed_text_input:
+            # Filters without text: there is no vector to rank by, so the
+            # filtered keyword scan is the honest answer.
+            return hybrid_search(
+                db,
+                query,
+                cfg,
+                mode="keyword",
+                limit=limit,
+                alpha=alpha,
+                filter_type=filter_type,
+                repo=repo,
+            )
+
+        query_vec = embed_text(embed_text_input, cfg)
         all_emb = db.get_all_embeddings()
         scored: list[tuple[str, float]] = []
         for row in all_emb:
@@ -178,6 +214,8 @@ def hybrid_search(
             if not note.get("snippet"):
                 note["snippet"] = _generate_snippet(note)
 
+            if not note_matches_parsed(note, p):
+                continue
             if filter_type and not _note_matches_filter_type(note, filter_type):
                 continue
             if repo and not _note_matches_repo(note, repo, db):
@@ -190,7 +228,7 @@ def hybrid_search(
 
     else:  # mode == "hybrid" (default)
         try:
-            kw_results = db.search(query, limit=fetch_limit)
+            kw_results = db.search(query, limit=fetch_limit, parsed=p)
         except Exception as exc:
             log.warning("Keyword FTS search failed for query %r: %s", query, exc)
             kw_results = []
@@ -201,18 +239,20 @@ def hybrid_search(
             if nid not in kw_map:
                 kw_map[nid] = (idx + 1, dict(r))
 
-        query_vec = embed_text(query, cfg)
-        all_emb = db.get_all_embeddings()
+        embed_text_input = p.free_text()
         sem_scored: list[tuple[str, float]] = []
-        for row in all_emb:
-            nid = str(row["note_id"])
-            try:
-                note_vec = unpack_vector(row["embedding"])
-            except Exception:
-                continue
-            sim = cosine_similarity(query_vec, note_vec)
-            if sim > 0.05:
-                sem_scored.append((nid, sim))
+        if embed_text_input:
+            query_vec = embed_text(embed_text_input, cfg)
+            all_emb = db.get_all_embeddings()
+            for row in all_emb:
+                nid = str(row["note_id"])
+                try:
+                    note_vec = unpack_vector(row["embedding"])
+                except Exception:
+                    continue
+                sim = cosine_similarity(query_vec, note_vec)
+                if sim > 0.05:
+                    sem_scored.append((nid, sim))
 
         sem_scored.sort(key=lambda x: x[1], reverse=True)
         sem_top = sem_scored[:fetch_limit]
@@ -257,6 +297,9 @@ def hybrid_search(
 
             if not note.get("snippet"):
                 note["snippet"] = _generate_snippet(note)
+
+            if not note_matches_parsed(note, p):
+                continue
 
             note["match_type"] = match_type
             note["_rrf_score"] = rrf_score

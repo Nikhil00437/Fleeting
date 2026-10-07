@@ -16,6 +16,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .services.query_parser import (
+    ParsedQuery,
+    build_fts_match,
+    exclusion_conditions,
+    filter_conditions,
+    parse_query,
+)
+
 
 def datetime_now_local() -> datetime:
     """#443: 'now' in the configured zone, so a capture at 23:30 UTC lands on
@@ -1149,21 +1157,46 @@ class Database:
 
     # ---- search --------------------------------------------------------
 
-    def search(self, query: str, *, limit: int = 50) -> list[dict]:
-        """FTS5 match query, ranked, with highlighted snippets."""
+    def search(self, query: str, *, limit: int = 50, parsed: ParsedQuery | None = None) -> list[dict]:
+        """FTS5 match query, ranked, with highlighted snippets.
+
+        Operator syntax is parsed once by services.query_parser (#313): text
+        units build the FTS MATCH string, structured operators (tag/type/
+        date/audio/starred) become WHERE fragments shared by both paths.
+        With no positive text units there is nothing for BM25 to rank, so
+        the filters alone drive a plain scan ordered by recency.
+        """
+        p = parsed or parse_query(query)
+        match_sql = build_fts_match(p)
+        conds, filter_params = filter_conditions(p)
+
+        if match_sql is not None:
+            rows = self.execute(
+                f"""
+                SELECT n.*, bm25(notes_fts) AS rank,
+                       snippet(notes_fts, 1, '[[', ']]', '…', 24) AS snippet
+                FROM notes_fts f
+                JOIN notes n ON n.rowid = f.rowid
+                WHERE {' AND '.join(['notes_fts MATCH :q', 'n.trashed_at IS NULL', *conds])}
+                ORDER BY rank
+                LIMIT :limit
+                """,
+                {"q": match_sql, **filter_params, "limit": limit},
+            ).fetchall()
+            return [_row_to_note(r, extra=("snippet",)) for r in rows]
+
+        excl_conds, excl_params = exclusion_conditions(p)
         rows = self.execute(
-            """
-            SELECT n.*, bm25(notes_fts) AS rank,
-                   snippet(notes_fts, 1, '[[', ']]', '…', 24) AS snippet
-            FROM notes_fts f
-            JOIN notes n ON n.rowid = f.rowid
-            WHERE notes_fts MATCH :q AND n.trashed_at IS NULL
-            ORDER BY rank
+            f"""
+            SELECT n.*
+            FROM notes n
+            WHERE {' AND '.join(['n.trashed_at IS NULL', *conds, *excl_conds])}
+            ORDER BY n.created_at DESC
             LIMIT :limit
             """,
-            {"q": _fts_query(query), "limit": limit},
+            {**filter_params, **excl_params, "limit": limit},
         ).fetchall()
-        return [_row_to_note(r, extra=("snippet",)) for r in rows]    # ---- tags / stats ----------------------------------------------------
+        return [_row_to_note(r) for r in rows]    # ---- tags / stats ----------------------------------------------------
 
     def all_tags(self) -> list[dict]:
         rows = self.execute(
@@ -2397,23 +2430,3 @@ def _activity_fts_query(raw: str) -> str:
     if not tokens:
         return '""'
     return " ".join(f'"{t}"*' for t in tokens)
-
-
-def _fts_query(raw: str) -> str:
-    """Build an FTS5 query from raw user input.
-
-    Plain words become prefix queries joined by AND (implicit), quoted phrases
-    are preserved. Falls back to quoted literal on parse errors.
-    """
-    raw = raw.strip()
-    if not raw:
-        return '""'
-    parts = []
-    for token in raw.split():
-        if token.startswith('"'):
-            parts.append(token if token.endswith('"') else f'{token}"')
-        else:
-            cleaned = "".join(ch for ch in token if ch.isalnum() or ch in "-_")
-            if cleaned:
-                parts.append(f'"{cleaned}"*')
-    return " ".join(parts) if parts else '""'

@@ -313,6 +313,58 @@ def test_api_search_endpoint_with_query_params(client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 7b. Operator syntax through the API (#313/#315/#318)
+# ---------------------------------------------------------------------------
+
+
+def test_api_search_operator_syntax_and_alpha(client: TestClient) -> None:
+    r1 = client.post(
+        "/api/capture/text",
+        json={"text": "Router wireless setup guide with firmware notes.", "title": "Router setup", "tags": ["infra"]},
+    )
+    n1 = r1.json()["id"]
+    wait_done(client, n1)
+    r2 = client.post(
+        "/api/capture/text",
+        json={"text": "Draft plan for the office router replacement.", "title": "Office router draft"},
+    )
+    n2 = r2.json()["id"]
+    wait_done(client, n2)
+
+    # The heuristic pipeline derives its own tags on capture, so the tag
+    # under test is applied after processing.
+    client.patch(f"/api/notes/{n1}", json={"tags": ["infra"]})
+
+    # Exclusion operator.
+    res = client.get("/api/search", params={"q": "router -draft"}).json()
+    assert [n["id"] for n in res] == [n1]
+
+    # Tag operator.
+    res = client.get("/api/search", params={"q": "tag:infra"}).json()
+    assert [n["id"] for n in res] == [n1]
+
+    # Type operator.
+    res = client.get("/api/search", params={"q": "router type:text"}).json()
+    assert {n["id"] for n in res} == {n1, n2}
+
+    # Exact phrase.
+    res = client.get("/api/search", params={"q": '"wireless setup"'}).json()
+    assert [n["id"] for n in res] == [n1]
+
+    # Filters alone (no text units) still return the tagged note.
+    res = client.get("/api/search", params={"q": "tag:infra type:text"}).json()
+    assert [n["id"] for n in res] == [n1]
+
+    # #315: alpha is accepted and clamped server-side; results stay valid.
+    for alpha in ("0.0", "1.0", "0.25"):
+        res = client.get("/api/search", params={"q": "router", "alpha": alpha}).json()
+        assert n1 in {n["id"] for n in res}
+
+    # Out-of-range alpha is rejected by validation.
+    assert client.get("/api/search", params={"q": "router", "alpha": "2.0"}).status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # 8. Automatic Embedding Hooks (Processor & Vault Watcher)
 # ---------------------------------------------------------------------------
 

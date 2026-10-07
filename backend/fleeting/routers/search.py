@@ -18,6 +18,8 @@ def search(
     mode: str = "hybrid",
     type: str | None = None,
     repo: str | None = None,
+    # #315: hybrid RRF keyword weight — 1.0 = pure FTS5, 0.0 = pure vector.
+    alpha: float = Query(0.5, ge=0.0, le=1.0),
 ) -> list[NoteOut]:
     st = request.app.state.st
     if not q.strip():
@@ -28,6 +30,7 @@ def search(
         st.cfg,
         mode=mode,
         limit=limit,
+        alpha=alpha,
         filter_type=type,
         repo=repo,
     )
