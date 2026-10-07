@@ -69,6 +69,17 @@ export interface QueryLogEntry {
   last_at: string;
 }
 
+/** #319: a timestamped transcript match (t = seconds into the audio). */
+export interface TranscriptHit {
+  t: number;
+  text: string;
+}
+
+export interface TranscriptResult {
+  note: Note;
+  hits: TranscriptHit[];
+}
+
 export type TaskPriority = "P1" | "P2" | "P3";
 
 export type TaskList = "inbox" | "someday";

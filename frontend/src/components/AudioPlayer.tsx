@@ -1,11 +1,28 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * #88: audio playback with click-a-word-to-seek. Words come from whisper's
  * word timestamps stored on source.transcription.words.
+ *
+ * #319: `seekTo` lets an outside search result jump the player — the `key`
+ * changes every request, so re-seeking the same time still fires the effect.
  */
-export default function AudioPlayer({ noteId, words }: { noteId: string; words: Array<{ w: string; s: number; e: number }> }) {
+export default function AudioPlayer({
+  noteId,
+  words,
+  seekTo,
+}: {
+  noteId: string;
+  words: Array<{ w: string; s: number; e: number }>;
+  seekTo?: { t: number; key: number } | null;
+}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!seekTo || !audioRef.current) return;
+    audioRef.current.currentTime = seekTo.t;
+    void audioRef.current.play();
+  }, [seekTo?.key, seekTo?.t]);
 
   return (
     <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">

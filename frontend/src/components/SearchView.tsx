@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { appColor } from "../apps";
-import { relTime } from "../time";
+import { fmtDuration, relTime } from "../time";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
 import { bucketCounts, emptyUnified, sessionLabel } from "./unifiedSearch";
@@ -23,13 +23,15 @@ import {
   TextIcon,
   XIcon,
 } from "./Icons";
-import type { Note, QueryLogEntry, SearchMode, TagCount, UnifiedResult } from "../types";
+import type { Note, QueryLogEntry, SearchMode, TagCount, TranscriptResult, UnifiedResult } from "../types";
 
 interface Props {
   notes?: Note[];
   focusRef: React.RefObject<HTMLInputElement | null>;
   selectedId?: string | null;
   onOpen: (id: string) => void;
+  /** #319: open a note and jump its audio player to t seconds. */
+  onOpenAt?: (id: string, t: number) => void;
   onPin: (id: string) => void;
   onNoteUpdated?: (note: Note) => void;
   onNoteDeleted?: (id: string) => void;
@@ -50,6 +52,7 @@ export default function SearchView({
   focusRef,
   selectedId,
   onOpen,
+  onOpenAt,
   onPin,
   onNoteUpdated,
   onNoteDeleted,
@@ -74,6 +77,8 @@ export default function SearchView({
   const [showSuggest, setShowSuggest] = useState(false);
   const [recentQueries, setRecentQueries] = useState<QueryLogEntry[]>([]);
   const [topQueries, setTopQueries] = useState<QueryLogEntry[]>([]);
+  // #319: voice-transcript hits with audio timestamps.
+  const [transcripts, setTranscripts] = useState<TranscriptResult[]>([]);
   const debounceRef = useRef<number>(0);
 
   useEffect(() => {
@@ -113,18 +118,27 @@ export default function SearchView({
     setPreviewId(null);
     if (!q) {
       setResults(null);
+      setTranscripts([]);
       setSearching(false);
       return;
     }
     setSearching(true);
-    if (scope === "activity") setUnified(null);
+    if (scope === "activity") {
+      setUnified(null);
+      setTranscripts([]);
+    }
     debounceRef.current = window.setTimeout(async () => {
       try {
         if (scope === "activity") {
           setResults([]);
           setUnified(await api.unifiedSearch(q, { limit: 20 }));
         } else {
-          setResults(await api.search(q, { mode, alpha }));
+          const [hits, transcriptHits] = await Promise.all([
+            api.search(q, { mode, alpha }),
+            api.transcriptSearch(q).catch(() => [] as TranscriptResult[]),
+          ]);
+          setResults(hits);
+          setTranscripts(transcriptHits);
         }
       } catch {
         if (scope === "activity") setUnified(emptyUnified() as UnifiedResult);
@@ -552,6 +566,38 @@ export default function SearchView({
               </button>
             )}
           </div>
+
+          {/* #319 transcript hits — timestamped matches inside voice notes */}
+          {transcripts.length > 0 && (
+            <div className="glass-studio rounded-2xl p-3.5">
+              <p className="micro-label mb-2 !text-[9.5px]">From your voice memos</p>
+              <ul className="space-y-1">
+                {transcripts.map((tr) => (
+                  <li key={tr.note.id}>
+                    <button
+                      onClick={() => onOpenAt?.(tr.note.id, tr.hits[0]?.t ?? 0)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-white/[0.04]"
+                    >
+                      <span className="shrink-0 font-mono text-[10px] text-ember-300">
+                        {fmtDuration(tr.hits[0]?.t ?? 0)}
+                      </span>
+                      <span className="truncate text-xs text-ink-200">{tr.hits[0]?.text}</span>
+                    </button>
+                    {tr.hits.slice(1).map((h, i) => (
+                      <button
+                        key={i}
+                        onClick={() => onOpenAt?.(tr.note.id, h.t)}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-0.5 pl-12 text-left hover:bg-white/[0.04]"
+                      >
+                        <span className="shrink-0 font-mono text-[10px] text-ink-500">{fmtDuration(h.t)}</span>
+                        <span className="truncate text-[11px] text-ink-400">{h.text}</span>
+                      </button>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {activeList.length === 0 ? (
             <div className="glass-studio flex flex-col items-center justify-center rounded-2xl py-16 text-center">

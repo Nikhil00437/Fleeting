@@ -53,6 +53,8 @@ interface Props {
   onDelete?: (id: string) => void;
   onOpenNote?: (id: string) => void;
   onToast: (message: string, kind?: "ok" | "err") => void;
+  /** #319: jump the audio player (from a transcript search hit). */
+  seekTo?: { t: number; key: number } | null;
 }
 
 const TYPE_LABEL: Record<string, { icon: React.ReactNode; label: string; badgeCls: string }> = {
@@ -124,7 +126,7 @@ function PipelineStepper({ note }: { note: Note }) {
   );
 }
 
-export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNote, onToast }: Props) {
+export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNote, onToast, seekTo }: Props) {
   const [title, setTitle] = useState(note.title);
   const [summary, setSummary] = useState(note.summary || "");
   const [tagInput, setTagInput] = useState("");
@@ -598,7 +600,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
         <PipelineStepper note={note} />
 
         {note.audio_path && (
-          <AudioPlayer noteId={note.id} words={note.source?.transcription?.words ?? []} />
+          <AudioPlayer noteId={note.id} words={note.source?.transcription?.words ?? []} seekTo={seekTo} />
         )}
 
         {note.status === "failed" && note.error && (

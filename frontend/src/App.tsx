@@ -84,6 +84,8 @@ export default function App() {
  const [stats, setStats] = useState<Stats | null>(null);
  const [selectedId, setSelectedRaw] = useState<string | null>(null);
  const setSelectedId = (id: React.SetStateAction<string | null>) => vt(() => flushSync(() => setSelectedRaw(id)));
+ // #319: a transcript hit opens its note and seeks the player to that spot
+ const [seekTo, setSeekTo] = useState<{ t: number; key: number } | null>(null);
  const [toasts, setToasts] = useState<Toast[]>([]);
  const [loading, setLoading] = useState(true);
  const [trackedToday, setTrackedToday] = useState(0);
@@ -1000,6 +1002,10 @@ export default function App() {
        focusRef={searchRef}
        selectedId={selectedId}
        onOpen={setSelectedId}
+       onOpenAt={(id, t) => {
+        setSelectedId(id);
+        setSeekTo({ t, key: Date.now() });
+       }}
        onPin={pin}
        onNoteUpdated={(n) => {
         mergeNote(n);
@@ -1039,6 +1045,7 @@ export default function App() {
       onDelete={removeNote}
       onOpenNote={setSelectedId}
       onToast={toast}
+      seekTo={seekTo}
      />
     )}
    </div>

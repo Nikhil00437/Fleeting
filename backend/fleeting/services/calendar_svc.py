@@ -15,7 +15,7 @@ request state, so the whole module is testable with a frozen `today`.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -66,6 +66,28 @@ def today(tz_name: str = "") -> date:
     if z is None:
         return date.today()
     return datetime.now(z).date()
+
+
+def date_tag(iso: str | None) -> str:
+    """The local-calendar date of an ISO timestamp, as ``YYYY-MM-DD``.
+
+    `created_at`/`completed_at` are stored as UTC ISO strings, but a user
+    thinks in their own day: a 23:00 UTC completion belongs to *tomorrow*
+    in Kolkata. Comparing raw string prefixes (``ts[:10] == today``)
+    disagrees with that by up to a day around midnight — this is the #443
+    fix, in one place. Naive timestamps (legacy rows) are read as UTC,
+    matching the old prefix behaviour.
+    """
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return iso[:10]
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    z = zone(_tz_name)
+    return dt.astimezone(z).strftime("%Y-%m-%d") if z else dt.astimezone().strftime("%Y-%m-%d")
 
 
 def parse_holidays(spec: str) -> set[date]:

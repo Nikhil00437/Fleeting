@@ -14,6 +14,8 @@ title); nothing here touches request state, which is what makes it testable.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+
+from .calendar_svc import date_tag, is_workday
 from typing import Any
 
 _PRIORITY_SCORE = {"P1": 0, "P2": 10, "P3": 20}
@@ -111,7 +113,7 @@ def build_today(
     ]
     completed_today = [
         t for t in tasks
-        if t["done"] and (t.get("completed_at") or "")[:10] == today
+        if t["done"] and date_tag(t.get("completed_at")) == today
     ]
 
     def by_due_then_priority(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -183,15 +185,13 @@ def build_streaks(
     streak — nobody owes completions on Christmas, so a gap there must not
     read as a broken run.
     """
-    from .calendar_svc import is_workday
-
     today = now.strftime("%Y-%m-%d")
     hol = holidays or set()
     counts: dict[str, int] = {}
     for t in tasks:
         if not t.get("done"):
             continue
-        day = (t.get("completed_at") or "")[:10]
+        day = date_tag(t.get("completed_at"))
         if day:
             counts[day] = counts.get(day, 0) + 1
 

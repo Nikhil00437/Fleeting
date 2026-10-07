@@ -31,7 +31,9 @@ def _slugify(text: str, max_len: int = 48) -> str:
 
 def note_filename(note: dict) -> str:
     """Stable across re-enrichment: date + id only (no title slug, which churns)."""
-    date_str = (note.get("created_at") or note.get("created") or "")[:10] or "undated"
+    from .calendar_svc import date_tag
+
+    date_str = date_tag(note.get("created_at") or note.get("created")) or "undated"
     return f"{date_str} fleeting-{note['id']}.md"
 
 
@@ -318,7 +320,9 @@ def parse_note_md(content: str) -> dict[str, Any]:
 
 def vault_path_for(cfg: PathsConfig, note: dict) -> Path:
     vault = expand_path(cfg.vault_dir)
-    date = (note.get("created_at") or note.get("created") or "")[:10] or "undated"
+    from .calendar_svc import date_tag
+
+    date = date_tag(note.get("created_at") or note.get("created")) or "undated"
     return vault / date[:4] / note_filename(note)
 
 

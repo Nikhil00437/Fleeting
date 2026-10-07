@@ -56,6 +56,23 @@ def search_history(request: Request) -> dict:
     }
 
 
+@router.get("/search/transcript")
+def transcript_search_endpoint(
+    request: Request,
+    q: str,
+    limit: int = Query(10, ge=1, le=50),
+    hits_per_note: int = Query(5, ge=1, le=20),
+) -> list[dict]:
+    """#319: voice-note transcripts with word-timestamp hits — the UI jumps
+    the audio player to `t`."""
+    from ..services.transcript_search import transcript_search
+
+    st = request.app.state.st
+    if not q.strip():
+        return []
+    return transcript_search(st.db, q, limit=limit, hits_per_note=hits_per_note)
+
+
 class SearchFeedbackIn(BaseModel):
     note_id: str
     query: str = Field(min_length=1, max_length=500)

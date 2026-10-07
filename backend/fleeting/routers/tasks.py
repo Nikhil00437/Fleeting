@@ -25,6 +25,7 @@ from ..models import (
     WeekPlan,
 )
 from ..services import calendar_svc, llm, markdown, task_export, whatnow
+from ..services.calendar_svc import date_tag
 from ..services.planner import plan_week
 from ..services.repos import discover_git_repos
 from ..services.task_text import parse_quick_add
@@ -267,7 +268,9 @@ def get_weekly_review(request: Request) -> WeeklyReview:
         [t for t in open_tasks if t.get("due_date") and week_start <= t["due_date"] <= today],
         key=lambda t: (t["due_date"], t["priority"]),
     )
-    completed = [t for t in tasks if t["done"] and (t.get("completed_at") or "")[:10] >= week_start]
+    completed = [
+        t for t in tasks if t["done"] and date_tag(t.get("completed_at")) >= week_start
+    ]
     total = len(open_tasks) + len(completed)
     return WeeklyReview(
         week_start=week_start,

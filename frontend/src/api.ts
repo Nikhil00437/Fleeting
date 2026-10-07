@@ -31,6 +31,7 @@ import type {
   UnifiedResult,
   WeeklyLogRow,
   QueryLogEntry,
+  TranscriptResult,
 
 } from "./types";
 
@@ -259,6 +260,12 @@ export const api = {
   /** #49/#322: recent + most-searched queries in one round trip. */
   searchHistory: () =>
     req<{ recent: QueryLogEntry[]; top: QueryLogEntry[] }>("/search/history"),
+
+  /** #319: voice-note transcripts with word-timestamp hits. */
+  transcriptSearch: (q: string, limit = 6) => {
+    const sp = new URLSearchParams({ q, limit: String(limit) });
+    return req<TranscriptResult[]>(`/search/transcript?${sp.toString()}`);
+  },
 
   /** #321 "not relevant" — down=false undoes the mark. */
   searchFeedback: (noteId: string, query: string, down: boolean) =>
