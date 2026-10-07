@@ -23,7 +23,7 @@ import {
   TextIcon,
   XIcon,
 } from "./Icons";
-import type { Note, SearchMode, TagCount, UnifiedResult } from "../types";
+import type { Note, QueryLogEntry, SearchMode, TagCount, UnifiedResult } from "../types";
 
 interface Props {
   notes?: Note[];
@@ -70,11 +70,42 @@ export default function SearchView({
   const [alpha, setAlpha] = useState(0.5);
   // #317: hover/focus preview — the note shown in the side pane.
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // #49/#322: recent + most-searched queries for the empty-input dropdown.
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<QueryLogEntry[]>([]);
+  const [topQueries, setTopQueries] = useState<QueryLogEntry[]>([]);
   const debounceRef = useRef<number>(0);
 
   useEffect(() => {
     api.tags().then(setTags).catch(() => {});
   }, [notes.length]);
+
+  function loadHistory() {
+    api
+      .searchHistory()
+      .then((h) => {
+        setRecentQueries(h.recent);
+        setTopQueries(h.top);
+      })
+      .catch(() => {});
+  }
+
+  // #321: toggle the "not relevant" mark, then re-rank server-side so the
+  // demotion is visible without a manual refresh.
+  async function handleFeedback(id: string) {
+    const q = query.trim();
+    if (!q) return;
+    const note = (results ?? []).find((n) => n.id === id);
+    if (!note) return;
+    const down = !note.feedback_down;
+    try {
+      await api.searchFeedback(id, q, down);
+      setResults(await api.search(q, { mode, alpha }));
+      toast(down ? "Marked not relevant" : "Feedback removed");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
 
   useEffect(() => {
     window.clearTimeout(debounceRef.current);
@@ -132,6 +163,14 @@ export default function SearchView({
     [activeList, previewId],
   );
 
+  // #49: complete a half-typed tag: operator from the known tag list.
+  const tagCompletions = useMemo(() => {
+    const m = query.match(/(?:^|\s)tag:(\S*)$/i);
+    if (!m) return [];
+    const needle = m[1].replace(/^#/, "").toLowerCase();
+    return tags.filter((t) => t.tag.toLowerCase().includes(needle)).slice(0, 6);
+  }, [query, tags]);
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Docked Pane Search & Filter Toolbar */}
@@ -142,8 +181,17 @@ export default function SearchView({
             ref={focusRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => {
+              setShowSuggest(true);
+              loadHistory();
+            }}
+            onBlur={() => setShowSuggest(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setShowSuggest(false);
+            }}
             placeholder="Search across titles, transcripts, summaries, and #tags…"
             spellCheck={false}
+            aria-label="Search query"
             className="h-8 w-full rounded-xl border border-ink-800/90 bg-ink-950/90 pr-8 pl-9 text-xs text-ink-100 placeholder-ink-400 outline-none transition-colors focus:border-ember-500/50"
           />
           {query && (
@@ -153,6 +201,76 @@ export default function SearchView({
             >
               <XIcon className="h-3 w-3" />
             </button>
+          )}
+
+          {/* #49 recent searches on empty focus, tag completions while typing */}
+          {showSuggest && tagCompletions.length > 0 && (
+            <ul
+              className="absolute top-full z-30 mt-1 w-full overflow-hidden rounded-xl border border-ink-800 bg-ink-950/95 py-1 shadow-xl backdrop-blur"
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {tagCompletions.map(({ tag, count }) => (
+                <li key={tag}>
+                  <button
+                    onMouseDown={() => {
+                      setQuery(query.replace(/tag:\S*$/i, `tag:${tag}`));
+                      setShowSuggest(false);
+                    }}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-ink-200 hover:bg-ink-800/80"
+                  >
+                    <span className="font-mono text-ember-300">#{tag}</span>
+                    <span className="font-mono text-[10px] text-ink-500">{count}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showSuggest && !query.trim() && (recentQueries.length > 0 || topQueries.length > 0) && (
+            <div
+              className="absolute top-full z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-ink-800 bg-ink-950/95 py-1 shadow-xl backdrop-blur"
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {recentQueries.length > 0 && (
+                <>
+                  <p className="micro-label px-3 pt-1.5 pb-1">Recent searches</p>
+                  {recentQueries.map((entry) => (
+                    <button
+                      key={`recent-${entry.q}`}
+                      onMouseDown={() => {
+                        setQuery(entry.q);
+                        setShowSuggest(false);
+                      }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs text-ink-200 hover:bg-ink-800/80"
+                    >
+                      <span className="min-w-0 flex-1 truncate font-mono">{entry.q}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-ink-500">
+                        {entry.hits} hits
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {topQueries.length > 0 && (
+                <>
+                  <p className="micro-label px-3 pt-2 pb-1">Most searched</p>
+                  {topQueries.map((entry) => (
+                    <button
+                      key={`top-${entry.q}`}
+                      onMouseDown={() => {
+                        setQuery(entry.q);
+                        setShowSuggest(false);
+                      }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs text-ink-200 hover:bg-ink-800/80"
+                    >
+                      <span className="min-w-0 flex-1 truncate font-mono">{entry.q}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-ink-500">
+                        {entry.searched}×
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -465,6 +583,8 @@ export default function SearchView({
                       highlight={selectedId === n.id}
                       onOpen={onOpen}
                       onPin={onPin}
+                      onFeedback={query.trim() ? handleFeedback : undefined}
+                      feedbackDown={n.feedback_down}
                       onTagClick={(t) => setQuery(toggleOperator(query, `tag:${t}`))}
                       onToggleTask={(note, itemId) =>
                         runNoteAction({

@@ -24,6 +24,7 @@ export interface Note {
   snippet?: string | null;
   score?: number;
   match_type?: SearchMode | "hybrid" | "keyword" | "semantic";
+  feedback_down?: boolean; // #321: marked "not relevant" for the active query
   // 0.4 metadata
   starred?: boolean;
   trashed_at?: string | null;
@@ -58,6 +59,14 @@ export interface DayPoint {
 export interface TagCount {
   tag: string;
   count: number;
+}
+
+/** One row of the query log (#322/#49). hits = last result count. */
+export interface QueryLogEntry {
+  q: string;
+  hits: number;
+  searched: number;
+  last_at: string;
 }
 
 export type TaskPriority = "P1" | "P2" | "P3";

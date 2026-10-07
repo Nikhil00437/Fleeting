@@ -11,6 +11,7 @@ import {
   SparkIcon,
   StarIcon,
   TextIcon,
+  ThumbsDownIcon,
   TrashIcon,
   XIcon,
 } from "./Icons";
@@ -83,6 +84,9 @@ interface Props {
   onToggleTask?: (note: Note, itemId: string) => void;
   onRetry?: (id: string) => void;
   onDelete?: (id: string) => void;
+  /** #321: "not relevant" mark on search results (SearchView only). */
+  onFeedback?: (id: string) => void;
+  feedbackDown?: boolean;
   highlight?: boolean;
   selectMode?: boolean;
   selected?: boolean;
@@ -100,6 +104,8 @@ export default function NoteCard({
   onToggleTask,
   onRetry,
   onDelete,
+  onFeedback,
+  feedbackDown,
   highlight,
   selectMode,
   selected,
@@ -323,6 +329,24 @@ export default function NoteCard({
                 title="Edit inline"
               >
                 <EditIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+
+            {onFeedback && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFeedback(note.id);
+                }}
+                className={`rounded-lg p-1 transition-colors ${
+                  feedbackDown
+                    ? "text-red-300"
+                    : "text-ink-500 opacity-0 group-hover:opacity-100 hover:bg-white/[0.06] hover:text-red-300"
+                }`}
+                title={feedbackDown ? "Marked not relevant — click to undo" : "Not relevant for this search"}
+              >
+                <ThumbsDownIcon className="h-3.5 w-3.5" />
               </button>
             )}
 

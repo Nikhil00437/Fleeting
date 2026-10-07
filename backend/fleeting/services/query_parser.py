@@ -321,6 +321,13 @@ def exclusion_conditions(p: ParsedQuery, alias: str = "n") -> tuple[list[str], d
     return conds, params
 
 
+def canonical_query(raw: str) -> str:
+    """Canonical form for query_log / search_feedback keys: collapsed
+    whitespace, lowercased. 'Router ' and 'router' are the same query to
+    the log, whatever surface typed it."""
+    return " ".join(raw.strip().lower().split())
+
+
 def note_matches_parsed(note: dict, p: ParsedQuery) -> bool:
     """Python-side evaluation of the structured operators, for candidate sets
     that did not come out of the filtered SQL (semantic mode scores every

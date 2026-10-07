@@ -394,6 +394,7 @@ class NoteOut(BaseModel):
     snippet: str | None = None  # only present on search results
     score: float | None = None
     match_type: str | None = None
+    feedback_down: bool = False  # #321: user marked "not relevant" for this query
     capture_id: str | None = None
     source_title: str | None = None
     starred: bool = False

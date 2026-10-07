@@ -122,6 +122,10 @@ def hybrid_search(
     if not p.has_constraints:
         return []
 
+    # #321: notes the user marked "not relevant" for this exact query sink to
+    # the bottom of every mode's ranking (stable, so relative order survives).
+    demoted_ids = db.feedback_note_ids(query)
+
     clamped_limit = min(max(1, int(limit)), 200)
     clamped_alpha = max(0.0, min(1.0, float(alpha)))
     has_facets = bool(
@@ -153,7 +157,10 @@ def hybrid_search(
                 continue
             note["match_type"] = "keyword"
             note["score"] = float(round(1.0 / (1.0 + idx * 0.1), 4))
+            note["feedback_down"] = str(note["id"]) in demoted_ids
             candidates.append(note)
+
+        candidates.sort(key=lambda n: n["feedback_down"])
 
         filtered: list[dict] = []
         for note in candidates:
@@ -199,6 +206,11 @@ def hybrid_search(
             scored.append((nid, sim))
 
         scored.sort(key=lambda x: x[1], reverse=True)
+        # Demoted notes sink below the ranked page, not just within it.
+        if demoted_ids:
+            scored = [s for s in scored if s[0] not in demoted_ids] + [
+                s for s in scored if s[0] in demoted_ids
+            ]
 
         results: list[dict] = []
         for nid, sim in scored:
@@ -211,6 +223,7 @@ def hybrid_search(
 
             note["score"] = float(round(sim, 4))
             note["match_type"] = "semantic"
+            note["feedback_down"] = nid in demoted_ids
             if not note.get("snippet"):
                 note["snippet"] = _generate_snippet(note)
 
@@ -302,10 +315,14 @@ def hybrid_search(
                 continue
 
             note["match_type"] = match_type
+            note["feedback_down"] = nid in demoted_ids
             note["_rrf_score"] = rrf_score
             candidates.append(note)
 
+        # RRF first, then demotion as the primary key — the second stable
+        # sort keeps RRF order inside each group.
         candidates.sort(key=lambda n: n["_rrf_score"], reverse=True)
+        candidates.sort(key=lambda n: n["feedback_down"])
         if not candidates:
             return []
 

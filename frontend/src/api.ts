@@ -30,6 +30,7 @@ import type {
   WeeklyLogOut,
   UnifiedResult,
   WeeklyLogRow,
+  QueryLogEntry,
 
 } from "./types";
 
@@ -223,6 +224,17 @@ export const api = {
   },
 
   tags: () => req<TagCount[]>("/tags"),
+
+  /** #49/#322: recent + most-searched queries in one round trip. */
+  searchHistory: () =>
+    req<{ recent: QueryLogEntry[]; top: QueryLogEntry[] }>("/search/history"),
+
+  /** #321 "not relevant" — down=false undoes the mark. */
+  searchFeedback: (noteId: string, query: string, down: boolean) =>
+    req<{ ok: boolean }>(`/search/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ note_id: noteId, query, down }),
+    }),
 
   /** Notes + window sessions + commits. Additive to /search. */
   unifiedSearch: (q: string, params?: { limit?: number; since_day?: string }) => {

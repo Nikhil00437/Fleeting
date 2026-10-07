@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from ..models import NoteOut
 from ..services.semantic_search import hybrid_search
@@ -34,7 +35,45 @@ def search(
         filter_type=type,
         repo=repo,
     )
+    # #322/#49: every real search feeds the log (capped server-side).
+    st.db.record_query(q, len(results))
     return [NoteOut(**r) for r in results]
+
+
+@router.get("/search/log")
+def search_log(request: Request, limit: int = Query(10, ge=1, le=100), sort: str = "recent") -> list[dict]:
+    """#49 recent searches / #322 most searched. sort=recent|top."""
+    return request.app.state.st.db.query_log(limit=limit, sort=sort)
+
+
+@router.get("/search/history")
+def search_history(request: Request) -> dict:
+    """Both flavours the UI wants in one round trip: recent + most searched."""
+    db = request.app.state.st.db
+    return {
+        "recent": db.query_log(limit=8, sort="recent"),
+        "top": db.query_log(limit=5, sort="top"),
+    }
+
+
+class SearchFeedbackIn(BaseModel):
+    note_id: str
+    query: str = Field(min_length=1, max_length=500)
+    down: bool = True
+
+
+@router.post("/search/feedback")
+def search_feedback(body: SearchFeedbackIn, request: Request) -> dict:
+    """#321 'not relevant' — demotes the note for this query. Send
+    down=false to undo (removes the mark)."""
+    st = request.app.state.st
+    if not st.db.get_note(body.note_id):
+        raise HTTPException(404, "note not found")
+    if body.down:
+        st.db.add_search_feedback(body.note_id, body.query)
+    else:
+        st.db.remove_search_feedback(body.note_id, body.query)
+    return {"ok": True, "note_id": body.note_id, "down": body.down}
 
 
 @router.get("/tags")

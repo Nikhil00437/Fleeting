@@ -19,6 +19,7 @@ from pathlib import Path
 from .services.query_parser import (
     ParsedQuery,
     build_fts_match,
+    canonical_query,
     exclusion_conditions,
     filter_conditions,
     parse_query,
@@ -324,6 +325,28 @@ MIGRATIONS: list[str] = [
     ALTER TABLE tasks ADD COLUMN app_hint TEXT;
     CREATE INDEX idx_tasks_priority_source ON tasks(priority_source);
     """,
+    # v18 — 0.6 search & recall. search_feedback is #321 "not relevant": a
+    # per-(note, canonical query) downvote the ranker demotes — kept out of
+    # the embedding cache on purpose (it is an opinion about a ranking, not
+    # a vector). query_log backs #322 "most searched" and #49 recent-search
+    # history: one row per canonicalised query, hits = last result count,
+    # searched = how often it ran (prefixes from typeahead get outgrown).
+    # saved_searches from the bundle sketch is NOT created — collections
+    # (v13) already serve saved queries with kind='saved_query'.
+    """
+    CREATE TABLE search_feedback (
+      note_id TEXT NOT NULL,
+      query TEXT NOT NULL,
+      down INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (note_id, query)
+    ) WITHOUT ROWID;
+    CREATE TABLE query_log (
+      q TEXT PRIMARY KEY,
+      hits INTEGER NOT NULL DEFAULT 0,
+      searched INTEGER NOT NULL DEFAULT 1,
+      last_at TEXT NOT NULL
+    ) WITHOUT ROWID;
+    """,
 ]
 
 
@@ -362,6 +385,9 @@ NOTE_COLUMNS = frozenset({
     "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
     "snoozed_until",
 })
+
+# query_log LRU cap (v18) — a local single-user inbox never needs more.
+QUERY_LOG_CAP = 500
 
 
 def now_iso() -> str:
@@ -1196,7 +1222,86 @@ class Database:
             """,
             {**filter_params, **excl_params, "limit": limit},
         ).fetchall()
-        return [_row_to_note(r) for r in rows]    # ---- tags / stats ----------------------------------------------------
+        return [_row_to_note(r) for r in rows]    # ---- search feedback & query log ------------------------------------
+
+    def record_query(self, q: str, hits: int) -> None:
+        """Log a canonicalised query (#322 most-searched, #49 recent).
+
+        Queries shorter than two characters are typeahead debris, not
+        searches. The log is capped (LRU by last_at) so a chatty UI can
+        never grow it without bound.
+        """
+        canon = canonical_query(q)
+        if len(canon) < 2:
+            return
+        # Sub-second precision: last_at is only compared against itself for
+        # LRU eviction, and second-granularity ties make that arbitrary.
+        stamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        self.execute(
+            """
+            INSERT INTO query_log (q, hits, searched, last_at)
+            VALUES (:q, :hits, 1, :now)
+            ON CONFLICT(q) DO UPDATE SET
+              hits = excluded.hits,
+              searched = searched + 1,
+              last_at = excluded.last_at
+            """,
+            {"q": canon, "hits": int(hits), "now": stamp},
+        )
+        self.execute(
+            """
+            DELETE FROM query_log WHERE q IN (
+              SELECT q FROM query_log ORDER BY last_at DESC LIMIT -1 OFFSET :cap
+            )
+            """,
+            {"cap": QUERY_LOG_CAP},
+        )
+        self.commit()
+
+    def query_log(self, limit: int = 10, sort: str = "recent") -> list[dict]:
+        order = "searched DESC, last_at DESC" if sort == "top" else "last_at DESC"
+        rows = self.execute(
+            f"SELECT q, hits, searched, last_at FROM query_log ORDER BY {order} LIMIT :limit",
+            {"limit": max(1, min(int(limit), 100))},
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_search_feedback(self, note_id: str, query: str) -> None:
+        """#321 'not relevant': demote this note for this query."""
+        canon = canonical_query(query)
+        if not canon:
+            return
+        self.execute(
+            """
+            INSERT INTO search_feedback (note_id, query, down)
+            VALUES (?, ?, 1)
+            ON CONFLICT(note_id, query) DO UPDATE SET down = 1
+            """,
+            (note_id, canon),
+        )
+        self.commit()
+
+    def remove_search_feedback(self, note_id: str, query: str) -> bool:
+        cur = self.execute(
+            "DELETE FROM search_feedback WHERE note_id = ? AND query = ?",
+            (note_id, canonical_query(query)),
+        )
+        self.commit()
+        return (cur.rowcount or 0) > 0
+
+    def feedback_note_ids(self, query: str) -> set[str]:
+        """Note ids demoted for this canonical query (empty for empty queries
+        — the fast path every search takes before results exist)."""
+        canon = canonical_query(query)
+        if not canon:
+            return set()
+        rows = self.execute(
+            "SELECT note_id FROM search_feedback WHERE query = ? AND down = 1",
+            (canon,),
+        ).fetchall()
+        return {r["note_id"] for r in rows}
+
+    # ---- tags / stats ----------------------------------------------------
 
     def all_tags(self) -> list[dict]:
         rows = self.execute(
