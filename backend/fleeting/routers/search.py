@@ -81,6 +81,59 @@ def tags(request: Request) -> list[dict]:
     return request.app.state.st.db.all_tags()
 
 
+class TagRenameIn(BaseModel):
+    from_tag: str = Field(min_length=1, max_length=120)
+    to: str = Field(min_length=1, max_length=120)
+
+
+@router.post("/tags/rename")
+def rename_tag(body: TagRenameIn, request: Request) -> dict:
+    """#50: rewrite one tag across notes. Emits note.updated per changed
+    note so every open view stays live."""
+    st = request.app.state.st
+    updated = st.db.rename_tag(body.from_tag, body.to)
+    for note in updated:
+        st.bus.publish("note.updated", note)
+    return {"ok": True, "updated": len(updated)}
+
+
+class TagMergeIn(BaseModel):
+    from_tags: list[str] = Field(min_length=1, max_length=20)
+    to: str = Field(min_length=1, max_length=120)
+
+
+@router.post("/tags/merge")
+def merge_tags(body: TagMergeIn, request: Request) -> dict:
+    """#50/#425: fold several tags into one."""
+    st = request.app.state.st
+    updated = st.db.merge_tags(body.from_tags, body.to)
+    for note in updated:
+        st.bus.publish("note.updated", note)
+    return {"ok": True, "updated": len(updated)}
+
+
+class TagDeleteIn(BaseModel):
+    tag: str = Field(min_length=1, max_length=120)
+
+
+@router.post("/tags/delete")
+def delete_tag(body: TagDeleteIn, request: Request) -> dict:
+    """#50: strip a tag from every note (notes themselves stay)."""
+    st = request.app.state.st
+    updated = st.db.delete_tag(body.tag)
+    for note in updated:
+        st.bus.publish("note.updated", note)
+    return {"ok": True, "updated": len(updated)}
+
+
+@router.get("/tags/audit")
+def tags_audit(request: Request) -> dict:
+    """#425: rare, overlapping and misspelt tag candidates."""
+    from ..services.tag_audit import tag_audit
+
+    return tag_audit(request.app.state.st.db)
+
+
 @router.get("/stats")
 def stats(request: Request, days: int = 7) -> dict:
     st = request.app.state.st

@@ -1315,6 +1315,67 @@ class Database:
         ).fetchall()
         return [{"tag": r["tag"], "count": r["count"]} for r in rows]
 
+    def _rewrite_tag(self, note_id: str, tags: list[str], match: str, replacement: str | None) -> dict | None:
+        """Rewrite one note's tag list, replacing every case/#-insensitive
+        `match` with `replacement` (None removes it). Dedupes, keeps order.
+        Returns the updated note or None when nothing changed."""
+        new_tags: list[str] = []
+        replaced = False
+        match_l = match.strip().lower().lstrip("#")
+        repl_norm = (replacement or "").strip().lstrip("#").lower()
+        for t in tags:
+            clean = str(t).strip()
+            if not clean:
+                continue
+            if clean.lower().lstrip("#") == match_l:
+                # Collapse repeats of the matched tag into one replacement —
+                # and never append it twice when it already exists as `new`.
+                if replacement is not None and not replaced and repl_norm not in [
+                    x.lower().lstrip("#") for x in new_tags
+                ]:
+                    new_tags.append(str(replacement).strip().lstrip("#"))
+                replaced = True
+            elif clean.lower().lstrip("#") == repl_norm and replacement is not None:
+                # An existing tag equal to the replacement is kept as-is —
+                # its slot IS the merged position, don't duplicate it.
+                continue
+            elif clean not in new_tags:
+                new_tags.append(clean)
+        if new_tags == tags:
+            return None
+        return self.update_note(note_id, {"tags": new_tags})
+
+    def rename_tag(self, old: str, new: str) -> list[dict]:
+        """#50: rename a tag across notes. Case/#-insensitive on the match,
+        `new` stored as given. Returns updated notes for the bus."""
+        if not old.strip().lstrip("#") or not new.strip().lstrip("#"):
+            return []
+        updated: list[dict] = []
+        for row in self.execute("SELECT id, tags FROM notes WHERE tags != '[]'").fetchall():
+            note = self._rewrite_tag(row["id"], json.loads(row["tags"] or "[]"), old, new)
+            if note:
+                updated.append(note)
+        return updated
+
+    def merge_tags(self, sources: list[str], target: str) -> list[dict]:
+        """#50: fold several tags into one (rename applied per source)."""
+        updated: dict[str, dict] = {}
+        for src in sources:
+            for note in self.rename_tag(src, target):
+                updated[note["id"]] = note
+        return list(updated.values())
+
+    def delete_tag(self, tag: str) -> list[dict]:
+        """#50: strip a tag from every note."""
+        if not tag.strip().lstrip("#"):
+            return []
+        updated: list[dict] = []
+        for row in self.execute("SELECT id, tags FROM notes WHERE tags != '[]'").fetchall():
+            note = self._rewrite_tag(row["id"], json.loads(row["tags"] or "[]"), tag, None)
+            if note:
+                updated.append(note)
+        return updated
+
     def stats(self) -> dict:
         row = self.execute(
             """

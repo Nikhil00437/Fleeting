@@ -229,6 +229,33 @@ export const api = {
 
   tags: () => req<TagCount[]>("/tags"),
 
+  /** #50 tag manager mutations. */
+  renameTag: (fromTag: string, to: string) =>
+    req<{ ok: boolean; updated: number }>("/tags/rename", {
+      method: "POST",
+      body: JSON.stringify({ from_tag: fromTag, to }),
+    }),
+
+  mergeTags: (fromTags: string[], to: string) =>
+    req<{ ok: boolean; updated: number }>("/tags/merge", {
+      method: "POST",
+      body: JSON.stringify({ from_tags: fromTags, to }),
+    }),
+
+  deleteTag: (tag: string) =>
+    req<{ ok: boolean; updated: number }>("/tags/delete", {
+      method: "POST",
+      body: JSON.stringify({ tag }),
+    }),
+
+  /** #425: rare / overlapping / misspelt tag candidates. */
+  tagsAudit: () =>
+    req<{
+      rare: { tag: string; count: number }[];
+      overlapping: { tags: string[]; target: string }[];
+      misspelt: { tags: string[]; target: string }[];
+    }>("/tags/audit"),
+
   /** #49/#322: recent + most-searched queries in one round trip. */
   searchHistory: () =>
     req<{ recent: QueryLogEntry[]; top: QueryLogEntry[] }>("/search/history"),

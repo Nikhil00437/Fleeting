@@ -5,6 +5,7 @@ import { AreaTrend, Bars, Ring, StackBar } from "./charts";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
 import { buildTagTree, flattenTagTree, normalizeTag, tagMatches } from "./tagTree";
+import TagManager from "./TagManager";
 import { inboxZeroProgress } from "./inboxZero";
 import { relTime } from "../time";
 import { activationProps } from "./a11y";
@@ -82,6 +83,8 @@ export default function Inbox({
   const [excludedTag, setExcludedTag] = useState<string | null>(null);
   // #270: tag tree panel.
   const [showTagTree, setShowTagTree] = useState(false);
+  // #50: tag manager modal (rename / merge / delete, #425 audit).
+  const [showTagManager, setShowTagManager] = useState(false);
   const [tagCounts, setTagCounts] = useState<TagCount[] | null>(null);
   // #271: triage — one note at a time, a decision before the next appears.
   const [triageOpen, setTriageOpen] = useState(false);
@@ -972,6 +975,12 @@ export default function Inbox({
         <div className="relative z-30 shrink-0 border-b border-ink-800 bg-ink-950/95 px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="micro-label">Tags — click to filter, Alt-click to exclude</p>
+            <button
+              onClick={() => setShowTagManager(true)}
+              className="rounded-lg border border-white/[0.07] bg-ink-950/80 px-2 py-0.5 text-[10.5px] font-medium text-ink-400 transition-colors hover:border-ember-400/40 hover:text-ember-200"
+            >
+              Manage
+            </button>
           </div>
           {!tagCounts ? (
             <div className="shimmer h-10 rounded-xl" />
@@ -1681,6 +1690,15 @@ export default function Inbox({
             </button>
           </div>
         </div>
+      )}
+
+      {/* #50/#425 tag manager */}
+      {showTagManager && (
+        <TagManager
+          onClose={() => setShowTagManager(false)}
+          onChanged={loadTagCounts}
+          onToast={toast}
+        />
       )}
     </div>
   );
