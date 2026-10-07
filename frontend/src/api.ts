@@ -210,13 +210,15 @@ export const api = {
 
   search: (
     q: string,
-    params?: { mode?: SearchMode; type?: string; repo?: string; limit?: number }
+    params?: { mode?: SearchMode; type?: string; repo?: string; limit?: number; alpha?: number }
   ) => {
     const searchParams = new URLSearchParams({ q });
     if (params?.mode) searchParams.set("mode", params.mode);
     if (params?.type && params.type !== "all") searchParams.set("type", params.type);
     if (params?.repo && params.repo !== "all") searchParams.set("repo", params.repo);
     if (params?.limit) searchParams.set("limit", String(params.limit));
+    // #315: hybrid RRF keyword weight; 1 = FTS only, 0 = vectors only.
+    if (params?.alpha !== undefined) searchParams.set("alpha", String(params.alpha));
     return req<Note[]>(`/search?${searchParams.toString()}`);
   },
 

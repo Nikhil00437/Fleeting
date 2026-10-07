@@ -1,10 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { appColor } from "../apps";
+import { relTime } from "../time";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
 import { bucketCounts, emptyUnified, sessionLabel } from "./unifiedSearch";
-import { LinkIcon, MicIcon, SearchIcon, SparkIcon, TextIcon, XIcon } from "./Icons";
+import {
+  AUDIO_OP,
+  DATE_PRESETS,
+  activeDatePreset,
+  applyDatePreset,
+  hasOperator,
+  toggleOperator,
+} from "./searchQuery";
+import {
+  ClockIcon,
+  LinkIcon,
+  MicIcon,
+  SearchIcon,
+  SlidersIcon,
+  SparkIcon,
+  TextIcon,
+  XIcon,
+} from "./Icons";
 import type { Note, SearchMode, TagCount, UnifiedResult } from "../types";
 
 interface Props {
@@ -48,6 +66,10 @@ export default function SearchView({
   const [searching, setSearching] = useState(false);
   const [scope, setScope] = useState<"notes" | "activity">("notes");
   const [unified, setUnified] = useState<UnifiedResult | null>(null);
+  // #315: hybrid RRF keyword weight — surfaced as a slider, server clamps.
+  const [alpha, setAlpha] = useState(0.5);
+  // #317: hover/focus preview — the note shown in the side pane.
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const debounceRef = useRef<number>(0);
 
   useEffect(() => {
@@ -57,6 +79,7 @@ export default function SearchView({
   useEffect(() => {
     window.clearTimeout(debounceRef.current);
     const q = query.trim();
+    setPreviewId(null);
     if (!q) {
       setResults(null);
       setSearching(false);
@@ -70,7 +93,7 @@ export default function SearchView({
           setResults([]);
           setUnified(await api.unifiedSearch(q, { limit: 20 }));
         } else {
-          setResults(await api.search(q, { mode }));
+          setResults(await api.search(q, { mode, alpha }));
         }
       } catch {
         if (scope === "activity") setUnified(emptyUnified() as UnifiedResult);
@@ -80,7 +103,7 @@ export default function SearchView({
       }
     }, 180);
     return () => window.clearTimeout(debounceRef.current);
-  }, [query, mode, scope]);
+  }, [query, mode, scope, alpha]);
 
   const browseNotes = useMemo(
     () => notes.filter((n) => !isEmptyFailedVoice(n)),
@@ -102,6 +125,12 @@ export default function SearchView({
       youtube: base.filter((n) => n.type === "youtube").length,
     };
   }, [query, results, browseNotes]);
+
+  // #317: the note currently shown in the hover/focus preview pane.
+  const previewNote = useMemo(
+    () => (previewId ? (activeList.find((n) => n.id === previewId) ?? null) : null),
+    [activeList, previewId],
+  );
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -192,6 +221,68 @@ export default function SearchView({
         </span>
       </div>
 
+      {/* #41 Filter chips — date presets and audio; each chip just edits the
+          operator query, so chips and typed operators stay one grammar. */}
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ink-800/60 px-5">
+        <span className="micro-label flex items-center gap-1.5">
+          <ClockIcon className="h-3 w-3 text-ember-400" /> When
+        </span>
+        <div className="flex items-center gap-1">
+          {DATE_PRESETS.map((preset) => {
+            const active =
+              preset.days === null
+                ? activeDatePreset(query) === "any"
+                : activeDatePreset(query) === preset.id;
+            return (
+              <button
+                key={preset.id}
+                onClick={() => setQuery(applyDatePreset(query, preset))}
+                aria-pressed={active}
+                className={`rounded-lg px-2 py-0.5 text-[11px] transition-all ${
+                  active
+                    ? "bg-ink-800 font-semibold text-ink-100 shadow-xs"
+                    : "text-ink-400 hover:text-ink-200"
+                }`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="mx-1 h-4 w-px bg-ink-800" aria-hidden="true" />
+        <button
+          onClick={() => setQuery(toggleOperator(query, AUDIO_OP))}
+          aria-pressed={hasOperator(query, AUDIO_OP)}
+          className={`flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] transition-all ${
+            hasOperator(query, AUDIO_OP)
+              ? "bg-iris-500/20 font-semibold text-iris-200 ring-1 ring-iris-400/30"
+              : "text-ink-400 hover:text-ink-200"
+          }`}
+        >
+          <MicIcon className="h-3 w-3" /> Has audio
+        </button>
+
+        {/* #315 weighting slider — only meaningful in hybrid mode */}
+        {mode === "hybrid" && (
+          <div className="ml-auto flex items-center gap-2" title="Keyword vs. semantic weighting (α)">
+            <SlidersIcon className="h-3 w-3 text-ink-400" />
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={alpha}
+              onChange={(e) => setAlpha(Number(e.target.value))}
+              aria-label="Hybrid keyword weight"
+              className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-ink-800 accent-ember-400"
+            />
+            <span className="w-10 font-mono text-[10.5px] tabular-nums text-ink-300">
+              α {alpha.toFixed(2)}
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* Scrollable Knowledge Explorer Viewport */}
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
         {/* Topic & Tag Facet Matrix */}
@@ -220,11 +311,14 @@ export default function SearchView({
             <div className="flex flex-wrap gap-1.5">
               {tags.slice(0, 24).map(({ tag, count }) => {
                 const color = appColor(tag);
-                const isSelected = query.trim().toLowerCase() === tag.toLowerCase();
+                // #313: tag chips now toggle the tag: operator, not bare text,
+                // so chips and hand-typed operators stay one grammar.
+                const tagOp = `tag:${tag}`;
+                const isSelected = hasOperator(query, tagOp);
                 return (
                   <button
                     key={tag}
-                    onClick={() => setQuery(isSelected ? "" : tag)}
+                    onClick={() => setQuery(toggleOperator(query, tagOp))}
                     className={`group flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition-all ${
                       isSelected
                         ? "border-ember-400/60 bg-ember-500/15 text-ink-100 shadow-sm"
@@ -354,53 +448,112 @@ export default function SearchView({
               </p>
             </div>
           ) : (
-            <div
-              className={`grid grid-cols-1 gap-3 ${
-                selectedId ? "xl:grid-cols-2" : "md:grid-cols-2"
-              }`}
-            >
-              {activeList.map((n) => (
-                <NoteCard
-                  key={n.id}
-                  note={n}
-                  highlight={selectedId === n.id}
-                  onOpen={onOpen}
-                  onPin={onPin}
-                  onTagClick={(t) => setQuery(t)}
-                  onToggleTask={(note, itemId) =>
-                    runNoteAction({
-                      api,
-                      toast,
-                      action: () =>
-                        api.updateNote(note.id, {
-                          action_items: note.action_items.map((it) =>
-                            it.id === itemId ? { ...it, done: !it.done } : it,
-                          ),
-                        } as never),
-                      success: "Task updated",
-                      onDone: (updated) => onNoteUpdated?.(updated),
-                    })
-                  }
-                  onRetry={(id) =>
-                    runNoteAction({
-                      api,
-                      toast,
-                      action: () => api.reprocess(id),
-                      success: "Reprocessing started",
-                      onDone: (updated) => onNoteUpdated?.(updated),
-                    })
-                  }
-                  onDelete={(id) =>
-                    runNoteAction({
-                      api,
-                      toast,
-                      action: () => api.deleteNote(id),
-                      success: "Note deleted",
-                      onDone: () => onNoteDeleted?.(id),
-                    })
-                  }
-                />
-              ))}
+            <div className="flex items-start gap-4">
+              <div
+                className={`grid min-w-0 flex-1 grid-cols-1 gap-3 ${
+                  selectedId || previewNote ? "xl:grid-cols-2" : "md:grid-cols-2"
+                }`}
+              >
+                {activeList.map((n) => (
+                  <div
+                    key={n.id}
+                    onMouseEnter={() => setPreviewId(n.id)}
+                    onFocus={() => setPreviewId(n.id)}
+                  >
+                    <NoteCard
+                      note={n}
+                      highlight={selectedId === n.id}
+                      onOpen={onOpen}
+                      onPin={onPin}
+                      onTagClick={(t) => setQuery(toggleOperator(query, `tag:${t}`))}
+                      onToggleTask={(note, itemId) =>
+                        runNoteAction({
+                          api,
+                          toast,
+                          action: () =>
+                            api.updateNote(note.id, {
+                              action_items: note.action_items.map((it) =>
+                                it.id === itemId ? { ...it, done: !it.done } : it,
+                              ),
+                            } as never),
+                          success: "Task updated",
+                          onDone: (updated) => onNoteUpdated?.(updated),
+                        })
+                      }
+                      onRetry={(id) =>
+                        runNoteAction({
+                          api,
+                          toast,
+                          action: () => api.reprocess(id),
+                          success: "Reprocessing started",
+                          onDone: (updated) => onNoteUpdated?.(updated),
+                        })
+                      }
+                      onDelete={(id) =>
+                        runNoteAction({
+                          api,
+                          toast,
+                          action: () => api.deleteNote(id),
+                          success: "Note deleted",
+                          onDone: () => onNoteDeleted?.(id),
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* #317 search-as-you-type preview pane — glance without
+                  leaving the results; hover or keyboard-focus drives it */}
+              {previewNote && scope === "notes" && (
+                <aside
+                  aria-label="Result preview"
+                  className="glass-studio sticky top-0 hidden w-80 shrink-0 self-start rounded-2xl p-4 xl:block"
+                >
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="micro-label">Preview</span>
+                    <button
+                      onClick={() => setPreviewId(null)}
+                      className="rounded p-0.5 text-ink-400 hover:bg-ink-800 hover:text-ink-100"
+                      aria-label="Close preview"
+                    >
+                      <XIcon className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <h3 className="line-clamp-2 text-sm font-semibold tracking-tight text-ink-100">
+                    {previewNote.title || "Untitled capture"}
+                  </h3>
+                  <p className="mt-0.5 font-mono text-[10.5px] text-ink-400">
+                    {relTime(previewNote.created_at)}
+                    {" · "}
+                    {previewNote.type}
+                  </p>
+                  {(previewNote.summary || previewNote.raw_text) && (
+                    <p className="mt-2 line-clamp-[10] text-xs leading-relaxed text-ink-200">
+                      {previewNote.summary || previewNote.raw_text.slice(0, 420)}
+                    </p>
+                  )}
+                  {previewNote.tags.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {previewNote.tags.slice(0, 8).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setQuery(toggleOperator(query, `tag:${t}`))}
+                          className="rounded-md border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px] text-ink-300 hover:border-ember-400/40 hover:text-ember-200"
+                        >
+                          #{t}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => onOpen(previewNote.id)}
+                    className="mt-3 w-full rounded-lg border border-ember-500/30 bg-ember-500/10 px-2 py-1.5 text-[11px] font-semibold text-ember-300 transition-colors hover:bg-ember-500/20"
+                  >
+                    Open note
+                  </button>
+                </aside>
+              )}
             </div>
           )}
         </div>
