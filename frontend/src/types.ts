@@ -703,3 +703,26 @@ export interface ReportPlaygroundResult {
   model: string;
 }
 
+export interface CaptureFrequencyStats {
+  days: number;
+  total_captures: number;
+  avg_per_day: number;
+  busiest_day: { day: string; count: number } | null;
+  peak_hour: number | null;
+  notes_per_day: {
+    day: string;
+    count: number;
+    text: number;
+    voice: number;
+    youtube: number;
+  }[];
+  by_dow: { name: string; index: number; count: number }[];
+  by_hour: { hour: number; count: number }[];
+  top_tags_over_time: {
+    tag: string;
+    total: number;
+    timeline: { day: string; count: number }[];
+  }[];
+}
+
+

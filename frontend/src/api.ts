@@ -44,6 +44,7 @@ import type {
   PeriodicReviewOut,
   UnfinishedThread,
   ReportPlaygroundResult,
+  CaptureFrequencyStats,
 } from "./types";
 
 const BASE = "/api";
@@ -419,6 +420,10 @@ export const api = {
   taskRepos: () => req<RepoInfo[]>("/tasks/repos"),
 
   stats: (days = 7) => req<Stats>(`/stats?days=${days}`),
+
+  /** #163 capture frequency stats: notes per day, top tags over time */
+  captureFrequency: (days = 30) =>
+    req<CaptureFrequencyStats>(`/stats/capture-frequency?days=${days}`),
 
   settings: () => req<Settings>("/settings"),
 

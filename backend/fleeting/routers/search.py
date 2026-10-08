@@ -182,6 +182,15 @@ def stats(request: Request, days: int = 7) -> dict:
     return data
 
 
+@router.get("/stats/capture-frequency")
+def capture_frequency(request: Request, days: int = 30) -> dict:
+    """#163 Capture frequency stats: notes per day, top tags over time."""
+    from ..services.capture_stats import get_capture_frequency_stats
+
+    st = request.app.state.st
+    return get_capture_frequency_stats(st.db, days=days)
+
+
 
 @router.get("/search/unified")
 async def unified(
