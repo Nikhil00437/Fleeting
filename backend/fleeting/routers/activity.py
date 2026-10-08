@@ -297,6 +297,34 @@ def export_activity(
     )
 
 
+@router.get("/metrics/switches")
+def metric_switches(request: Request, day: str | None = None) -> dict:
+    """#58 context switches for a day."""
+    from ..services.metrics import context_switches
+
+    return context_switches(request.app.state.st.db, _valid_day(day or _local_today()))
+
+
+@router.get("/metrics/compare")
+def metric_compare(
+    request: Request, day: str | None = None, window: int = Query(7, ge=1, le=90)
+) -> dict:
+    """#62 today against the mean of the previous `window` days."""
+    from ..services.metrics import today_vs_average
+
+    return today_vs_average(request.app.state.st.db, _valid_day(day or _local_today()), window=window)
+
+
+@router.get("/metrics/heatmap")
+def metric_heatmap(
+    request: Request, weeks: int = Query(12, ge=1, le=52), end: str | None = None
+) -> dict:
+    """#59 calendar grid of active minutes."""
+    from ..services.metrics import heatmap
+
+    return heatmap(request.app.state.st.db, weeks=weeks, end=_valid_day(end) if end else None)
+
+
 @router.get("/timeline")
 def activity_timeline(
     request: Request, day: str | None = None, kinds: str = "session,task,note"
