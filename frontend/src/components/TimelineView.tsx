@@ -89,6 +89,8 @@ interface Props {
   refreshKey: number;
   /** #339 clicking a note marker opens that note. */
   onOpenNote?: (id: string) => void;
+  /** #342 base URL for downloads; prefixed with the API origin by the caller. */
+  exportBase?: string;
 }
 
 export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props) {
@@ -436,6 +438,26 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
+                {/* #342 the same numbers, out of the app — sessions or a
+                    day×project timesheet over the visible range. */}
+                <a
+                  href={api.activityExportUrl("csv", { day_from: shiftDay(day, -(rangeDays - 1)), day_to: day })}
+                  download
+                  title="Download the visible range as CSV"
+                  aria-label="Export sessions as CSV"
+                  className="rounded-lg border border-white/[0.06] bg-ink-950/90 px-2 py-1 font-mono text-[10px] text-ink-400 transition-colors hover:text-ember-300"
+                >
+                  CSV
+                </a>
+                <a
+                  href={api.activityExportUrl("timesheet", { day_from: shiftDay(day, -(rangeDays - 1)), day_to: day })}
+                  download
+                  title="Download a project timesheet as CSV"
+                  aria-label="Export timesheet as CSV"
+                  className="rounded-lg border border-white/[0.06] bg-ink-950/90 px-2 py-1 font-mono text-[10px] text-ink-400 transition-colors hover:text-ember-300"
+                >
+                  Timesheet
+                </a>
                 <div className="flex rounded-lg border border-white/[0.06] bg-ink-950/90 p-0.5 text-[10px]">
                   {([7, 14, 30] as const).map((r) => (
                     <button

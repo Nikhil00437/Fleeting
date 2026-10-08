@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..activity import aggregate_day, app_blocked
@@ -230,6 +231,34 @@ def session_annotations(request: Request, day: str) -> list[dict]:
     from ..services.session_edit import session_annotations as annotated
 
     return annotated(request.app.state.st.db, _valid_day(day))
+
+
+@router.get("/export")
+def export_activity(
+    request: Request,
+    format: str = Query("csv", pattern="^(csv|timesheet)$"),
+    day: str | None = None,
+    day_from: str | None = None,
+    day_to: str | None = None,
+) -> Response:
+    """#342 session rows or a day×project timesheet, as CSV."""
+    from ..services import activity_export
+
+    start = _valid_day(day_from) if day_from else None
+    end = _valid_day(day_to) if day_to else None
+    if day:
+        start = end = _valid_day(day)
+    sessions = activity_export.sessions_in_range(request.app.state.st.db, start, end)
+    if format == "timesheet":
+        body = activity_export.render_timesheet_csv(sessions)
+    else:
+        body = activity_export.render_sessions_csv(sessions)
+    name = f"fleeting-{format}-{(end or start or datetime.now().strftime('%Y-%m-%d'))}.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @router.get("/timeline")

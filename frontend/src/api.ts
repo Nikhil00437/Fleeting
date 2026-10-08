@@ -463,6 +463,13 @@ export const api = {
       body: JSON.stringify({ note }),
     }),
 
+  /** #342 session rows or a day×project timesheet, as CSV. */
+  activityExportUrl: (format: "csv" | "timesheet", params: { day?: string; day_from?: string; day_to?: string }) => {
+    const sp = new URLSearchParams({ format });
+    for (const [k, v] of Object.entries(params)) if (v) sp.set(k, v);
+    return `/api/activity/export?${sp.toString()}`;
+  },
+
   /** #339 what you did, finished and wrote, in one feed. */
   activityTimeline: (day?: string, kinds = "session,task,note") =>
     req<{ day: string; events: DayEvent[] }>(
