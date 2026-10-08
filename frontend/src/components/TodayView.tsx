@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import RecallCard from "./RecallCard";
 import { streakLevel, toWeeks } from "./streaks";
 import { api } from "../api";
 import type { StreakData, TaskItem, TodayData } from "../types";
@@ -340,6 +341,9 @@ export default function TodayView({
           </ul>
         </section>
       )}
+
+      {/* #46/#47/#297: one card, three ways to be reminded of old notes. */}
+      <RecallCard onOpenNote={(id) => onOpenNote?.(id)} />
 
       {data.completed_today.length > 0 && (
         <section aria-label="Completed today">

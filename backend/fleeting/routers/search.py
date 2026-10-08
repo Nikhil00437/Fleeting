@@ -73,6 +73,28 @@ def transcript_search_endpoint(
     return transcript_search(st.db, q, limit=limit, hits_per_note=hits_per_note)
 
 
+@router.get("/recall")
+def recall(
+    request: Request,
+    kind: str = Query("random", pattern="^(random|this_day|capsule)$"),
+    older_than_days: int = Query(90, ge=1, le=3650),
+    seed: int | None = None,
+    limit: int = Query(5, ge=1, le=20),
+) -> list[NoteOut]:
+    """#46 random old note, #47 this day last year, #297 weekly time capsule."""
+    from ..services.recall import recall_random_old, recall_this_day, recall_time_capsule
+
+    db = request.app.state.st.db
+    if kind == "this_day":
+        hits = recall_this_day(db, limit=limit)
+    elif kind == "capsule":
+        capsule = recall_time_capsule(db)
+        hits = [capsule] if capsule else []
+    else:
+        hits = recall_random_old(db, older_than_days=older_than_days, limit=limit, seed=seed)
+    return [NoteOut(**h) for h in hits]
+
+
 class SearchFeedbackIn(BaseModel):
     note_id: str
     query: str = Field(min_length=1, max_length=500)

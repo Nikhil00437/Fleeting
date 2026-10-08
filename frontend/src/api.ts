@@ -348,6 +348,13 @@ export const api = {
   /** #30/#33: Today buckets, next action and day load from one ranking. */
   today: () => req<TodayData>("/tasks/today"),
 
+  /** #46/#47/#297 resurfacing. `roll` re-rolls the random draw. */
+  recall: (kind: "random" | "this_day" | "capsule", roll = 0) => {
+    const sp = new URLSearchParams({ kind });
+    if (kind === "random" && roll) sp.set("seed", String(roll * 7919 + 13));
+    return req<Note[]>(`/recall?${sp.toString()}`);
+  },
+
   /** #280: add real minutes spent on a task (focus timer). */
   logFocus: (id: string, minutes: number) =>
     req<TaskItem>(`/tasks/${id}/focus`, { method: "POST", body: JSON.stringify({ minutes }) }),
