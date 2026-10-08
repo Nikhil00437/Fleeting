@@ -102,6 +102,8 @@ export default function App() {
  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
  const [isMaximized, setIsMaximized] = useState(false);
  const [cmdOpen, setCmdOpen] = useState(false);
+ // The palette hands an in-progress query to the Search view on submit.
+ const [searchSeed, setSearchSeed] = useState("");
  const [cmdQuery, setCmdQuery] = useState("");
  const [cmdIndex, setCmdIndex] = useState(0);
 
@@ -483,8 +485,8 @@ export default function App() {
    },
    {
     id: "nav:search",
-    title: "Full-Text Knowledge Search (FTS5)",
-    sub: "Search across titles, transcripts, summaries, and tags",
+    title: "Search Notes, Tasks & Activity",
+    sub: "Full-text search across titles, transcripts, summaries, and tags",
     icon: <SearchIcon className="h-4 w-4 text-cyan-400" />,
     shortcut: "/",
     run: () => {
@@ -492,6 +494,23 @@ export default function App() {
      setTimeout(() => searchRef.current?.focus(), 30);
     },
    },
+   ...(cmdQuery.trim()
+    ? [
+       {
+        id: "search:query",
+        title: `Search notes for "${cmdQuery.trim()}"`,
+        sub: "Run a full-text search with this query",
+        icon: <SearchIcon className="h-4 w-4 text-cyan-300" />,
+        run: () => {
+         setSearchSeed(cmdQuery.trim());
+         setView("search");
+         setCmdOpen(false);
+         setCmdQuery("");
+         setTimeout(() => searchRef.current?.focus(), 30);
+        },
+       },
+      ]
+    : []),
    {
     id: "nav:processes",
     title: "System Processes & Active Apps",
@@ -1001,6 +1020,7 @@ export default function App() {
        notes={notes}
        focusRef={searchRef}
        selectedId={selectedId}
+       initialQuery={searchSeed}
        onOpen={setSelectedId}
        onOpenAt={(id, t) => {
         setSelectedId(id);

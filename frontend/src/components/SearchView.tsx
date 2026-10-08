@@ -32,6 +32,8 @@ interface Props {
   onOpen: (id: string) => void;
   /** #319: open a note and jump its audio player to t seconds. */
   onOpenAt?: (id: string, t: number) => void;
+  /** Seed the input when set — used by the command palette's search handoff. */
+  initialQuery?: string;
   onPin: (id: string) => void;
   onNoteUpdated?: (note: Note) => void;
   onNoteDeleted?: (id: string) => void;
@@ -53,6 +55,7 @@ export default function SearchView({
   selectedId,
   onOpen,
   onOpenAt,
+  initialQuery = "",
   onPin,
   onNoteUpdated,
   onNoteDeleted,
@@ -61,7 +64,11 @@ export default function SearchView({
   // These three were passed to NoteCard as bare async handlers with no catch,
   // so any failure became an unhandled rejection with nothing on screen.
   const toast = onToast ?? ((message: string) => void message);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  // A palette handoff updates initialQuery; adoption is one-way on change of it.
+  useEffect(() => {
+    if (initialQuery) setQuery(initialQuery);
+  }, [initialQuery]);
   const [mode, setMode] = useState<SearchMode>("hybrid");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [results, setResults] = useState<Note[] | null>(null);
