@@ -108,6 +108,9 @@ class ActivityConfig:
     # Monday-morning summary of the finished week, on top of the daily report.
     auto_weekly_log: bool = True
     watch_dirs: str = "~/Projects, ~/Documents, ~/Downloads"
+    # #335 minutes of silence before a run of sessions becomes a new work
+    # block. 10 keeps "read docs, answer a Slack thread" as one block.
+    block_gap_min: int = 10
     mirror_daily_log: bool = False  # report lives inside the app only, by default
     # Bearer token required on mutating /api requests. Empty = disabled, which
     # keeps the single-user loopback setup working with no extra setup.

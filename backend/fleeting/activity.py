@@ -216,6 +216,10 @@ class ActivityCollector:
         self._last_cursor: tuple[int, int] | None = None
         self._idle_streak_secs = 0
         self._today: str = _local_now().strftime("%Y-%m-%d")
+        # #335 the tail of the current block: {end, project, id}. A session
+        # continues it when it starts soon after and on the same project.
+        self._last_block: dict | None = None
+        self._block_seq = 0
         self._redact: list[str] = [p.strip() for p in cfg.redact_patterns.split(",") if p.strip()]
         self._watch_dirs: list[str] = [w.strip() for w in cfg.watch_dirs.split(",") if w.strip()]
 
@@ -397,6 +401,7 @@ class ActivityCollector:
             project = detect_project(
                 title, repo=ctx[0] if ctx else None, roots=self._watch_dirs
             )
+            block_id = self._block_for(now, project)
             self.current = {
                 "app_class": app_class,
                 "title": title,
@@ -404,6 +409,7 @@ class ActivityCollector:
                 "repo": ctx[0] if ctx else None,
                 "branch": ctx[1] if ctx else None,
                 "project": project,
+                "block_id": block_id,
                 "first_seen": _local_iso(now),
                 "last_seen": _local_iso(now),
                 "seconds": 0,
@@ -411,6 +417,18 @@ class ActivityCollector:
                 "row_id": None,
             }
             self.current["row_id"] = self.db.upsert_activity(self._row(self.current))
+
+    def _block_for(self, now: datetime, project: str | None) -> str:
+        """#335: the block this session belongs to, extending the current one
+        when it starts soon after it and stays on the same project."""
+        day = now.strftime("%Y-%m-%d")
+        tail = self._last_block
+        if tail and tail["project"] == project:
+            gap = (now - datetime.fromisoformat(tail["end"])).total_seconds()
+            if 0 <= gap <= self.cfg.block_gap_min * 60:
+                return str(tail["id"])
+        self._block_seq += 1
+        return f"{day}-{self._block_seq}"
 
     def _cwd_of(self, pid: object) -> str | None:
         """#336: the working directory behind a window, via /proc."""
@@ -440,10 +458,47 @@ class ActivityCollector:
             "repo": session.get("repo"),
             "branch": session.get("branch"),
             "project": session.get("project"),
+            # #335 set when the session opened; a poll must never reassign it.
+            "block_id": session.get("block_id"),
         }
 
     def _close_current(self) -> None:
+        if self.current:
+            self._last_block = {
+                "end": self.current["last_seen"],
+                "project": self.current.get("project"),
+                "id": self.current.get("block_id"),
+            }
         self.current = None
+
+
+def group_blocks(sessions: list[dict]) -> list[dict]:
+    """#335 view model: the work blocks of a day, in order.
+
+    Rows written before this feature carry no block_id; consecutive ones fall
+    back to a single block per session rather than being dropped.
+    """
+    blocks: dict[str, dict] = {}
+    for s in sessions:
+        key = s.get("block_id") or f"row-{s.get('id')}"
+        block = blocks.setdefault(
+            key,
+            {
+                "id": key,
+                "start": s["first_seen"],
+                "end": s["last_seen"],
+                "seconds": 0,
+                "project": s.get("project"),
+                "apps": [],
+            },
+        )
+        block["seconds"] += int(s.get("seconds") or 0)
+        block["end"] = max(block["end"], s["last_seen"])
+        if s["app_class"] not in block["apps"]:
+            block["apps"].append(s["app_class"])
+        if block["project"] is None:
+            block["project"] = s.get("project")
+    return sorted(blocks.values(), key=lambda b: b["start"])
 
 
 def aggregate_day(sessions: list[dict]) -> dict:
@@ -460,11 +515,10 @@ def aggregate_day(sessions: list[dict]) -> dict:
             for t, secs in sorted(app["titles"].items(), key=lambda kv: -kv[1])
         ][:10]
     apps_list = sorted(apps.values(), key=lambda a: -a["seconds"])
+    ordered = sorted(sessions, key=lambda s: s["first_seen"])
     return {
         "total_seconds": sum(a["seconds"] for a in apps_list),
         "apps": apps_list,
-        "sessions": sorted(
-            sessions,
-            key=lambda s: s["first_seen"],
-        ),
+        "sessions": ordered,
+        "blocks": group_blocks(ordered),
     }

@@ -18,9 +18,8 @@ if TYPE_CHECKING:
 # `owner/repo` or `owner / repo` in a title — GitHub, a terminal prompt, a
 # browser tab. Requires a slash and a word character on both sides.
 _SLASH_REPO_RE = re.compile(r"\b([\w.-]+)\s*/\s*([\w.-]+)\b")
-# A path segment that looks like a project: starts with a letter, has no dot
-# (rules out filenames), no spaces.
-_NAME_RE = re.compile(r"(?<![\w.-])([A-Za-z][\w-]{1,40})(?![\w.-/])")
+# "project: something" / "project — something" — a labelled window title.
+_LABELLED_RE = re.compile(r"^([A-Za-z][\w-]{1,40})\s*[—\-:|]\s*\S")
 
 _STOPWORDS = frozenset(
     """inbox new tab window untitled document file folder settings home desktop
@@ -78,9 +77,9 @@ def detect_project(
     if m and m.group(2).lower() not in _STOPWORDS:
         return m.group(2)
 
-    # A bare project name only counts when it opens the title (a tab or
-    # window name), otherwise "fleeting" in a sentence would match everything.
-    m = _NAME_RE.fullmatch(head)
+    # A bare project name only counts in the "project: file — app" shape. A
+    # title that is just one word ("vim", "Inbox") names no project.
+    m = _LABELLED_RE.match(text)
     if m and m.group(1).lower() not in _STOPWORDS:
         return m.group(1)
     return None
