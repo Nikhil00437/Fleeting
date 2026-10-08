@@ -386,17 +386,21 @@ MIGRATIONS: list[str] = [
 ]
 
 
-# v20 columns, applied idempotently by migrate(). Same reason the v8 triggers
-# live in Python and not in the migration SQL: a database old enough to
-# predate activity tracking has no `activity` table, and a bare
-# `ALTER TABLE activity` would abort the whole migration chain.
-_ACTIVITY_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("workspace", "TEXT"),
-    ("project", "TEXT"),
-    ("block_id", "TEXT"),
-    ("idle_secs", "INTEGER NOT NULL DEFAULT 0"),
-    ("repo", "TEXT"),
-    ("branch", "TEXT"),
+# Columns added to existing tables, applied idempotently by migrate(). Same
+# reason the v8 triggers live in Python and not in the migration SQL: a
+# database old enough to predate activity tracking has no `activity` table,
+# and a bare `ALTER TABLE activity` would abort the whole migration chain.
+_GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("activity", (
+        ("workspace", "TEXT"),
+        ("project", "TEXT"),
+        ("block_id", "TEXT"),
+        ("idle_secs", "INTEGER NOT NULL DEFAULT 0"),
+        ("repo", "TEXT"),
+        ("branch", "TEXT"),
+    )),
+    # #340 per-app idle threshold; NULL means "use the global setting".
+    ("app_rules", (("idle_min", "INTEGER"),)),
 )
 
 
@@ -513,22 +517,23 @@ class Database:
                 )
                 raise
         self._backfill_activity_index()
-        self._migrate_activity_columns()
+        self._migrate_guarded_columns()
         self._migrate_action_items()
 
-    def _migrate_activity_columns(self) -> None:
-        """Add the v20 columns if this database predates them (see _ACTIVITY_COLUMNS)."""
-        if not self.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activity'"
-        ).fetchone():
-            return
-        present = {r["name"] for r in self.execute("PRAGMA table_info(activity)")}
+    def _migrate_guarded_columns(self) -> None:
+        """Add late columns to tables that an older database may not have."""
         added = False
-        for column, decl in _ACTIVITY_COLUMNS:
-            if column in present:
+        for table, columns in _GUARDED_COLUMNS:
+            if not self.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone():
                 continue
-            self.execute(f"ALTER TABLE activity ADD COLUMN {column} {decl}")
-            added = True
+            present = {r["name"] for r in self.execute(f"PRAGMA table_info({table})")}
+            for column, decl in columns:
+                if column in present:
+                    continue
+                self.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+                added = True
         if added:
             self.commit()
 
@@ -1135,9 +1140,27 @@ class Database:
         )
         self.commit()
 
+    def app_idle_rules(self) -> dict[str, int]:
+        """#340 app_class -> idle minutes. Apps absent use the global setting."""
+        rows = self.execute(
+            "SELECT app_class, idle_min FROM app_rules WHERE idle_min IS NOT NULL"
+        ).fetchall()
+        return {r["app_class"]: int(r["idle_min"]) for r in rows}
+
+    def set_app_idle_rule(self, app_class: str, minutes: int | None) -> None:
+        """Set or clear one app's idle threshold (None = follow the config)."""
+        self.execute(
+            "INSERT INTO app_rules (app_class, tracked, updated_at, idle_min)"
+            " VALUES (?, 1, ?, ?)"
+            " ON CONFLICT(app_class) DO UPDATE SET idle_min=excluded.idle_min",
+            (app_class, now_iso(), minutes),
+        )
+        self.commit()
+
     def known_apps(self) -> list[dict]:
         """Apps seen in activity, with totals and their effective rule."""
         rules = self.app_rules()
+        idle_rules = self.app_idle_rules()
         rows = self.execute(
             """
             SELECT app_class, SUM(seconds) AS seconds, COUNT(*) AS sessions, MAX(day) AS last_day
@@ -1152,6 +1175,7 @@ class Database:
                 "last_day": r["last_day"],
                 "tracked": rules.get(r["app_class"], True),
                 "has_rule": r["app_class"] in rules,
+                "idle_min": idle_rules.get(r["app_class"]),
             }
             for r in rows
         ]
@@ -1161,7 +1185,8 @@ class Database:
             if app_class not in seen:
                 out.append(
                     {"app_class": app_class, "seconds": 0, "sessions": 0, "last_day": None,
-                     "tracked": tracked, "has_rule": True}
+                     "tracked": tracked, "has_rule": True,
+                     "idle_min": idle_rules.get(app_class)}
                 )
         return out
 

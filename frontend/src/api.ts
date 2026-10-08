@@ -460,6 +460,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ from_class, to_class }),
     }),
+  /** #340 per-app idle threshold. */
+  appIdleRules: () => req<{ app_class: string; idle_min: number }[]>("/activity/apps/idle"),
+  setAppIdle: (app_class: string, idle_min: number) =>
+    req<{ ok: boolean }>("/activity/apps/idle", {
+      method: "POST",
+      body: JSON.stringify({ app_class, idle_min }),
+    }),
+  clearAppIdle: (app_class: string) =>
+    req<void>(`/activity/apps/idle/${encodeURIComponent(app_class)}`, { method: "DELETE" }),
   deleteAppAlias: (from_class: string) =>
     req<void>(`/activity/apps/alias/${encodeURIComponent(from_class)}`, { method: "DELETE" }),
 

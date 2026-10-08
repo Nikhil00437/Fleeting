@@ -141,6 +141,39 @@ def delete_app_alias(request: Request, from_class: str) -> None:
         raise HTTPException(status_code=404, detail="alias not found")
 
 
+class AppIdleIn(BaseModel):
+    app_class: str = Field(min_length=1, max_length=120)
+    idle_min: int = Field(ge=1, le=120)
+
+
+@router.get("/apps/idle")
+def app_idle_rules(request: Request) -> list[dict]:
+    """#340 per-app idle thresholds."""
+    return [
+        {"app_class": k, "idle_min": v}
+        for k, v in sorted(request.app.state.st.db.app_idle_rules().items())
+    ]
+
+
+@router.post("/apps/idle")
+def set_app_idle(request: Request, body: AppIdleIn) -> dict:
+    """Set one app's idle threshold. Also creates its tracing rule if absent."""
+    db = request.app.state.st.db
+    if body.app_class not in db.app_rules():
+        db.set_app_rule(body.app_class, True)
+    db.set_app_idle_rule(body.app_class, body.idle_min)
+    return {"ok": True, **body.model_dump()}
+
+
+@router.delete("/apps/idle/{app_class}", status_code=204)
+def clear_app_idle(request: Request, app_class: str) -> None:
+    db = request.app.state.st.db
+    if app_class not in db.app_rules():
+        raise HTTPException(status_code=404, detail="no rule for this app")
+    db.set_app_idle_rule(app_class, None)
+    db.commit()
+
+
 @router.get("/week")
 def activity_week(request: Request, days: int = 7) -> list[dict]:
     """Tracked seconds per local day for the last N days (chart data)."""

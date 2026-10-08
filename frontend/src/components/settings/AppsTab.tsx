@@ -47,6 +47,23 @@ export default function AppsTab({ apps, toggleApp, bulkSetApps, refresh, onToast
       .catch((e) => onToast?.(e instanceof Error ? e.message : String(e), "err"));
   };
 
+  // #340 per-app idle threshold: minutes of no cursor movement before this
+  // app's time stops counting. Empty means "whatever the global setting is".
+  const setIdle = (app_class: string, raw: string) => {
+    const minutes = raw.trim() === "" ? null : Math.max(1, Math.min(120, Number(raw) || 1));
+    const call = minutes === null ? api.clearAppIdle(app_class) : api.setAppIdle(app_class, minutes);
+    call
+      .then(() => {
+        onToast?.(
+          minutes === null
+            ? `${app_class} uses the global idle threshold`
+            : `${app_class} goes idle after ${minutes} min`,
+        );
+        refresh?.();
+      })
+      .catch((e) => onToast?.(e instanceof Error ? e.message : String(e), "err"));
+  };
+
   const unmerge = (from: string) => {
     api
       .deleteAppAlias(from)
@@ -328,6 +345,19 @@ export default function AppsTab({ apps, toggleApp, bulkSetApps, refresh, onToast
                         </span>
                       </div>
                     </div>
+                    <label className="flex shrink-0 flex-col items-center gap-0.5">
+                      <span className="font-mono text-[9px] text-ink-500">idle</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={120}
+                        value={app.idle_min ?? ""}
+                        placeholder="—"
+                        onChange={(e) => setIdle(app.app_class, e.target.value)}
+                        aria-label={`Idle minutes for ${app.app_class}`}
+                        className="h-7 w-12 rounded-lg border border-ink-800 bg-ink-950 px-1 text-center font-mono text-[11px] text-ink-200 placeholder-ink-600"
+                      />
+                    </label>
                     <Toggle checked={app.tracked} onChange={() => void toggleApp(app)} />
                   </div>
                 );

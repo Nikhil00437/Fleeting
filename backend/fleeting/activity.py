@@ -42,6 +42,11 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 REDACTED = "\u00abredacted\u00bb"
 
 
+def idle_minutes_for(db, cfg: ActivityConfig, app_class: str) -> int:
+    """#340 the idle threshold that applies to one app right now."""
+    return int(db.app_idle_rules().get(app_class, cfg.idle_after_min))
+
+
 def resolve_app_class(db, app_class: str) -> str:
     """#64: follow rename/merge aliases to the canonical class.
 
@@ -345,19 +350,22 @@ class ActivityCollector:
     # ---- state machine ----------------------------------------------------
 
     def poll_once(self, win: dict | None, cursor: tuple[int, int] | None, now: datetime) -> None:
+        if win is not None:
+            # #64 the app is renamed once, here, so the session key and every
+            # stored row agree on which app this was.
+            app_class = resolve_app_class(self.db, win["class"])
+            if self._excluded(app_class):
+                win = None
+
         moved = cursor is not None and cursor != self._last_cursor
         if cursor is not None:
             self._idle_streak_secs = 0 if moved else self._idle_streak_secs + self.cfg.poll_secs
         self._last_cursor = cursor
-        idle = self._idle_streak_secs >= self.cfg.idle_after_min * 60
+        idle = self._idle_streak_secs >= (
+            idle_minutes_for(self.db, self.cfg, app_class) * 60 if win else 0
+        )
 
         if win is None:
-            self._close_current()
-            return
-        # #64 the app is renamed once, here, so the session key and every
-        # stored row agree on which app this was.
-        app_class = resolve_app_class(self.db, win["class"])
-        if self._excluded(app_class):
             self._close_current()
             return
 
@@ -373,8 +381,13 @@ class ActivityCollector:
         if self.current and (self.current["app_class"], self.current["title"]) == key:
             elapsed = (now - datetime.fromisoformat(self.current["last_seen"])).total_seconds()
             self.current["last_seen"] = _local_iso(now)
-            if not idle:
-                self.current["seconds"] += int(min(max(elapsed, 0), max_step))
+            step = int(min(max(elapsed, 0), max_step))
+            if idle:
+                # The AFK stretch still belongs to this session — it is just not
+                # work, so it is stored apart (#340).
+                self.current["idle_secs"] = self.current.get("idle_secs", 0) + step
+            else:
+                self.current["seconds"] += step
             self.current["row_id"] = self.db.upsert_activity(self._row(self.current))
         else:
             self._close_current()
@@ -394,6 +407,7 @@ class ActivityCollector:
                 "first_seen": _local_iso(now),
                 "last_seen": _local_iso(now),
                 "seconds": 0,
+                "idle_secs": 0,
                 "row_id": None,
             }
             self.current["row_id"] = self.db.upsert_activity(self._row(self.current))
@@ -421,6 +435,7 @@ class ActivityCollector:
             "day": session["first_seen"][:10],
             # #338 pinned at session start: a workspace switch mid-session is
             # history that already happened on the old workspace.
+            "idle_secs": session.get("idle_secs", 0),
             "workspace": (str(session["workspace"]) if session.get("workspace") is not None else None),
             "repo": session.get("repo"),
             "branch": session.get("branch"),

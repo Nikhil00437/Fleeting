@@ -30,6 +30,28 @@ function renderTab(onToast = vi.fn()) {
   return { refresh, onToast };
 }
 
+describe("AppsTab per-app idle threshold (#340)", () => {
+  it("posts a threshold when the box is filled in", async () => {
+    renderTab();
+    const setIdle = vi.spyOn(api, "setAppIdle").mockResolvedValue({ ok: true });
+    fireEvent.change(screen.getByLabelText("Idle minutes for firefox"), { target: { value: "9" } });
+    await waitFor(() => expect(setIdle).toHaveBeenCalledWith("firefox", 9));
+  });
+
+  it("clearing the box falls back to the global threshold", async () => {
+    render(
+      <AppsTab
+        apps={[{ ...app("firefox"), idle_min: 5 }]}
+        toggleApp={async () => {}}
+        bulkSetApps={async () => {}}
+      />,
+    );
+    const clear = vi.spyOn(api, "clearAppIdle").mockResolvedValue(undefined);
+    fireEvent.change(screen.getByLabelText("Idle minutes for firefox"), { target: { value: "" } });
+    await waitFor(() => expect(clear).toHaveBeenCalledWith("firefox"));
+  });
+});
+
 describe("AppsTab rename & merge (#64)", () => {
   it("merges one app into another and refreshes the list", async () => {
     const { refresh, onToast } = renderTab();

@@ -40,6 +40,9 @@ class FakeDB:
     def app_aliases(self):
         return getattr(self, "aliases", {})
 
+    def app_idle_rules(self):
+        return getattr(self, "idle_rules", {})
+
 
 def make_collector(poll=20, idle_min=3, on_screentime_milestone=None, auto_daily_log=True):
     cfg = ActivityConfig(poll_secs=poll, idle_after_min=idle_min, auto_daily_log=auto_daily_log)

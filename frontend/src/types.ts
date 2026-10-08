@@ -343,6 +343,8 @@ export interface AppRule {
   last_day: string | null;
   tracked: boolean;
   has_rule: boolean;
+  /** #340 per-app idle threshold in minutes; null = use the global setting. */
+  idle_min?: number | null;
 }
 
 export interface FilesActivity {
