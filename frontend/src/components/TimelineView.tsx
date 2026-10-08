@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import ActivityHeatmap from "./ActivityHeatmap";
+import FocusMetrics from "./FocusMetrics";
 import GapCard from "./GapCard";
 import PrivateBadge from "./PrivateBadge";
 import SessionEditor from "./SessionEditor";
@@ -439,6 +441,10 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
                   </span>{" "}
                   tracked across the last {rangeDays} days
                 </p>
+                {/* #58 switches, #62 today vs the recent average */}
+                <div className="mt-1.5">
+                  <FocusMetrics day={day} />
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 {/* #342 the same numbers, out of the app — sessions or a
@@ -541,6 +547,9 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
                 </button>
               )}
             </div>
+
+            {/* #59 the long view: a year of days in one glance */}
+            <ActivityHeatmap onOpenDay={setDay} />
 
             {/* #337 holes in the record, with a way to fill them */}
             <GapCard gaps={gaps} onFilled={load} onToast={onToast} />

@@ -308,6 +308,40 @@ export interface LLMProbeOverrides {
   api_key?: string;
 }
 
+/** #58 context switches for a day. */
+export interface SwitchMetrics {
+  day: string;
+  switches: number;
+  reasons: { app: number; gap: number; project: number };
+  sessions: number;
+  seconds_per_switch: number | null;
+}
+
+/** #62 today's total against the mean of the previous days. */
+export interface TodayVsAverage {
+  day: string;
+  seconds: number;
+  average_seconds: number;
+  delta_seconds: number;
+  pct: number | null;
+  window: number;
+  days_tracked: number;
+}
+
+export interface HeatmapCell {
+  day: string;
+  minutes: number;
+}
+
+/** #59 calendar grid of active minutes. */
+export interface HeatmapData {
+  from: string;
+  to: string;
+  weeks: number;
+  cells: HeatmapCell[];
+  peak_minutes: number;
+}
+
 /** #339 one entry in the merged day feed. */
 export interface DayEvent {
   kind: "session" | "task" | "note";

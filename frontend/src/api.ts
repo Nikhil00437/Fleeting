@@ -18,6 +18,9 @@ import type {
   ActivitySession,
   ActivityGap,
   DayEvent,
+  HeatmapData,
+  SwitchMetrics,
+  TodayVsAverage,
   DailyLog,
   AppRule,
   FilesActivity,
@@ -471,6 +474,18 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ note }),
     }),
+
+  /** #58 context switches, #62 today vs average, #59 calendar heatmap. */
+  activitySwitches: (day?: string) =>
+    req<SwitchMetrics>(`/activity/metrics/switches${day ? `?day=${day}` : ""}`),
+  activityCompare: (day?: string, window = 7) =>
+    req<TodayVsAverage>(
+      `/activity/metrics/compare${new URLSearchParams({ ...(day ? { day } : {}), window: String(window) }).toString()}`,
+    ),
+  activityHeatmap: (weeks = 12, end?: string) =>
+    req<HeatmapData>(
+      `/activity/metrics/heatmap${new URLSearchParams({ weeks: String(weeks), ...(end ? { end } : {}) }).toString()}`,
+    ),
 
   /** #342 session rows or a day×project timesheet, as CSV. */
   activityExportUrl: (format: "csv" | "timesheet", params: { day?: string; day_from?: string; day_to?: string }) => {
