@@ -374,6 +374,17 @@ def get_estimate_accuracy(request: Request) -> dict:
     return calculate_estimate_accuracy(request.app.state.st.db)
 
 
+@router.get("/funnel")
+def get_task_funnel_endpoint(
+    request: Request,
+    days: int | None = Query(None, description="Window in days (e.g. 7, 30) or all time"),
+) -> dict:
+    """#250 task funnel: captured, planned, started, completed."""
+    from ..services.task_funnel import get_task_funnel
+
+    return get_task_funnel(request.app.state.st.db, days=days)
+
+
 
 @router.get("/{task_id}", response_model=TaskOut)
 def get_task(task_id: str, request: Request) -> TaskOut:

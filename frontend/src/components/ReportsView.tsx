@@ -8,6 +8,7 @@ import UnfinishedThreadsCard from "./UnfinishedThreadsCard";
 import CaptureFrequencyCard from "./CaptureFrequencyCard";
 import EstimateAccuracyCard from "./EstimateAccuracyCard";
 import FocusScoreCard from "./FocusScoreCard";
+import TaskFunnelCard from "./TaskFunnelCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -299,6 +300,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #57 daily focus score trend */}
     <div className="xl:col-span-2">
       <FocusScoreCard refreshKey={refreshKey} onSelectDay={setDay} />
+    </div>
+
+    {/* #250 task conversion funnel */}
+    <div className="xl:col-span-2">
+      <TaskFunnelCard refreshKey={refreshKey} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}

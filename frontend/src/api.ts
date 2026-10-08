@@ -51,6 +51,7 @@ import type {
   EstimateAccuracyData,
   DailyFocusScore,
   FocusScoreTrend,
+  TaskFunnelData,
 } from "./types";
 
 const BASE = "/api";
@@ -397,6 +398,10 @@ export const api = {
 
   /** #170 time-estimate accuracy: predicted vs. actual time on tasks */
   estimateAccuracy: () => req<EstimateAccuracyData>("/tasks/estimate-accuracy"),
+
+  /** #250 task conversion funnel: captured -> planned -> started -> completed */
+  taskFunnel: (days?: number) =>
+    req<TaskFunnelData>(days ? `/tasks/funnel?days=${days}` : "/tasks/funnel"),
 
   /** #38 weekly review input: slipped / due this week / closed. */
   /** #40: render tasks as todo.txt or a Markdown checklist (also files it in the vault). */

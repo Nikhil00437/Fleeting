@@ -276,6 +276,29 @@ export interface EstimateAccuracyData {
   items: EstimateAccuracyTask[];
 }
 
+export interface TaskFunnelStage {
+  stage: "captured" | "planned" | "started" | "completed";
+  name: string;
+  count: number;
+  pct_of_captured: number;
+  dropoff_pct: number;
+}
+
+export interface TaskFunnelData {
+  window_days: number | null;
+  total_tasks: number;
+  stages: TaskFunnelStage[];
+  by_priority: Record<
+    string,
+    {
+      captured: number;
+      planned: number;
+      started: number;
+      completed: number;
+    }
+  >;
+}
+
 export interface ProjectDashboardCommit {
   repo: string;
   subject: string;
