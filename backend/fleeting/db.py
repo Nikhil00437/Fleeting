@@ -347,6 +347,21 @@ MIGRATIONS: list[str] = [
       last_at TEXT NOT NULL
     ) WITHOUT ROWID;
     """,
+    # v19 — #111 assistant conversation history. One row per thread with the
+    # transcript as JSON: the client posts the conversation it already holds,
+    # so the streaming chat path stays untouched, and a local chat log is small
+    # enough that LIKE beats a second FTS index.
+    """CREATE TABLE IF NOT EXISTS assistant_chats (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      messages TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_assistant_chats_updated
+      ON assistant_chats(pinned, updated_at DESC);
+    """,
 ]
 
 
