@@ -5,6 +5,7 @@ import { ActivityIcon, BotIcon, CopyIcon, EditIcon, ExportIcon, LinkIcon, Settin
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
 import StandupModal from "./StandupModal";
+import PeriodicReviewModal from "./PeriodicReviewModal";
 import type { Note } from "../types";
 
 interface Props {
@@ -74,6 +75,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [reflectionNote, setReflectionNote] = useState<Note | null>(null);
   const [savingReflection, setSavingReflection] = useState(false);
   const [showStandup, setShowStandup] = useState(false);
+  const [showReview, setShowReview] = useState(false);
 
   const isToday = day === todayLocal();
 
@@ -216,6 +218,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           >
             <SparkIcon className="h-3.5 w-3.5 text-amber-400" />
             Standup
+          </button>
+          <button
+            onClick={() => setShowReview(true)}
+            data-testid="open-review-button"
+            className="flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-xs font-semibold text-ink-200 hover:border-ember-400/40"
+            title="Periodic reviews: Monthly, Quarterly, and Year in Review (Wrapped)"
+          >
+            <ActivityIcon className="h-3.5 w-3.5 text-purple-400" />
+            Review
           </button>
         </div>
       </div>
@@ -672,6 +683,14 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           onClose={() => setShowStandup(false)}
           onToast={onToast}
           day={day}
+        />
+      )}
+
+      {showReview && (
+        <PeriodicReviewModal
+          isOpen={showReview}
+          onClose={() => setShowReview(false)}
+          onToast={onToast}
         />
       )}
     </div>

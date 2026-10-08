@@ -1079,6 +1079,14 @@ class Database:
         )
         self.commit()
 
+    def weekly_logs_between(self, start_week: str, end_week: str) -> list[dict]:
+        """Stored weekly summaries in [start_week, end_week], oldest first."""
+        rows = self.execute(
+            "SELECT * FROM weekly_logs WHERE week_start >= ? AND week_start <= ? ORDER BY week_start ASC",
+            (start_week, end_week),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def daily_logs_between(self, start_day: str, end_day: str) -> list[dict]:
         """Stored daily summaries in [start_day, end_day], oldest first."""
         rows = self.execute(

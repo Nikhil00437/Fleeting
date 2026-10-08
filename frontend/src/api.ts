@@ -41,6 +41,7 @@ import type {
   QueryLogEntry,
   TranscriptResult,
   StandupOut,
+  PeriodicReviewOut,
 } from "./types";
 
 const BASE = "/api";
@@ -580,6 +581,15 @@ export const api = {
     req<{ ok: boolean; note: Note }>("/activity/standup/save-as-note", {
       method: "POST",
       body: JSON.stringify({ day, standup_md }),
+    }),
+
+  /** #70, #171, #172 Parameterised periodic review (month, quarter, year) */
+  periodicReview: (kind: "month" | "quarter" | "year", period?: string) =>
+    req<PeriodicReviewOut>(`/activity/review?kind=${kind}${period ? `&period=${period}` : ""}`),
+  savePeriodicReviewAsNote: (kind: string, period: string, review_md: string, title?: string) =>
+    req<{ ok: boolean; note: Note }>("/activity/review/save-as-note", {
+      method: "POST",
+      body: JSON.stringify({ kind, period, review_md, title }),
     }),
 
   /** #74 export report as Markdown or PDF. */

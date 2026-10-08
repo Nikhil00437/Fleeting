@@ -663,3 +663,22 @@ export interface StandupOut {
   today_tasks: TaskItem[];
   blockers: TaskItem[];
 }
+
+export interface PeriodicReviewOut {
+  kind: "month" | "quarter" | "year";
+  period: string;
+  start_date: string;
+  end_date: string;
+  title: string;
+  review_md: string;
+  model: string;
+  metrics: {
+    total_seconds: number;
+    active_days: number;
+    busiest_day: string | null;
+    weekly_logs_count: number;
+    daily_logs_count: number;
+    completed_tasks_count: number;
+    top_apps: { app_class: string; seconds: number }[];
+  };
+}

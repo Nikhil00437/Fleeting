@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from ..activity import aggregate_day, app_blocked
 from ..config import expand_path
-from ..services import dailylog, standup, weeklylog
+from ..services import dailylog, periodic_review, standup, weeklylog
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 daily_router = APIRouter(prefix="/api/daily-log", tags=["daily-log"])
@@ -783,4 +783,57 @@ def save_standup_as_note(request: Request, body: dict) -> dict:
     )
     st.bus.publish("note.created", {"id": note["id"]})
     return {"ok": True, "note": note}
+
+
+@router.get("/review")
+async def get_periodic_review(
+    request: Request,
+    kind: str = "month",
+    period: str | None = None,
+) -> dict:
+    """#70, #171, #172 Parameterised periodic review generator (month, quarter, year)."""
+    st = request.app.state.st
+    if not period:
+        now = datetime.now().astimezone()
+        if kind == "month":
+            period = now.strftime("%Y-%m")
+        elif kind == "quarter":
+            q = (now.month - 1) // 3 + 1
+            period = f"{now.year}-Q{q}"
+        elif kind == "year":
+            period = str(now.year)
+        else:
+            period = now.strftime("%Y-%m")
+    try:
+        return await periodic_review.generate_periodic_review(st.db, st.cfg, kind, period)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.post("/review/save-as-note")
+def save_periodic_review_as_note(request: Request, body: dict) -> dict:
+    """Save the generated periodic review as a markdown note."""
+    st = request.app.state.st
+    kind = str(body.get("kind") or "month")
+    period = str(body.get("period") or "")
+    md = str(body.get("review_md") or "").strip()
+    if not md:
+        raise HTTPException(400, "review_md cannot be empty")
+    kind_label = "Monthly" if kind == "month" else ("Quarterly" if kind == "quarter" else "Yearly")
+    title = str(body.get("title") or f"{kind_label} Review — {period}")
+    tags = ["review", kind]
+    if period:
+        tags.append(f"{kind}/{period}")
+    note = st.db.insert_note(
+        {
+            "title": title,
+            "raw_text": md,
+            "type": "text",
+            "tags": tags,
+            "source": {"type": "periodic_review", "kind": kind, "period": period},
+        }
+    )
+    st.bus.publish("note.created", {"id": note["id"]})
+    return {"ok": True, "note": note}
+
 
