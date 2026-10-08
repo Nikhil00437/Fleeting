@@ -583,6 +583,40 @@ def save_daily_reflection(request: Request, day: str, body: dict) -> dict:
     return created
 
 
+@router.get("/daily-log/{day}/export")
+@daily_router.get("/{day}/export")
+def export_daily_log(
+    request: Request,
+    day: str,
+    format: str = Query("md", pattern="^(md|markdown|pdf)$"),
+) -> Response:
+    """#74 Export a report as Markdown or PDF."""
+    from ..services import report_export
+
+    st = request.app.state.st
+    day = _valid_day(day)
+    row = st.db.get_daily_log(day)
+    if not row:
+        raise HTTPException(404, f"daily log for {day} not found")
+
+    body_md = dailylog.effective_body(row)
+    if format in ("md", "markdown"):
+        content = report_export.render_markdown_export(day, body_md)
+        filename = f"daily-log-{day}.md"
+        return Response(
+            content=content,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    else:
+        pdf_bytes = report_export.render_pdf_export(day, body_md)
+        filename = f"daily-log-{day}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
 
 @router.post("/daily-log/generate")
 @daily_router.post("/generate")

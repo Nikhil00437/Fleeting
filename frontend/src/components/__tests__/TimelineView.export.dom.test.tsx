@@ -5,6 +5,8 @@ import TimelineView from "../TimelineView";
 import { api } from "../../api";
 
 beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-08T12:00:00Z"));
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
     observe() {}
     unobserve() {}

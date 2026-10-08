@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../markdown";
-import { ActivityIcon, BotIcon, CopyIcon, EditIcon, LinkIcon, SettingsIcon, SparkIcon } from "./Icons";
+import { ActivityIcon, BotIcon, CopyIcon, EditIcon, ExportIcon, LinkIcon, SettingsIcon, SparkIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
 import type { Note } from "../types";
@@ -294,6 +294,26 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
                   <span className="hidden sm:inline">Evidence</span>
                 </button>
               )}
+              <a
+                href={api.exportDailyLogUrl(day, "md")}
+                download={`daily-log-${day}.md`}
+                className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-ink-300 transition-colors hover:border-white/20 hover:text-ink-100"
+                title="Export report as Markdown (#74)"
+                aria-label="Export Markdown"
+              >
+                <ExportIcon className="h-3 w-3" />
+                <span className="hidden sm:inline">MD</span>
+              </a>
+              <a
+                href={api.exportDailyLogUrl(day, "pdf")}
+                download={`daily-log-${day}.pdf`}
+                className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-ink-300 transition-colors hover:border-white/20 hover:text-ink-100"
+                title="Export report as PDF (#74)"
+                aria-label="Export PDF"
+              >
+                <ExportIcon className="h-3 w-3" />
+                <span className="hidden sm:inline">PDF</span>
+              </a>
             </>
           )}
           <button

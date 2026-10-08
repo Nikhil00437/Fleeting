@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import SearchView from "../SearchView";
 import type { Note } from "../../types";
@@ -24,6 +24,11 @@ const note = (id: string, over: Partial<Note> = {}): Note =>
     processed_at: null,
     ...over,
   }) as Note;
+
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-08T12:00:00Z"));
+});
 
 afterEach(() => {
   cleanup();

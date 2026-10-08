@@ -568,6 +568,10 @@ export const api = {
       body: JSON.stringify({ prompt, text }),
     }),
 
+  /** #74 export report as Markdown or PDF. */
+  exportDailyLogUrl: (day: string, format: "md" | "pdf") =>
+    `/api/activity/daily-log/${day}/export?format=${format}`,
+
   knownApps: () => req<AppRule[]>("/activity/apps"),
 
   /** #64 rename/merge app classes (rewrites their history). */
