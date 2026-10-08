@@ -524,6 +524,66 @@ def clear_daily_log_edit(request: Request, day: str) -> Response:
     return Response(status_code=204)
 
 
+@router.get("/daily-log/{day}/reflection")
+@daily_router.get("/{day}/reflection")
+def get_daily_reflection(request: Request, day: str) -> dict:
+    st = request.app.state.st
+    day = _valid_day(day)
+    log_row = st.db.get_daily_log(day)
+    report_md = dailylog.effective_body(log_row) if log_row else ""
+    prompts = dailylog.get_reflection_prompts(day, report_md)
+
+    existing_rows = st.db.execute(
+        """
+        SELECT id FROM notes
+        WHERE (json_extract(source, '$.day') = :day OR tags LIKE :tag)
+          AND tags LIKE '%reflection%'
+          AND trashed_at IS NULL
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        {"day": day, "tag": f"%daily/{day}%"},
+    ).fetchall()
+
+    note_data = st.db.get_note(existing_rows[0]["id"]) if existing_rows else None
+
+    return {
+        "day": day,
+        "prompts": prompts,
+        "note": note_data,
+    }
+
+
+@router.post("/daily-log/{day}/reflection")
+@daily_router.post("/{day}/reflection")
+def save_daily_reflection(request: Request, day: str, body: dict) -> dict:
+    st = request.app.state.st
+    day = _valid_day(day)
+    text = (body.get("text") or "").strip()
+    prompt = (body.get("prompt") or "").strip()
+    if not text:
+        raise HTTPException(422, "reflection text cannot be empty")
+
+    note_body = (
+        f"> **Prompt**: {prompt}\n\n{text}\n\n---\n*Reflecting on Daily Digest for {day}*"
+        if prompt
+        else f"{text}\n\n---\n*Reflecting on Daily Digest for {day}*"
+    )
+
+    note_dict = {
+        "type": "note",
+        "title": f"Daily Reflection — {day}",
+        "raw_text": note_body,
+        "summary": text[:200],
+        "tags": ["reflection", "daily", f"daily/{day}"],
+        "source": {"type": "daily_log", "day": day},
+        "status": "done",
+    }
+    created = st.db.insert_note(note_dict)
+    st.bus.publish("note.created", {"id": created["id"]})
+    return created
+
+
+
 @router.post("/daily-log/generate")
 @daily_router.post("/generate")
 async def generate_log(request: Request, body: dict) -> dict:

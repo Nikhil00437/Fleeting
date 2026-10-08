@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../markdown";
-import { ActivityIcon, BotIcon, CopyIcon, EditIcon, LinkIcon, SettingsIcon } from "./Icons";
+import { ActivityIcon, BotIcon, CopyIcon, EditIcon, LinkIcon, SettingsIcon, SparkIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
+import type { Note } from "../types";
 
 interface Props {
   onToast: (message: string, kind?: "ok" | "err") => void;
@@ -66,12 +67,24 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [questionsForTomorrow, setQuestionsForTomorrow] = useState(false);
   const [promptOverride, setPromptOverride] = useState("");
 
+  const [reflectionPrompts, setReflectionPrompts] = useState<string[]>([]);
+  const [promptIdx, setPromptIdx] = useState(0);
+  const [reflectionText, setReflectionText] = useState("");
+  const [reflectionNote, setReflectionNote] = useState<Note | null>(null);
+  const [savingReflection, setSavingReflection] = useState(false);
+
   const isToday = day === todayLocal();
 
   const load = useCallback(() => {
     api.dailyLog(day).then((data) => {
       setLog(data);
       setEditing(false);
+    }).catch(() => {});
+    api.dailyReflection(day).then((ref) => {
+      setReflectionPrompts(ref.prompts || []);
+      setReflectionNote(ref.note);
+      setPromptIdx(0);
+      setReflectionText("");
     }).catch(() => {});
   }, [day]);
 
@@ -139,6 +152,21 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
       onToast(e instanceof Error ? e.message : String(e), "err");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveReflection() {
+    if (!reflectionText.trim()) return;
+    setSavingReflection(true);
+    const activePrompt = reflectionPrompts[promptIdx] || "Daily Reflection";
+    try {
+      const created = await api.saveDailyReflection(day, activePrompt, reflectionText.trim());
+      setReflectionNote(created);
+      onToast("reflection saved as linked note");
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : String(e), "err");
+    } finally {
+      setSavingReflection(false);
     }
   }
 
@@ -531,6 +559,65 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* #347 Daily Reflection Journaling */}
+        {!generating && !editing && log?.summary_md && (
+          <div className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 text-xs" aria-label="Daily Reflection">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 font-semibold text-ink-200">
+                <SparkIcon className="h-3.5 w-3.5 text-ember-400" />
+                <span>Daily Reflection</span>
+              </div>
+              {reflectionNote && (
+                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-500/30">
+                  Linked Note Saved
+                </span>
+              )}
+            </div>
+
+            {reflectionNote ? (
+              <div className="rounded-lg border border-white/[0.06] bg-ink-950/40 p-2.5">
+                <p className="font-medium text-ink-100">{reflectionNote.title}</p>
+                <p className="mt-1 line-clamp-3 text-ink-300 whitespace-pre-wrap">{reflectionNote.raw_text}</p>
+                <div className="mt-2 flex items-center gap-2 text-[10px] text-ink-400">
+                  <span className="font-mono">Tags: {reflectionNote.tags?.join(", ")}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2 rounded-lg bg-ink-950/30 px-2.5 py-2">
+                  <p className="text-ink-300 italic">“{reflectionPrompts[promptIdx] || "What gave you momentum today, and what drained your focus?"}”</p>
+                  {reflectionPrompts.length > 1 && (
+                    <button
+                      onClick={() => setPromptIdx((idx) => (idx + 1) % reflectionPrompts.length)}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-ink-400 hover:text-ink-200"
+                      title="Next reflection prompt"
+                    >
+                      Shuffle
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  value={reflectionText}
+                  onChange={(e) => setReflectionText(e.target.value)}
+                  placeholder="Jot down your reflection for today..."
+                  rows={3}
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.04] p-2 text-xs text-ink-100 placeholder:text-ink-500 focus:border-ember-400/50 focus:outline-none"
+                  aria-label="Reflection response"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveReflection}
+                    disabled={savingReflection || !reflectionText.trim()}
+                    className="flex items-center gap-1 rounded-lg bg-ember-500/20 px-3 py-1 text-xs font-medium text-ember-300 transition-colors hover:bg-ember-500/30 disabled:opacity-40"
+                  >
+                    Save Reflection as Note
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

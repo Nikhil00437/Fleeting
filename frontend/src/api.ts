@@ -559,6 +559,15 @@ export const api = {
       body: JSON.stringify({ day, rolling, ...options }),
     }),
 
+  /** #347 reflection journaling prompt after report, saved as linked note. */
+  dailyReflection: (day: string) =>
+    req<{ day: string; prompts: string[]; note: Note | null }>(`/activity/daily-log/${day}/reflection`),
+  saveDailyReflection: (day: string, prompt: string, text: string) =>
+    req<Note>(`/activity/daily-log/${day}/reflection`, {
+      method: "POST",
+      body: JSON.stringify({ prompt, text }),
+    }),
+
   knownApps: () => req<AppRule[]>("/activity/apps"),
 
   /** #64 rename/merge app classes (rewrites their history). */

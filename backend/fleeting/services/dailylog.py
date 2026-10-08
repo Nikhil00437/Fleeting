@@ -783,3 +783,25 @@ async def generate_daily_log(
 
     send("Fleeting", f"Your daily digest for {day} is ready — open the app to read it.")
     return row  # type: ignore[return-value]
+
+
+REFLECTION_PROMPTS = [
+    "What gave you momentum today, and what drained your focus?",
+    "What was the most rewarding problem you solved or progressed on?",
+    "Where did unexpected friction pull you off track, and how would you avoid it next time?",
+    "What is one key insight or learning from today worth carrying into tomorrow?",
+    "If you could redo one hour of today's work, what would you spend it on?",
+]
+
+
+def get_reflection_prompts(day: str, report_md: str = "") -> list[str]:
+    """Return tailored reflection journaling prompts for the day's digest (#347)."""
+    prompts = list(REFLECTION_PROMPTS)
+    if report_md:
+        low = report_md.lower()
+        if "git" in low or "commit" in low:
+            prompts.insert(0, "What was the most significant code change or architectural decision you made today?")
+        if "research" in low or "firefox" in low or "chrome" in low:
+            prompts.insert(0, "What was the most surprising takeaway from your reading and research today?")
+    return prompts
+
