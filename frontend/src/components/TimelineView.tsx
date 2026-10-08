@@ -5,6 +5,7 @@ import FocusMetrics from "./FocusMetrics";
 import GapCard from "./GapCard";
 import PrivateBadge from "./PrivateBadge";
 import RangeAsk from "./RangeAsk";
+import RewindBar from "./RewindBar";
 import SessionEditor from "./SessionEditor";
 import { appColor, appMonogram, fmtSecs, prettyAppName } from "../apps";
 import { AreaTrend, Bars, Donut, SessionRibbon } from "./charts";
@@ -548,6 +549,9 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
                 </button>
               )}
             </div>
+
+            {/* #341 scrub or replay the day */}
+            <RewindBar sessions={allSessions} />
 
             {/* #63 point at a stretch and ask about it */}
             <RangeAsk day={day} onOpenNote={onOpenNote} onToast={onToast} />
