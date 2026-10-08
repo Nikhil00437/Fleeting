@@ -59,7 +59,116 @@ def previous_week_start() -> str:
 # ---------------------------------------------------------------------------
 
 
-def aggregate_week(db: Database, week_start: str) -> dict[str, Any]:
+def compute_weekly_diff(
+    db: Database,
+    week_start: str,
+    curr_agg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Calculate focus delta versus the previous week with a plain-English narrative."""
+    curr = curr_agg if curr_agg is not None else aggregate_week(db, week_start, include_diff=False)
+    start_d = date.fromisoformat(week_start)
+    prev_week_start = (start_d - timedelta(days=7)).isoformat()
+    prev = aggregate_week(db, prev_week_start, include_diff=False)
+
+    curr_secs = curr["total_seconds"]
+    prev_secs = prev["total_seconds"]
+    delta_secs = curr_secs - prev_secs
+
+    delta_pct: float | None = None
+    if prev_secs > 0:
+        delta_pct = round((delta_secs / prev_secs) * 100, 1)
+
+    curr_busy = len([d for d in curr["days"] if d["busy"]])
+    prev_busy = len([d for d in prev["days"] if d["busy"]])
+
+    curr_apps = {a["app_class"]: a["seconds"] for a in curr["apps"]}
+    prev_apps = {a["app_class"]: a["seconds"] for a in prev["apps"]}
+    all_app_names = set(curr_apps.keys()) | set(prev_apps.keys())
+
+    shifts = []
+    for app in all_app_names:
+        c_sec = curr_apps.get(app, 0)
+        p_sec = prev_apps.get(app, 0)
+        d_sec = c_sec - p_sec
+        if abs(d_sec) >= MIN_SESSION_SECONDS:
+            shifts.append(
+                {
+                    "app_class": app,
+                    "delta_seconds": d_sec,
+                    "current_seconds": c_sec,
+                    "previous_seconds": p_sec,
+                }
+            )
+    shifts.sort(key=lambda s: abs(s["delta_seconds"]), reverse=True)
+
+    if curr_secs == 0 and prev_secs == 0:
+        narrative = "No tracked activity recorded this week or last week."
+    elif prev_secs == 0 and curr_secs > 0:
+        narrative = (
+            f"Logged {fmt_secs(curr_secs)} across {curr_busy} active day(s) "
+            "(no activity tracked last week to compare)."
+        )
+    elif curr_secs == 0 and prev_secs > 0:
+        narrative = (
+            f"No tracked activity this week, down from {fmt_secs(prev_secs)} "
+            f"across {prev_busy} active day(s) last week."
+        )
+    else:
+        if delta_secs > 0:
+            pct_s = f"+{round(delta_pct):.0f}%" if delta_pct is not None else ""
+            diff_s = f"(+{fmt_secs(delta_secs)})"
+            prefix = (
+                f"Focus was up {pct_s} {diff_s} compared to last week "
+                f"({fmt_secs(curr_secs)} vs {fmt_secs(prev_secs)} across {curr_busy} active day(s))."
+            ).replace("  ", " ")
+        elif delta_secs < 0:
+            pct_s = f"{round(delta_pct):.0f}%" if delta_pct is not None else ""
+            diff_s = f"(-{fmt_secs(abs(delta_secs))})"
+            prefix = (
+                f"Focus was down {pct_s} {diff_s} compared to last week "
+                f"({fmt_secs(curr_secs)} vs {fmt_secs(prev_secs)} across {curr_busy} active day(s))."
+            ).replace("  ", " ")
+        else:
+            prefix = (
+                f"Focus was unchanged compared to last week "
+                f"({fmt_secs(curr_secs)} across {curr_busy} active day(s))."
+            )
+
+        increases = [s for s in shifts if s["delta_seconds"] > 0]
+        decreases = [s for s in shifts if s["delta_seconds"] < 0]
+        app_notes = []
+        if increases:
+            top_inc = increases[0]
+            app_notes.append(f"time in {top_inc['app_class']} increased by {fmt_secs(top_inc['delta_seconds'])}")
+        if decreases:
+            top_dec = decreases[0]
+            app_notes.append(f"{top_dec['app_class']} decreased by {fmt_secs(abs(top_dec['delta_seconds']))}")
+
+        if app_notes:
+            narrative = f"{prefix} Most notably, {', while '.join(app_notes)}."
+        else:
+            narrative = prefix
+
+    return {
+        "current_week": week_start,
+        "previous_week": prev_week_start,
+        "current_seconds": curr_secs,
+        "previous_seconds": prev_secs,
+        "delta_seconds": delta_secs,
+        "delta_pct": delta_pct,
+        "current_active_days": curr_busy,
+        "previous_active_days": prev_busy,
+        "app_shifts": shifts,
+        "narrative": narrative,
+    }
+
+
+def aggregate_week(
+    db: Database,
+    week_start: str,
+    *,
+    include_diff: bool = True,
+) -> dict[str, Any]:
     """Collect everything the week report is built from.
 
     Every one of the seven days appears in `days`, including idle ones: a gap
@@ -94,7 +203,7 @@ def aggregate_week(db: Database, week_start: str) -> dict[str, Any]:
     total_tasks = int(counts["total"] or 0)
     open_tasks = int(counts["open_"] or 0)
 
-    return {
+    res: dict[str, Any] = {
         "week_start": first,
         "week_end": last,
         "days": day_rows,
@@ -108,6 +217,9 @@ def aggregate_week(db: Database, week_start: str) -> dict[str, Any]:
         "commits": [],
         "files_touched": 0,
     }
+    if include_diff:
+        res["diff"] = compute_weekly_diff(db, week_start, curr_agg=res)
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +269,9 @@ def build_transcript(agg: dict[str, Any]) -> str:
         "## Open tasks carried into the next week",
         f"{agg['open_tasks']} open of {agg['total_tasks']} total.",
     ]
+
+    if agg.get("diff") and agg["diff"].get("narrative"):
+        lines += ["", "## Focus vs. Last Week", agg["diff"]["narrative"]]
 
     transcript = "\n".join(lines)
     if len(transcript) > MAX_TRANSCRIPT_CHARS:
@@ -222,6 +337,14 @@ def fallback_weekly_digest(agg: dict[str, Any], week_start: str) -> str:
             )
             if first_line:
                 lines.append(f"- **{row['day']}** — {first_line}")
+
+    if agg.get("diff") and agg["diff"].get("narrative"):
+        lines += [
+            "",
+            "## Focus vs. Last Week",
+            "",
+            agg["diff"]["narrative"],
+        ]
 
     lines += [
         "",

@@ -703,11 +703,13 @@ def get_weekly_log(request: Request, week: str | None = None) -> dict:
     """The finished week's report plus its shape, so the UI can chart either."""
     st = request.app.state.st
     start = _valid_week(week)
+    summary = weeklylog.aggregate_week(st.db, start)
     return {
         "week": start,
         "this_week": weeklylog.current_week_start(),
         "report": st.db.get_weekly_log(start),
-        "summary": weeklylog.aggregate_week(st.db, start),
+        "summary": summary,
+        "diff": summary.get("diff"),
     }
 
 

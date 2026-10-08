@@ -136,6 +136,16 @@ export default function WeeklyDigestCard({ onToast, refreshKey }: Props) {
         </div>
       </div>
 
+      {(data?.diff?.narrative ?? data?.summary?.diff?.narrative) ? (
+        <div
+          data-testid="weekly-diff-callout"
+          className="mb-3 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5 text-xs text-ink-300"
+        >
+          <span className="font-semibold text-ink-100">vs. last week:</span>{" "}
+          {data?.diff?.narrative ?? data?.summary?.diff?.narrative}
+        </div>
+      ) : null}
+
       {isCurrent ? (
         <p className="text-xs text-ink-400">
           This week is still in progress — switch back a week to read a finished one.

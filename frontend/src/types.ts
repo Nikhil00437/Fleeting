@@ -609,6 +609,25 @@ export interface WeekSummary {
   open_tasks: number;
   commits: { repo?: string; subject?: string }[];
   files_touched: number;
+  diff?: WeeklyDiff;
+}
+
+export interface WeeklyDiff {
+  current_week: string;
+  previous_week: string;
+  current_seconds: number;
+  previous_seconds: number;
+  delta_seconds: number;
+  delta_pct: number | null;
+  current_active_days: number;
+  previous_active_days: number;
+  app_shifts: {
+    app_class: string;
+    delta_seconds: number;
+    current_seconds: number;
+    previous_seconds: number;
+  }[];
+  narrative: string;
 }
 
 export interface WeeklyLogRow {
@@ -623,6 +642,7 @@ export interface WeeklyLogOut {
   this_week: string;
   report: WeeklyLogRow | null;
   summary: WeekSummary;
+  diff?: WeeklyDiff;
 }
 
 export interface UnifiedResult {
