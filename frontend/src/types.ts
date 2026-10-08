@@ -694,3 +694,12 @@ export interface UnfinishedThread {
   waiting_for?: string | null;
   blocked_by?: string | null;
 }
+
+export interface ReportPlaygroundResult {
+  day: string;
+  system_prompt: string;
+  transcript: string;
+  preview_md: string;
+  model: string;
+}
+

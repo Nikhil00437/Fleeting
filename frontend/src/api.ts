@@ -43,6 +43,7 @@ import type {
   StandupOut,
   PeriodicReviewOut,
   UnfinishedThread,
+  ReportPlaygroundResult,
 } from "./types";
 
 const BASE = "/api";
@@ -605,6 +606,21 @@ export const api = {
     req<{ ok: boolean; task: TaskItem }>("/activity/unfinished-threads/convert-to-task", {
       method: "POST",
       body: JSON.stringify({ thread_id, text }),
+    }),
+
+  /** #349 report playground: test prompt changes against telemetry without saving */
+  reportPlayground: (options: {
+    day?: string;
+    prompt_override?: string;
+    tone?: string;
+    length?: string;
+    highlights_only?: boolean;
+    questions_for_tomorrow?: boolean;
+    custom_sections?: { title: string; prompt?: string }[];
+  }) =>
+    req<ReportPlaygroundResult>("/activity/daily-log/playground", {
+      method: "POST",
+      body: JSON.stringify(options),
     }),
 
   /** #74 export report as Markdown or PDF. */

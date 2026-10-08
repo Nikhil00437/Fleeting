@@ -672,6 +672,34 @@ async def generate_log(request: Request, body: dict) -> dict:
     return row
 
 
+@router.post("/daily-log/playground")
+@daily_router.post("/playground")
+async def playground_log(request: Request, body: dict) -> dict:
+    """#349 Report playground: test prompt changes against telemetry without persisting."""
+    st = request.app.state.st
+    yesterday = (datetime.now().astimezone() - timedelta(days=1)).strftime("%Y-%m-%d")
+    raw_day = str(body.get("day") or yesterday)
+    day = _valid_day(raw_day)
+    tone = body.get("tone") or "balanced"
+    length = body.get("length") or "medium"
+    highlights_only = bool(body.get("highlights_only"))
+    questions_for_tomorrow = bool(body.get("questions_for_tomorrow"))
+    custom_sections = body.get("custom_sections")
+    prompt_override = body.get("prompt_override")
+
+    return await dailylog.preview_daily_log_playground(
+        st.db,
+        st.cfg,
+        day,
+        tone=tone,
+        length=length,
+        highlights_only=highlights_only,
+        questions_for_tomorrow=questions_for_tomorrow,
+        custom_sections=custom_sections,
+        prompt_override=prompt_override,
+    )
+
+
 @router.post("/daily-log/generate-yesterday-if-missing")
 async def generate_yesterday(request: Request) -> dict:
     """Convenience for midnight automation; skips if already generated."""

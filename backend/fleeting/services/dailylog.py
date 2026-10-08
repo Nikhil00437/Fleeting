@@ -255,6 +255,31 @@ DAILY_LOG_SYSTEM = (
 )
 
 
+def build_effective_prompt(
+    day: str,
+    *,
+    tone: str = "balanced",
+    highlights_only: bool = False,
+    questions_for_tomorrow: bool = False,
+    custom_sections: list[dict] | None = None,
+    prompt_override: str | None = None,
+) -> str:
+    """Build the full LLM system prompt combining defaults and user overrides."""
+    system_prompt = DAILY_LOG_SYSTEM.replace("{date}", day)
+    if prompt_override and prompt_override.strip():
+        system_prompt += f"\n\nAdditional user instructions:\n{prompt_override.strip()}"
+    if tone != "balanced":
+        system_prompt += f"\n\nTone preference: {tone}."
+    if highlights_only:
+        system_prompt += "\n\nFormat restriction: Produce top accomplishments and highlights only."
+    if questions_for_tomorrow:
+        system_prompt += "\n\nInclude a final '## Questions for Tomorrow' section with 2–3 thought-provoking questions for resuming work."
+    if custom_sections:
+        custom_titles = ", ".join(s.get("title", "") for s in custom_sections if s.get("title"))
+        system_prompt += f"\n\nIn addition to standard sections, include these custom sections: {custom_titles}."
+    return system_prompt
+
+
 async def generate_with_llm(
     transcript: str,
     day: str,
@@ -279,18 +304,14 @@ async def generate_with_llm(
     elif length == "long":
         max_tokens = 2800
 
-    system_prompt = DAILY_LOG_SYSTEM.replace("{date}", day)
-    if prompt_override and prompt_override.strip():
-        system_prompt += f"\n\nAdditional user instructions:\n{prompt_override.strip()}"
-    if tone != "balanced":
-        system_prompt += f"\n\nTone preference: {tone}."
-    if highlights_only:
-        system_prompt += "\n\nFormat restriction: Produce top accomplishments and highlights only."
-    if questions_for_tomorrow:
-        system_prompt += "\n\nInclude a final '## Questions for Tomorrow' section with 2–3 thought-provoking questions for resuming work."
-    if custom_sections:
-        custom_titles = ", ".join(s.get("title", "") for s in custom_sections if s.get("title"))
-        system_prompt += f"\n\nIn addition to standard sections, include these custom sections: {custom_titles}."
+    system_prompt = build_effective_prompt(
+        day,
+        tone=tone,
+        highlights_only=highlights_only,
+        questions_for_tomorrow=questions_for_tomorrow,
+        custom_sections=custom_sections,
+        prompt_override=prompt_override,
+    )
 
     base = cfg.llm.base_url.rstrip("/")
     if cfg.llm.provider == "lmstudio":
@@ -804,4 +825,95 @@ def get_reflection_prompts(day: str, report_md: str = "") -> list[str]:
         if "research" in low or "firefox" in low or "chrome" in low:
             prompts.insert(0, "What was the most surprising takeaway from your reading and research today?")
     return prompts
+
+
+async def preview_daily_log_playground(
+    db: Database,
+    cfg: Config,
+    day: str,
+    *,
+    tone: str = "balanced",
+    length: str = "medium",
+    highlights_only: bool = False,
+    questions_for_tomorrow: bool = False,
+    custom_sections: list[dict] | None = None,
+    prompt_override: str | None = None,
+) -> dict:
+    """#349 Report playground: test prompt changes against telemetry without persisting."""
+    from ..activity import app_blocked
+    from ..services.files_activity import (
+        collect_git_subjects,
+        render_files_activity,
+        scan_recent_files,
+    )
+
+    since = datetime.fromisoformat(f"{day}T00:00:00").astimezone()
+    until = since + timedelta(days=1)
+    sessions = [
+        s for s in db.activity_sessions(day)
+        if not app_blocked(cfg.activity, db, s["app_class"])
+    ]
+    watch_dirs = [expand_path(p.strip()) for p in cfg.activity.watch_dirs.split(",") if p.strip()]
+    scan = scan_recent_files(watch_dirs, since=since, until=until)
+    git = collect_git_subjects(watch_dirs, since=since, until=until)
+    notes = collect_notes_context(db, since, until)
+
+    files_block = render_files_activity(scan, git)
+    notes_block = render_notes_context(notes)
+    transcript = build_transcript(sessions) if sessions else "No window sessions recorded."
+    full_transcript = (
+        f"Window: {since.strftime('%Y-%m-%d %H:%M')} → {until.strftime('%Y-%m-%d %H:%M')} "
+        "(local time)\n\n"
+        + transcript
+        + "\n\n"
+        + files_block
+        + "\n\n"
+        + notes_block
+    )
+
+    system_prompt = build_effective_prompt(
+        day,
+        tone=tone,
+        highlights_only=highlights_only,
+        questions_for_tomorrow=questions_for_tomorrow,
+        custom_sections=custom_sections,
+        prompt_override=prompt_override,
+    )
+
+    try:
+        md, model = await generate_with_llm(
+            full_transcript,
+            day,
+            cfg,
+            tone=tone,
+            length=length,
+            highlights_only=highlights_only,
+            questions_for_tomorrow=questions_for_tomorrow,
+            custom_sections=custom_sections,
+            prompt_override=prompt_override,
+        )
+    except Exception as exc:
+        log.info("playground via LLM unavailable (%s) — using fallback digest", exc)
+        md = fallback_digest(
+            sessions,
+            day,
+            scan=scan,
+            git=git,
+            notes=notes,
+            tone=tone,
+            length=length,
+            highlights_only=highlights_only,
+            questions_for_tomorrow=questions_for_tomorrow,
+            custom_sections=custom_sections,
+        )
+        model = "fallback"
+
+    return {
+        "day": day,
+        "system_prompt": system_prompt,
+        "transcript": full_transcript,
+        "preview_md": md,
+        "model": model,
+    }
+
 

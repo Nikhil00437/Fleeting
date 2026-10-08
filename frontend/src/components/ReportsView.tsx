@@ -7,6 +7,7 @@ import OrphansCard from "./OrphansCard";
 import UnfinishedThreadsCard from "./UnfinishedThreadsCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
+import ReportPlaygroundModal from "./ReportPlaygroundModal";
 import ReportComparison from "./ReportComparison";
 import type { Note } from "../types";
 
@@ -78,6 +79,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [savingReflection, setSavingReflection] = useState(false);
   const [showStandup, setShowStandup] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [showPlayground, setShowPlayground] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
   const [compareDay, setCompareDay] = useState(() => shiftDay(todayLocal(), -1));
 
@@ -231,6 +233,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           >
             <ActivityIcon className="h-3.5 w-3.5 text-purple-400" />
             Review
+          </button>
+          <button
+            onClick={() => setShowPlayground(true)}
+            data-testid="open-playground-button"
+            className="flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-xs font-semibold text-ink-200 hover:border-ember-400/40"
+            title="Test prompt customizations against telemetry in a sandbox (#349)"
+          >
+            <BotIcon className="h-3.5 w-3.5 text-amber-400" />
+            Playground
           </button>
         </div>
       </div>
@@ -721,6 +732,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           isOpen={showReview}
           onClose={() => setShowReview(false)}
           onToast={onToast}
+        />
+      )}
+
+      {showPlayground && (
+        <ReportPlaygroundModal
+          isOpen={showPlayground}
+          onClose={() => setShowPlayground(false)}
+          onToast={onToast}
+          initialDay={shiftDay(todayLocal(), -1)}
         />
       )}
     </div>
