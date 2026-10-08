@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../markdown";
-import { ActivityIcon, BotIcon, CopyIcon, EditIcon, LinkIcon } from "./Icons";
+import { ActivityIcon, BotIcon, CopyIcon, EditIcon, LinkIcon, SettingsIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
 
@@ -57,6 +57,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [saving, setSaving] = useState(false);
   const [evidenceMode, setEvidenceMode] = useState(false);
 
+  const [showOptions, setShowOptions] = useState(false);
+  const [tone, setTone] = useState<"balanced" | "terse" | "narrative" | "standup">("balanced");
+  const [length, setLength] = useState<"short" | "medium" | "long">("medium");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [highlightsOnly, setHighlightsOnly] = useState(false);
+  const [questionsForTomorrow, setQuestionsForTomorrow] = useState(false);
+  const [promptOverride, setPromptOverride] = useState("");
+
   const isToday = day === todayLocal();
 
   const load = useCallback(() => {
@@ -73,7 +82,16 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   async function generate() {
     setGenerating(true);
     try {
-      const updated = await api.generateDailyLog(day, isToday);
+      const opts = {
+        tone,
+        length,
+        start_time: startTime.trim() || undefined,
+        end_time: endTime.trim() || undefined,
+        highlights_only: highlightsOnly,
+        questions_for_tomorrow: questionsForTomorrow,
+        prompt_override: promptOverride.trim() || undefined,
+      };
+      const updated = await api.generateDailyLog(day, isToday, opts);
       setLog(updated);
       setEditing(false);
       if (updated.edited) {
@@ -251,6 +269,19 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
             </>
           )}
           <button
+            onClick={() => setShowOptions(!showOptions)}
+            className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors ${
+              showOptions
+                ? "border-ember-400/50 bg-ember-500/10 text-ember-300 ring-1 ring-ember-500/30"
+                : "border-white/10 bg-white/[0.03] text-ink-300 hover:border-white/20 hover:text-ink-100"
+            }`}
+            title="Configure report tone, length, window, and sections"
+            aria-label="Report options"
+          >
+            <SettingsIcon className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Options</span>
+          </button>
+          <button
             onClick={() => void generate()}
             disabled={generating}
             className="flex items-center gap-1.5 rounded-lg bg-gradient-to-br from-ember-400 to-ember-600 px-3 py-1.5 text-xs font-semibold text-ink-950 shadow-sm transition-all hover:brightness-110 disabled:opacity-60"
@@ -263,6 +294,106 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
             {log?.summary_md ? "Regen" : "Generate"}
           </button>
         </div>
+
+        {showOptions && (
+          <div className="mb-3 flex flex-col gap-2.5 rounded-xl border border-white/10 bg-ink-950/40 p-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Tone */}
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[10px] text-ink-400">Tone:</span>
+                {(["balanced", "terse", "narrative", "standup"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTone(t)}
+                    className={`rounded px-2 py-0.5 text-[11px] capitalize transition-colors ${
+                      tone === t
+                        ? "bg-ember-500/20 text-ember-300 ring-1 ring-ember-500/40"
+                        : "bg-white/[0.04] text-ink-400 hover:text-ink-200"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              {/* Length */}
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[10px] text-ink-400">Length:</span>
+                {(["short", "medium", "long"] as const).map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setLength(l)}
+                    className={`rounded px-2 py-0.5 text-[11px] capitalize transition-colors ${
+                      length === l
+                        ? "bg-iris-500/20 text-iris-300 ring-1 ring-iris-500/40"
+                        : "bg-white/[0.04] text-ink-400 hover:text-ink-200"
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-[11px] text-ink-300">
+              {/* Window */}
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[10px] text-ink-400">Window:</span>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  placeholder="09:00"
+                  className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[11px] text-ink-200 focus:border-ember-400/50 focus:outline-none"
+                  aria-label="Window start time"
+                />
+                <span className="text-ink-500">–</span>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  placeholder="18:00"
+                  className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[11px] text-ink-200 focus:border-ember-400/50 focus:outline-none"
+                  aria-label="Window end time"
+                />
+              </div>
+
+              {/* Checkboxes */}
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={highlightsOnly}
+                  onChange={(e) => setHighlightsOnly(e.target.checked)}
+                  className="rounded border-white/20 bg-white/[0.04] text-ember-500 focus:ring-0"
+                />
+                <span>Highlights only</span>
+              </label>
+
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={questionsForTomorrow}
+                  onChange={(e) => setQuestionsForTomorrow(e.target.checked)}
+                  className="rounded border-white/20 bg-white/[0.04] text-ember-500 focus:ring-0"
+                />
+                <span>Questions for tomorrow</span>
+              </label>
+            </div>
+
+            {/* Prompt override */}
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-ink-400 shrink-0">Custom instructions:</span>
+              <input
+                type="text"
+                value={promptOverride}
+                onChange={(e) => setPromptOverride(e.target.value)}
+                placeholder="e.g. Focus deeply on PR reviews and frontend architecture..."
+                className="flex-1 rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-ink-200 placeholder:text-ink-500 focus:border-ember-400/50 focus:outline-none"
+                aria-label="Custom instructions"
+              />
+            </div>
+          </div>
+        )}
 
         {generating && (
           <div className="space-y-2.5 py-4">

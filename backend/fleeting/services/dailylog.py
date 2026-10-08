@@ -255,34 +255,65 @@ DAILY_LOG_SYSTEM = (
 )
 
 
-async def generate_with_llm(transcript: str, day: str, cfg) -> tuple[str, str]:
+async def generate_with_llm(
+    transcript: str,
+    day: str,
+    cfg,
+    *,
+    tone: str = "balanced",
+    length: str = "medium",
+    highlights_only: bool = False,
+    questions_for_tomorrow: bool = False,
+    custom_sections: list[dict] | None = None,
+    prompt_override: str | None = None,
+) -> tuple[str, str]:
     """Returns (markdown, model_used). Raises LLMUnavailable."""
     from ..services import llm as llm_svc
 
     if cfg.llm.provider == "none":
         raise llm_svc.LLMUnavailable("llm disabled")
+
+    max_tokens = 1400
+    if length == "short":
+        max_tokens = 700
+    elif length == "long":
+        max_tokens = 2800
+
+    system_prompt = DAILY_LOG_SYSTEM.replace("{date}", day)
+    if prompt_override and prompt_override.strip():
+        system_prompt += f"\n\nAdditional user instructions:\n{prompt_override.strip()}"
+    if tone != "balanced":
+        system_prompt += f"\n\nTone preference: {tone}."
+    if highlights_only:
+        system_prompt += "\n\nFormat restriction: Produce top accomplishments and highlights only."
+    if questions_for_tomorrow:
+        system_prompt += "\n\nInclude a final '## Questions for Tomorrow' section with 2–3 thought-provoking questions for resuming work."
+    if custom_sections:
+        custom_titles = ", ".join(s.get("title", "") for s in custom_sections if s.get("title"))
+        system_prompt += f"\n\nIn addition to standard sections, include these custom sections: {custom_titles}."
+
     base = cfg.llm.base_url.rstrip("/")
     if cfg.llm.provider == "lmstudio":
         payload = {
             "model": cfg.llm.model,
             "messages": [
-                {"role": "system", "content": DAILY_LOG_SYSTEM.replace("{date}", day)},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": transcript},
             ],
             "temperature": 0.35,
-            "max_tokens": 1400,
+            "max_tokens": max_tokens,
         }
         url = f"{base}/v1/chat/completions"
     else:
         payload = {
             "model": cfg.llm.model,
             "messages": [
-                {"role": "system", "content": DAILY_LOG_SYSTEM.replace("{date}", day)},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": transcript},
             ],
             "stream": False,
             "think": False,
-            "options": {"temperature": 0.35, "num_predict": 1400},
+            "options": {"temperature": 0.35, "num_predict": max_tokens},
         }
         url = f"{base}/api/chat"
 
@@ -307,13 +338,18 @@ def fallback_digest(
     scan: dict | None = None,
     git: list[dict] | None = None,
     notes: list[dict] | None = None,
+    tone: str = "balanced",
+    length: str = "medium",
+    highlights_only: bool = False,
+    questions_for_tomorrow: bool = False,
+    custom_sections: list[dict] | None = None,
 ) -> str:
     """Smart deterministic synthesis when no LLM is available (no raw 0m spam or redundant tables)."""
     agg = aggregate_day(sessions)
     total = agg["total_seconds"]
-    lines = [f"# Daily Digest — {day}", "", "## Executive Summary", ""]
+    lines = [f"# Daily Digest — {day}", ""]
     if total == 0 and not (scan and scan.get("total")):
-        lines.append("No tracked activity recorded in this window.")
+        lines += ["## Executive Summary", "", "No tracked activity recorded in this window."]
         return "\n".join(lines)
 
     top_apps = [a for a in agg["apps"] if a["seconds"] >= 60] or agg["apps"][:3]
@@ -326,48 +362,124 @@ def fallback_digest(
         if files_total
         else ""
     )
-    lines.append(
-        f"Logged **{fmt_secs(total)}** of active focus across {len(agg['apps'])} applications "
-        f"(led by {top_summary}){files_phrase}."
-    )
 
-    # Shipped & Active Projects (if files or git exist)
-    if (scan and scan.get("groups")) or git:
-        lines += ["", "## Shipped & Active Projects", ""]
-        for g in (scan or {}).get("groups", [])[:5]:
-            exts = ", ".join(f"`{ext}`×{n}" for ext, n in g["exts"][:3])
-            sample = g["samples"][0] if g.get("samples") else ""
-            lines.append(
-                f"- **{g['label']}** — {g['count']} modified {'file' if g['count'] == 1 else 'files'} "
-                f"({exts}){f' · e.g. `{sample}`' if sample else ''}"
-            )
-        for repo in (git or [])[:4]:
-            commits = "; ".join(repo["subjects"][:3])
-            lines.append(f"- **Git ({repo['repo']})** — {commits}")
+    if tone == "standup":
+        lines += ["## Completed", ""]
+        if git or (scan and scan.get("groups")):
+            for repo in (git or [])[:3]:
+                lines.append(f"- Git ({repo['repo']}): {'; '.join(repo['subjects'][:3])}")
+            for g in (scan or {}).get("groups", [])[:3]:
+                lines.append(f"- Files in {g['label']}: modified {g['count']} files")
+        if notes:
+            for n in notes:
+                for it in (n.get("action_items") or []):
+                    if it.get("done"):
+                        lines.append(f"- Done: {it.get('text')}")
+        if not (git or (scan and scan.get("groups")) or notes):
+            lines.append(f"- Active focus in {top_summary}")
 
-    # Deep Focus & Research Blocks (merged, no 0m spam)
-    blocks = merge_focus_blocks(sessions)
-    if blocks:
-        lines += ["", "## Deep Focus & Research", ""]
-        for b in blocks[:10]:
-            topics = (
-                f" — *{', '.join(b['topics'])}*"
-                if b["topics"]
-                else ""
-            )
-            lines.append(
-                f"- **{b['first_hhmm']}–{b['last_hhmm']}** ({fmt_secs(b['seconds'])}) · **{b['app']}**{topics}"
-            )
+        lines += ["", "## In Flight", ""]
+        lines.append(f"- Working on main projects ({fmt_secs(total)} total focus time across {len(agg['apps'])} apps)")
+        blocks = merge_focus_blocks(sessions)
+        for b in blocks[:5]:
+            topics = f" — *{', '.join(b['topics'])}*" if b["topics"] else ""
+            lines.append(f"- **{b['app']}** ({fmt_secs(b['seconds'])}){topics}")
 
-    # Captured Notes & Open Tasks
-    if notes:
-        lines += ["", "## Captured Notes & Next Steps", ""]
-        for n in notes[:6]:
-            title = n.get("title") or "Untitled capture"
-            lines.append(f"- **[{n.get('type', 'note')}]** {title}")
-            for it in (n.get("action_items") or []):
-                if not it.get("done"):
-                    lines.append(f"  - Todo: {it.get('text')}")
+        lines += ["", "## Blockers & Next Steps", ""]
+        has_blocker = False
+        if notes:
+            for n in notes:
+                for it in (n.get("action_items") or []):
+                    if not it.get("done"):
+                        lines.append(f"- Todo: {it.get('text')}")
+                        has_blocker = True
+        if not has_blocker:
+            lines.append("- No immediate blockers identified.")
+
+    elif highlights_only:
+        lines += ["## Top Accomplishments & Highlights", ""]
+        lines.append(
+            f"Logged **{fmt_secs(total)}** of active focus across {len(agg['apps'])} applications "
+            f"(led by {top_summary}){files_phrase}."
+        )
+        if git:
+            for repo in git[:3]:
+                lines.append(f"- Shipped git commits in **{repo['repo']}**: {'; '.join(repo['subjects'][:2])}")
+        if scan and scan.get("groups"):
+            for g in scan.get("groups", [])[:3]:
+                lines.append(f"- Significant progress in **{g['label']}** ({g['count']} files modified)")
+        if notes:
+            for n in notes[:3]:
+                lines.append(f"- Captured **{n.get('title') or 'note'}**")
+
+    else:
+        lines += ["## Executive Summary", ""]
+        lines.append(
+            f"Logged **{fmt_secs(total)}** of active focus across {len(agg['apps'])} applications "
+            f"(led by {top_summary}){files_phrase}."
+        )
+
+        # Shipped & Active Projects (if files or git exist)
+        if (scan and scan.get("groups")) or git:
+            lines += ["", "## Shipped & Active Projects", ""]
+            for g in (scan or {}).get("groups", [])[:5]:
+                exts = ", ".join(f"`{ext}`×{n}" for ext, n in g["exts"][:3])
+                sample = g["samples"][0] if g.get("samples") else ""
+                lines.append(
+                    f"- **{g['label']}** — {g['count']} modified {'file' if g['count'] == 1 else 'files'} "
+                    f"({exts}){f' · e.g. `{sample}`' if sample else ''}"
+                )
+            for repo in (git or [])[:4]:
+                commits = "; ".join(repo["subjects"][:3])
+                lines.append(f"- **Git ({repo['repo']})** — {commits}")
+
+        # Deep Focus & Research Blocks (merged, no 0m spam)
+        blocks = merge_focus_blocks(sessions)
+        if blocks:
+            lines += ["", "## Deep Focus & Research", ""]
+            for b in blocks[:10]:
+                topics = (
+                    f" — *{', '.join(b['topics'])}*"
+                    if b["topics"]
+                    else ""
+                )
+                lines.append(
+                    f"- **{b['first_hhmm']}–{b['last_hhmm']}** ({fmt_secs(b['seconds'])}) · **{b['app']}**{topics}"
+                )
+
+        # Captured Notes & Open Tasks
+        if notes:
+            lines += ["", "## Captured Notes & Next Steps", ""]
+            for n in notes[:6]:
+                title = n.get("title") or "Untitled capture"
+                lines.append(f"- **[{n.get('type', 'note')}]** {title}")
+                for it in (n.get("action_items") or []):
+                    if not it.get("done"):
+                        lines.append(f"  - Todo: {it.get('text')}")
+
+    # Custom sections
+    if custom_sections:
+        for sec in custom_sections:
+            sec_title = sec.get("title", "Custom Section")
+            lines += ["", f"## {sec_title}", ""]
+            matched_sessions = [s for s in sessions if sec_title.lower() in (s.get("app_class") or "").lower() or sec_title.lower() in (s.get("title") or "").lower()]
+            if matched_sessions:
+                for s in matched_sessions[:3]:
+                    lines.append(f"- Focus in **{s.get('app_class')}**: {s.get('title') or 'session'} ({fmt_secs(s.get('seconds', 0))})")
+            else:
+                lines.append(f"- Summary for {sec_title} during tracked focus period.")
+
+    # Questions for tomorrow
+    if questions_for_tomorrow:
+        lines += ["", "## Questions for Tomorrow", ""]
+        if top_apps:
+            lines.append(f"- What is the primary next step to continue progress in **{top_apps[0]['app']}**?")
+        else:
+            lines.append("- What is the single highest-priority objective for tomorrow?")
+        if notes:
+            lines.append("- Which captured items from today should be turned into immediate action items?")
+        else:
+            lines.append("- Are all open tasks and pull requests ready for review?")
 
     return "\n".join(lines)
 
@@ -523,7 +635,21 @@ def build_evidence(
     return evidence
 
 
-async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bool = False) -> dict:
+async def generate_daily_log(
+    db: Database,
+    cfg: Config,
+    day: str,
+    *,
+    rolling: bool = False,
+    tone: str = "balanced",
+    length: str = "medium",
+    start_time: str | None = None,
+    end_time: str | None = None,
+    highlights_only: bool = False,
+    questions_for_tomorrow: bool = False,
+    custom_sections: list[dict] | None = None,
+    prompt_override: str | None = None,
+) -> dict:
     """Generate (or regenerate) the daily log. Returns the row.
 
     rolling=True covers the past 24 hours ending now (the 12:00 AM report);
@@ -551,6 +677,30 @@ async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bo
         ]
         since = datetime.fromisoformat(f"{day}T00:00:00").astimezone()
         until = since + timedelta(days=1)
+
+    if start_time:
+        try:
+            st_parts = [int(p) for p in start_time.split(":")]
+            st_dt = since.replace(hour=st_parts[0], minute=st_parts[1], second=0)
+            since = max(since, st_dt)
+            sessions = [
+                s for s in sessions
+                if (s.get("last_seen") or s.get("first_seen", ""))[11:16] >= start_time
+            ]
+        except Exception:
+            pass
+
+    if end_time:
+        try:
+            et_parts = [int(p) for p in end_time.split(":")]
+            et_dt = since.replace(hour=et_parts[0], minute=et_parts[1], second=0)
+            until = min(until, et_dt)
+            sessions = [
+                s for s in sessions
+                if (s.get("first_seen") or s.get("last_seen", ""))[11:16] <= end_time
+            ]
+        except Exception:
+            pass
 
     watch_dirs = [expand_path(p.strip()) for p in cfg.activity.watch_dirs.split(",") if p.strip()]
     scan = scan_recent_files(watch_dirs, since=since, until=until)
@@ -584,11 +734,32 @@ async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bo
     )
 
     try:
-        md, model = await generate_with_llm(transcript, day, cfg)
+        md, model = await generate_with_llm(
+            transcript,
+            day,
+            cfg,
+            tone=tone,
+            length=length,
+            highlights_only=highlights_only,
+            questions_for_tomorrow=questions_for_tomorrow,
+            custom_sections=custom_sections,
+            prompt_override=prompt_override,
+        )
     except Exception as exc:  # LLMUnavailable or any model failure
         log.info("daily log via LLM unavailable (%s) — using fallback digest", exc)
         md, model = (
-            fallback_digest(sessions, day, scan=scan, git=git, notes=notes),
+            fallback_digest(
+                sessions,
+                day,
+                scan=scan,
+                git=git,
+                notes=notes,
+                tone=tone,
+                length=length,
+                highlights_only=highlights_only,
+                questions_for_tomorrow=questions_for_tomorrow,
+                custom_sections=custom_sections,
+            ),
             "fallback",
         )
 
@@ -603,7 +774,9 @@ async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bo
     evidence_list = build_evidence(md, sessions, notes=notes, git=git)
     evidence_json = json.dumps(evidence_list) if evidence_list else None
 
-    db.upsert_daily_log(day, md, model, evidence=evidence_json)
+    db.upsert_daily_log(
+        day, md, model, evidence=evidence_json, prompt_override=prompt_override
+    )
     row = db.get_daily_log(day)
     mirror_to_vault(cfg, day, effective_body(row))
     from ..notify import send

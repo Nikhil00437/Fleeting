@@ -540,10 +540,23 @@ export const api = {
       method: "DELETE",
     }),
 
-  generateDailyLog: (day: string, rolling = false) =>
+  generateDailyLog: (
+    day: string,
+    rolling = false,
+    options?: {
+      tone?: string;
+      length?: string;
+      start_time?: string;
+      end_time?: string;
+      highlights_only?: boolean;
+      questions_for_tomorrow?: boolean;
+      custom_sections?: { title: string; prompt?: string }[];
+      prompt_override?: string;
+    },
+  ) =>
     req<DailyLog>("/activity/daily-log/generate", {
       method: "POST",
-      body: JSON.stringify({ day, rolling }),
+      body: JSON.stringify({ day, rolling, ...options }),
     }),
 
   knownApps: () => req<AppRule[]>("/activity/apps"),

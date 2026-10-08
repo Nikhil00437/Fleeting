@@ -1093,19 +1093,33 @@ class Database:
         return result
 
     def upsert_daily_log(
-        self, day: str, summary_md: str, model: str, *, evidence: str | None = None
+        self,
+        day: str,
+        summary_md: str,
+        model: str,
+        *,
+        evidence: str | None = None,
+        prompt_override: str | None = None,
     ) -> None:
         self.execute(
             """
-            INSERT INTO daily_logs (day, summary_md, model, created_at, evidence)
-            VALUES (:day, :md, :model, :ts, :evidence)
+            INSERT INTO daily_logs (day, summary_md, model, created_at, evidence, prompt_override)
+            VALUES (:day, :md, :model, :ts, :evidence, :prompt_override)
             ON CONFLICT(day) DO UPDATE SET
                 summary_md = :md,
                 model = :model,
                 created_at = :ts,
-                evidence = COALESCE(:evidence, daily_logs.evidence)
+                evidence = COALESCE(:evidence, daily_logs.evidence),
+                prompt_override = COALESCE(:prompt_override, daily_logs.prompt_override)
             """,
-            {"day": day, "md": summary_md, "model": model, "ts": now_iso(), "evidence": evidence},
+            {
+                "day": day,
+                "md": summary_md,
+                "model": model,
+                "ts": now_iso(),
+                "evidence": evidence,
+                "prompt_override": prompt_override,
+            },
         )
         self.commit()
 

@@ -535,13 +535,33 @@ async def generate_log(request: Request, body: dict) -> dict:
         day = _local_today()
     elif day > _local_today():
         raise HTTPException(422, "cannot generate a log for a future day")
+    tone = body.get("tone") or "balanced"
+    length = body.get("length") or "medium"
+    start_time = body.get("start_time")
+    end_time = body.get("end_time")
+    highlights_only = bool(body.get("highlights_only"))
+    questions_for_tomorrow = bool(body.get("questions_for_tomorrow"))
+    custom_sections = body.get("custom_sections")
+    prompt_override = body.get("prompt_override")
+
     lock = getattr(st, "digest_lock", None)
     try:
+        gen_kwargs = {
+            "rolling": rolling,
+            "tone": tone,
+            "length": length,
+            "start_time": start_time,
+            "end_time": end_time,
+            "highlights_only": highlights_only,
+            "questions_for_tomorrow": questions_for_tomorrow,
+            "custom_sections": custom_sections,
+            "prompt_override": prompt_override,
+        }
         if lock:
             async with lock:
-                row = await dailylog.generate_daily_log(st.db, st.cfg, day, rolling=rolling)
+                row = await dailylog.generate_daily_log(st.db, st.cfg, day, **gen_kwargs)
         else:
-            row = await dailylog.generate_daily_log(st.db, st.cfg, day, rolling=rolling)
+            row = await dailylog.generate_daily_log(st.db, st.cfg, day, **gen_kwargs)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     if rolling and day == _local_today():
