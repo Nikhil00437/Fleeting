@@ -22,7 +22,7 @@ import logging
 import os
 import re
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -71,6 +71,29 @@ def parse_idle_hint(raw: str | None) -> bool | datetime | None:
         if parts and parts[0].isdigit():
             return datetime.fromtimestamp(int(parts[0]) / 1_000_000).astimezone()
     return None
+
+
+PRIVATE_KEY = "activity_private_until"
+
+
+def private_until(db) -> str | None:
+    """#65 the ISO time private mode lifts, or None when it is not running.
+
+    A value that will not parse is treated as absent: private mode is a
+    promise to stop recording, so a bad timestamp must not leave the tracker
+    paused forever with no way to tell why.
+    """
+    raw = db.kv_get(PRIVATE_KEY)
+    if not raw:
+        return None
+    try:
+        end = datetime.fromisoformat(raw)
+    except ValueError:
+        log.warning("ignoring unparseable private-until value %r", raw)
+        return None
+    if (end - _local_now()).total_seconds() <= 0:
+        return None
+    return raw
 
 
 def session_idle_probe() -> bool:
@@ -294,7 +317,20 @@ class ActivityCollector:
     # ---- public ----------------------------------------------------------
 
     def is_paused(self) -> bool:
-        return self.db.kv_get("activity_paused", "0") == "1"
+        """Paused by hand, or private mode still running (#65)."""
+        return self.db.kv_get("activity_paused", "0") == "1" or private_until(self.db) is not None
+
+    def set_private(self, minutes: int) -> str:
+        """#65 stop tracking for `minutes`, without touching the manual switch."""
+        until = _local_now() + timedelta(minutes=minutes)
+        self.db.kv_set(PRIVATE_KEY, _local_iso(until))
+        self._close_current()
+        return _local_iso(until)
+
+    def clear_private(self) -> bool:
+        """End private mode early. False when it was not running."""
+        self._close_current()
+        return self.db.kv_delete(PRIVATE_KEY)
 
     def set_paused(self, paused: bool) -> None:
         self.db.kv_set("activity_paused", "1" if paused else "0")

@@ -428,6 +428,15 @@ export const api = {
 
   testWhisper: () => req<ConnectionTest>("/settings/test-whisper", { method: "POST" }),
 
+  /** #65 private mode from the UI as well as the tray. */
+  privateState: () => req<{ active: boolean; until: string | null }>("/activity/private"),
+  startPrivate: (minutes: number) =>
+    req<{ active: boolean; until: string }>("/activity/private", {
+      method: "POST",
+      body: JSON.stringify({ minutes }),
+    }),
+  stopPrivate: () => req<void>("/activity/private", { method: "DELETE" }),
+
   activityDay: (day?: string) =>
     req<ActivityDay>(`/activity/day${day ? `?day=${day}` : ""}`),
 

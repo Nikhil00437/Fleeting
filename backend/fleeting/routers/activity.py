@@ -36,9 +36,12 @@ def activity_day(request: Request, day: str | None = None) -> dict:
         if not app_blocked(st.cfg.activity, st.db, s["app_class"])
     ]
     agg = aggregate_day(sessions)
+    from ..activity import private_until
+
     return {
         "day": day,
         "paused": st.activity.is_paused() if day == _local_today() else False,
+        "private_until": private_until(st.db) if day == _local_today() else None,
         "collector": {
             "running": st.activity.running,
             "enabled": st.cfg.activity.enabled,
@@ -68,7 +71,36 @@ def activity_days(request: Request) -> list[str]:
 @router.get("/live")
 def live_session(request: Request) -> dict:
     st = request.app.state.st
-    return {"session": st.activity.current_session(), "paused": st.activity.is_paused()}
+    from ..activity import private_until
+
+    return {
+        "session": st.activity.current_session(),
+        "paused": st.activity.is_paused(),
+        # #65 the tray sets this; the UI shows it so a pause is never a mystery.
+        "private_until": private_until(st.db),
+    }
+
+
+@router.get("/private")
+def private_state(request: Request) -> dict:
+    """#65 is private mode running, and until when."""
+    from ..activity import private_until
+
+    until = private_until(request.app.state.st.db)
+    return {"active": until is not None, "until": until}
+
+
+@router.post("/private")
+def start_private(request: Request, body: PrivateIn) -> dict:
+    """#65 stop tracking for N minutes without changing the manual switch."""
+    until = request.app.state.st.activity.set_private(body.minutes)
+    return {"active": True, "until": until}
+
+
+@router.delete("/private", status_code=204)
+def stop_private(request: Request) -> None:
+    if not request.app.state.st.activity.clear_private():
+        raise HTTPException(status_code=404, detail="private mode was not running")
 
 
 @router.post("/pause")
@@ -103,6 +135,10 @@ def set_app_tracked(request: Request, body: dict) -> dict:
         raise HTTPException(422, "app_class is required")
     st.db.set_app_rule(app_class, tracked)
     return {"app_class": app_class, "tracked": tracked}
+
+
+class PrivateIn(BaseModel):
+    minutes: int = Field(ge=1, le=1440)
 
 
 class AppAliasIn(BaseModel):

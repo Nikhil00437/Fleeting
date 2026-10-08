@@ -350,6 +350,8 @@ export interface ActivityApp {
 export interface ActivityDay {
   day: string;
   paused: boolean;
+  /** #65 set while private mode is running. */
+  private_until?: string | null;
   collector: { running: boolean; enabled: boolean; last_error: string | null };
   total_seconds: number;
   apps: ActivityApp[];

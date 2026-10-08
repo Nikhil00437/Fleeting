@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import GapCard from "./GapCard";
+import PrivateBadge from "./PrivateBadge";
 import SessionEditor from "./SessionEditor";
 import { appColor, appMonogram, fmtSecs, prettyAppName } from "../apps";
 import { AreaTrend, Bars, Donut, SessionRibbon } from "./charts";
@@ -397,6 +398,8 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
               </>
             )}
           </div>
+
+          {isToday && <PrivateBadge onToast={onToast} />}
 
           {isToday && (
             <button

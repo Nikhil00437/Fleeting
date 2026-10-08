@@ -33,6 +33,35 @@ const BACKEND_DIR = path.join(ROOT_DIR, "backend");
 const ICON_PATH = path.join(ROOT_DIR, "deploy", "fleeting.png");
 const TRAY_ICON_PATH = path.join(ROOT_DIR, "deploy", "fleeting-tray.png");
 const STATE_FILE = path.join(os.homedir(), ".config", "fleeting", "window-state.json");
+const CONFIG_FILE = path.join(os.homedir(), ".config", "fleeting", "config.toml");
+
+/**
+ * Tray-originated writes hit the same host guard as the UI, so they need the
+ * bearer token when one is configured. Read once at startup — this file is
+ * tiny and the tray must not block on it per click.
+ */
+function apiToken() {
+  try {
+    const text = fs.readFileSync(CONFIG_FILE, "utf8");
+    const section = text.match(/\[activity\]([\s\S]*?)(\n\[|$)/);
+    const token = section && section[1].match(/^\s*api_token\s*=\s*"([^"]*)"/m);
+    return token ? token[1] : "";
+  } catch {
+    return "";
+  }
+}
+
+let authToken = "";
+
+function apiPost(pathname, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  return fetch(`${BACKEND_URL}${pathname}`, {
+    method: "POST",
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
 
 let mainWindow = null;
 let hudWindow = null;
@@ -386,10 +415,10 @@ async function captureClipboard() {
     /* hyprctl missing or window has no title — fine */
   }
   try {
-    const resp = await fetch(`${BACKEND_URL}/api/capture/text`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, source_title: sourceTitle, capture_id: `clip:${text.length}:${Date.now()}` }),
+    const resp = await apiPost("/api/capture/text", {
+      text,
+      source_title: sourceTitle,
+      capture_id: `clip:${text.length}:${Date.now()}`,
     });
     if (resp.ok) {
       new Notification({ title: "Fleeting", body: `Captured${sourceTitle ? ` from ${sourceTitle}` : ""} (${text.length} chars)` }).show();
@@ -516,6 +545,22 @@ function setupTray() {
       },
       { type: "separator" },
       {
+        // #65 private mode: stop recording without touching the manual switch
+        label: "Private for…",
+        submenu: [15, 30, 60, 120].map((mins) => ({
+          label: `${mins} minutes`,
+          click: () => {
+            apiPost("/api/activity/private", { minutes: mins })
+              .then((r) => {
+                if (r.ok) new Notification({ title: "Fleeting", body: `Private for ${mins} minutes` }).show();
+              })
+              .catch(() =>
+                new Notification({ title: "Fleeting", body: "Backend not running — private mode off" }).show(),
+              );
+          },
+        })),
+      },
+      {
         label: "Quit Fleeting",
         click: () => {
           isQuitting = true;
@@ -559,6 +604,8 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    authToken = apiToken();
+
     // Auto-grant microphone & clipboard permissions for local app
     session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
       const allowed = ["media", "clipboard-read", "clipboard-sanitized-write", "notifications"];

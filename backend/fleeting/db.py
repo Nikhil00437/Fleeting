@@ -1090,6 +1090,11 @@ class Database:
         )
         self.commit()
 
+    def kv_delete(self, key: str) -> bool:
+        cur = self.execute("DELETE FROM kv WHERE key = ?", (key,))
+        self.commit()
+        return cur.rowcount > 0
+
     def activity_per_day(self, days: int = 7) -> list[dict]:
         """Tracked seconds per local day for the last N days (gaps filled with 0)."""
         rows = self.execute(
