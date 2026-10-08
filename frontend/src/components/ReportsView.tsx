@@ -6,6 +6,7 @@ import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
 import UnfinishedThreadsCard from "./UnfinishedThreadsCard";
 import CaptureFrequencyCard from "./CaptureFrequencyCard";
+import EstimateAccuracyCard from "./EstimateAccuracyCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -287,6 +288,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #163 capture frequency & tag trends */}
     <div className="xl:col-span-2">
       <CaptureFrequencyCard onToast={onToast} refreshKey={refreshKey} />
+    </div>
+
+    {/* #170 time-estimate accuracy */}
+    <div className="xl:col-span-2">
+      <EstimateAccuracyCard refreshKey={refreshKey} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}

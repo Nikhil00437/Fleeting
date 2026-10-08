@@ -366,6 +366,15 @@ def get_task_stats(request: Request) -> dict:
     return st.db.task_stats()
 
 
+@router.get("/estimate-accuracy")
+def get_estimate_accuracy(request: Request) -> dict:
+    """#170 time-estimate accuracy: predicted vs. actual focus time."""
+    from ..services.estimate_accuracy import calculate_estimate_accuracy
+
+    return calculate_estimate_accuracy(request.app.state.st.db)
+
+
+
 @router.get("/{task_id}", response_model=TaskOut)
 def get_task(task_id: str, request: Request) -> TaskOut:
     st = request.app.state.st

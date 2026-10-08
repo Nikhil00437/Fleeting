@@ -214,6 +214,44 @@ export interface ProjectSummary {
   last_active: string | null;
 }
 
+export interface EstimateAccuracyTask {
+  id: string;
+  text: string;
+  done: number;
+  priority: string;
+  due_date: string | null;
+  estimate_min: number;
+  spent_min: number;
+  diff_min: number;
+  ratio: number;
+  accuracy_pct: number;
+  status: "underestimated" | "overestimated" | "on_target";
+  repo: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface EstimateAccuracyData {
+  total_evaluated: number;
+  untracked_count: number;
+  total_estimated_min: number;
+  total_spent_min: number;
+  avg_error_min: number;
+  overall_accuracy_pct: number;
+  average_ratio: number;
+  bias: "underestimating" | "overestimating" | "accurate" | "no_data";
+  counts: {
+    on_target: number;
+    underestimated: number;
+    overestimated: number;
+  };
+  by_priority: Record<
+    string,
+    { count: number; estimated_min: number; spent_min: number; accuracy_pct: number }
+  >;
+  items: EstimateAccuracyTask[];
+}
+
 export interface ProjectDashboardCommit {
   repo: string;
   subject: string;

@@ -48,6 +48,7 @@ import type {
   WhatShippedOut,
   ProjectSummary,
   ProjectDashboard,
+  EstimateAccuracyData,
 } from "./types";
 
 const BASE = "/api";
@@ -391,6 +392,9 @@ export const api = {
     req<TaskItem>(`/tasks/${id}/focus`, { method: "POST", body: JSON.stringify({ minutes }) }),
 
   weekPlan: () => req<WeekPlan>("/tasks/plan"),
+
+  /** #170 time-estimate accuracy: predicted vs. actual time on tasks */
+  estimateAccuracy: () => req<EstimateAccuracyData>("/tasks/estimate-accuracy"),
 
   /** #38 weekly review input: slipped / due this week / closed. */
   /** #40: render tasks as todo.txt or a Markdown checklist (also files it in the vault). */
