@@ -19,9 +19,11 @@ import asyncio
 import inspect
 import json
 import logging
+import os
 import re
 import subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Awaitable, Callable
 
 from .config import ActivityConfig
@@ -37,6 +39,26 @@ TITLE_MAX = 120
 # be sitting in the DB, which is the whole point of the rule.
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 REDACTED = "\u00abredacted\u00bb"
+
+
+def git_context(cwd: str | os.PathLike[str]) -> tuple[str, str] | None:
+    """#336 (repo dir name, branch) for a working directory, or None.
+
+    Reads `.git/HEAD` directly rather than shelling out to git: this runs once
+    per session, but a subprocess per window switch is a needless tax, and the
+    answer is a two-line file read.
+    """
+    path = Path(os.fsdecode(cwd)) if not isinstance(cwd, str) else Path(cwd)
+    for parent in (path, *path.parents):
+        head = parent / ".git" / "HEAD"
+        try:
+            content = head.read_text().strip()
+        except OSError:
+            continue
+        if content.startswith("ref: refs/heads/"):
+            return parent.name, content[len("ref: refs/heads/"):]
+        return parent.name, content[:7]  # detached HEAD
+    return None
 
 
 def redact_title(title: str, patterns: list[str] | None = None) -> str:
@@ -73,7 +95,11 @@ def probe_hyprland() -> tuple[dict | None, tuple[int, int] | None]:
         ).stdout.decode(errors="replace")
         data = json.loads(out)
         if isinstance(data, dict) and data.get("class"):
-            win = {"class": str(data["class"]), "title": str(data.get("title") or "")[:TITLE_MAX]}
+            win = {
+                "class": str(data["class"]),
+                "title": str(data.get("title") or "")[:TITLE_MAX],
+                "pid": data.get("pid"),
+            }
     except (subprocess.SubprocessError, ValueError, OSError):
         pass
     # #338 the workspace is a property of the window, not the session, and it
@@ -296,16 +322,28 @@ class ActivityCollector:
             self.current["row_id"] = self.db.upsert_activity(self._row(self.current))
         else:
             self._close_current()
+            ctx = git_context(cwd) if (cwd := self._cwd_of(win.get("pid"))) else None
             self.current = {
                 "app_class": win["class"],
                 "title": title,
                 "workspace": workspace,
+                "repo": ctx[0] if ctx else None,
+                "branch": ctx[1] if ctx else None,
                 "first_seen": _local_iso(now),
                 "last_seen": _local_iso(now),
                 "seconds": 0,
                 "row_id": None,
             }
             self.current["row_id"] = self.db.upsert_activity(self._row(self.current))
+
+    def _cwd_of(self, pid: object) -> str | None:
+        """#336: the working directory behind a window, via /proc."""
+        if not isinstance(pid, int) or pid <= 0:
+            return None
+        try:
+            return os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            return None
 
     def _excluded(self, app_class: str) -> bool:
         return app_blocked(self.cfg, self.db, app_class)
@@ -322,6 +360,8 @@ class ActivityCollector:
             # #338 pinned at session start: a workspace switch mid-session is
             # history that already happened on the old workspace.
             "workspace": (str(session["workspace"]) if session.get("workspace") is not None else None),
+            "repo": session.get("repo"),
+            "branch": session.get("branch"),
         }
 
     def _close_current(self) -> None:

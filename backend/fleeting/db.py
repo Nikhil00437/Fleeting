@@ -386,6 +386,8 @@ _ACTIVITY_COLUMNS: tuple[tuple[str, str], ...] = (
     ("project", "TEXT"),
     ("block_id", "TEXT"),
     ("idle_secs", "INTEGER NOT NULL DEFAULT 0"),
+    ("repo", "TEXT"),
+    ("branch", "TEXT"),
 )
 
 
@@ -986,9 +988,15 @@ class Database:
             return int(row["id"])
         cur = self.execute(
             "INSERT INTO activity (app_class, title, first_seen, last_seen, seconds, day,"
-            " workspace, idle_secs) VALUES (:app_class, :title, :first_seen, :last_seen,"
-            " :seconds, :day, :workspace, :idle_secs)",
-            {**row, "workspace": row.get("workspace"), "idle_secs": row.get("idle_secs", 0)},
+            " workspace, idle_secs, repo, branch) VALUES (:app_class, :title, :first_seen,"
+            " :last_seen, :seconds, :day, :workspace, :idle_secs, :repo, :branch)",
+            {
+                **row,
+                "workspace": row.get("workspace"),
+                "idle_secs": row.get("idle_secs", 0),
+                "repo": row.get("repo"),
+                "branch": row.get("branch"),
+            },
         )
         self.commit()
         return int(cur.lastrowid)
