@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import SessionEditor from "./SessionEditor";
 import { appColor, appMonogram, fmtSecs, prettyAppName } from "../apps";
 import { AreaTrend, Bars, Donut, SessionRibbon } from "./charts";
 import {
@@ -107,6 +108,9 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [sessionQuery, setSessionQuery] = useState("");
+  // #54 per-row editor + merge selection
+  const [editingSession, setEditingSession] = useState<number | null>(null);
+  const [mergePicked, setMergePicked] = useState<number[]>([]);
 
   const load = useCallback(() => {
     api.activityDay(day).then(setData).catch(() => {});
@@ -170,6 +174,29 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   const total = data?.total_seconds ?? 0;
   const apps = data?.apps ?? [];
   const allSessions = data?.sessions ?? [];
+
+  // #54 merges need a same-day selection; the API refuses anything else.
+  const mergePickedSessions = allSessions.filter((s) => mergePicked.includes(s.id));
+
+  const runMerge = async () => {
+    if (mergePickedSessions.length < 2) {
+      onToast("Pick at least two sessions to merge", "err");
+      return;
+    }
+    if (new Set(mergePickedSessions.map((s) => s.day)).size > 1) {
+      onToast("Sessions from different days cannot be merged", "err");
+      return;
+    }
+    try {
+      await api.mergeSessions([...mergePicked].sort((a, b) => a - b));
+      onToast(`Merged ${mergePicked.length} sessions`);
+      setMergePicked([]);
+      load();
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : String(e), "err");
+    }
+  };
+
 
   const appFilteredSessions = useMemo(
     () => (selectedApp ? allSessions.filter((s) => s.app_class === selectedApp) : allSessions),
@@ -744,6 +771,26 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
               <p className="micro-label">
                 Session Feed — {filteredSessions.length} of {allSessions.length} shown
               </p>
+              {mergePicked.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[10.5px] text-ember-300">
+                    {mergePicked.length} picked
+                  </span>
+                  <button
+                    onClick={() => void runMerge()}
+                    className="rounded-lg border border-ember-500/30 bg-ember-500/10 px-2.5 py-1 text-[11px] text-ember-300 hover:bg-ember-500/20"
+                  >
+                    Merge
+                  </button>
+                  <button
+                    onClick={() => setMergePicked([])}
+                    aria-label="Clear merge selection"
+                    className="rounded-lg border border-ink-700 px-2 py-1 text-[11px] text-ink-400"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <div className="relative w-56">
                 <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 h-3 w-3 -translate-y-1/2 text-ink-400" />
                 <input
@@ -777,6 +824,26 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                       key={s.id}
                       className="group flex items-center gap-2.5 rounded-xl border border-transparent bg-white/[0.015] rise px-2.5 py-1.5 transition-colors hover:border-white/[0.06] hover:bg-white/[0.04]"
                     >
+                      <input
+                        type="checkbox"
+                        checked={mergePicked.includes(s.id)}
+                        onChange={() =>
+                          setMergePicked((p) =>
+                            p.includes(s.id) ? p.filter((i) => i !== s.id) : [...p, s.id],
+                          )
+                        }
+                        aria-label={`Select ${s.app_class} session for merge`}
+                        className="h-3 w-3 shrink-0 accent-ember-500"
+                      />
+                      <button
+                        onClick={() => setEditingSession((id) => (id === s.id ? null : s.id))}
+                        aria-expanded={editingSession === s.id}
+                        aria-label={`Edit ${s.app_class} session`}
+                        title="Edit this session"
+                        className="shrink-0 rounded px-1 font-mono text-[10px] text-ink-500 hover:text-ember-300"
+                      >
+                        {editingSession === s.id ? "▾" : "▸"}
+                      </button>
                       <span className="w-16 shrink-0 font-mono text-[10.5px] tabular-nums text-ink-400">
                         {hhmm(s.first_seen)}
                       </span>
@@ -812,6 +879,18 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                     </div>
                   );
                 })}
+                {editingSession !== null && (() => {
+                  const target = filteredSessions.find((s) => s.id === editingSession);
+                  if (!target) return null;
+                  return (
+                    <SessionEditor
+                      session={target}
+                      onDone={() => setEditingSession(null)}
+                      onChanged={load}
+                      onToast={onToast}
+                    />
+                  );
+                })()}
               </div>
             )}
           </div>

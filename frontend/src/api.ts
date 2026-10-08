@@ -435,6 +435,25 @@ export const api = {
       `/activity/projects${day ? `?day=${day}` : ""}`,
     ),
 
+  /** #54 manual session editing. */
+  relabelSession: (id: number, title: string) =>
+    req<ActivitySession>(`/activity/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  splitSession: (id: number, at: string) =>
+    req<ActivitySession[]>(`/activity/sessions/${id}/split`, {
+      method: "POST",
+      body: JSON.stringify({ at }),
+    }),
+  mergeSessions: (ids: number[]) =>
+    req<ActivitySession>("/activity/sessions/merge", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+  deleteSession: (id: number) =>
+    req<void>(`/activity/sessions/${id}`, { method: "DELETE" }),
+
   activityWeek: (days = 7) => req<{ day: string; seconds: number }[]>(`/activity/week?days=${days}`),
 
   liveSession: () => req<{ session: ActivitySession | null; paused: boolean }>("/activity/live"),

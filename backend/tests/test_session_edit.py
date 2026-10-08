@@ -175,3 +175,10 @@ def test_bad_edits_are_422_not_500(client) -> None:
     assert client.post(f"/api/activity/sessions/{sid}/split", json={"at": "07:00"}).status_code == 422
     assert client.post("/api/activity/sessions/merge", json={"ids": [sid]}).status_code == 422
     assert client.patch("/api/activity/sessions/999", json={"title": "x"}).status_code == 404
+
+def test_an_offset_split_point_is_read_as_local_time(db) -> None:
+    """The UI sends local wall time; an offset value must not shift the cut."""
+    sid = _session(db)
+    first, second = split_session(db, sid, "2026-10-08T09:10:00+05:30")
+    assert _get(db, first)["last_seen"] == "2026-10-08T09:10:00"
+    assert _get(db, second)["first_seen"] == "2026-10-08T09:10:00"

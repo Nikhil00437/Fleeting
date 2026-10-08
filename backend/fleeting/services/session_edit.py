@@ -74,6 +74,10 @@ def split_session(db: Database, session_id: int, at: str) -> tuple[int, int]:
         cut = datetime.fromisoformat(at)
     except (TypeError, ValueError) as exc:
         raise ValueError("`at` must be an ISO timestamp") from exc
+    if cut.tzinfo is not None:
+        # Stored times are local naive ISO; an offset-carrying value has to be
+        # read in the same frame or the cut lands hours off.
+        cut = cut.astimezone().replace(tzinfo=None)
     start = datetime.fromisoformat(row["first_seen"])
     end = datetime.fromisoformat(row["last_seen"])
     span = (end - start).total_seconds()
