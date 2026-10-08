@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from ..activity import aggregate_day, app_blocked
@@ -172,6 +172,74 @@ def clear_app_idle(request: Request, app_class: str) -> None:
         raise HTTPException(status_code=404, detail="no rule for this app")
     db.set_app_idle_rule(app_class, None)
     db.commit()
+
+
+class RelabelIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
+class SplitIn(BaseModel):
+    at: str = Field(min_length=1, max_length=40)
+
+
+class MergeIn(BaseModel):
+    ids: list[int] = Field(min_length=2, max_length=100)
+
+
+@router.get("/sessions/edits")
+def session_edit_trail(request: Request, limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+    """#54 what was last changed, per session."""
+    from ..services.session_edit import session_edits as trail
+
+    return trail(request.app.state.st.db, limit)
+
+
+@router.patch("/sessions/{session_id}")
+def relabel_session(request: Request, session_id: int, body: RelabelIn) -> dict:
+    from ..services.session_edit import relabel_session as relabel
+
+    try:
+        return relabel(request.app.state.st.db, session_id, body.title)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_session(request: Request, session_id: int) -> None:
+    from ..services.session_edit import delete_session as drop
+
+    if not drop(request.app.state.st.db, session_id):
+        raise HTTPException(status_code=404, detail="session not found")
+
+
+@router.post("/sessions/{session_id}/split")
+def split_session(request: Request, session_id: int, body: SplitIn) -> list[dict]:
+    from ..services.session_edit import split_session as split
+
+    db = request.app.state.st.db
+    try:
+        ids = split(db, session_id, body.at)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [dict(db.execute("SELECT * FROM activity WHERE id = ?", (i,)).fetchone()) for i in ids]
+
+
+@router.post("/sessions/merge")
+def merge_sessions(request: Request, body: MergeIn) -> dict:
+    from ..services.session_edit import merge_sessions as merge
+
+    db = request.app.state.st.db
+    try:
+        merged_id = merge(db, body.ids)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return dict(db.execute("SELECT * FROM activity WHERE id = ?", (merged_id,)).fetchone())
 
 
 @router.get("/week")
