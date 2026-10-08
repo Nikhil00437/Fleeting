@@ -398,6 +398,7 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("idle_secs", "INTEGER NOT NULL DEFAULT 0"),
         ("repo", "TEXT"),
         ("branch", "TEXT"),
+        ("note", "TEXT"),  # #334 what this stretch was actually for
     )),
     # #340 per-app idle threshold; NULL means "use the global setting".
     ("app_rules", (("idle_min", "INTEGER"),)),

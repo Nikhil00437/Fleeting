@@ -32,6 +32,27 @@ def _record(db: Database, session_key: str, note: str) -> None:
     db.commit()
 
 
+def annotate_session(db: Database, session_id: int, note: str) -> dict:
+    """#334 say what a stretch was actually for; reports quote it back."""
+    _row(db, session_id)
+    clean = " ".join((note or "").split())[:400]
+    db.execute("UPDATE activity SET note = ? WHERE id = ?", (clean, session_id))
+    db.commit()
+    if clean:
+        _record(db, str(session_id), f"noted: {clean[:80]}")
+    return _row(db, session_id)
+
+
+def session_annotations(db: Database, day: str, limit: int = 50) -> list[dict]:
+    """#334 the annotated sessions of a day, most recent first."""
+    rows = db.execute(
+        "SELECT id, app_class, title, first_seen, last_seen, seconds, note FROM activity"
+        " WHERE day = ? AND note IS NOT NULL AND note != '' ORDER BY first_seen DESC LIMIT ?",
+        (day, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def session_edits(db: Database, limit: int = 50) -> list[dict]:
     rows = db.execute(
         "SELECT session_key, note, applied_at FROM session_edits"
@@ -94,9 +115,9 @@ def split_session(db: Database, session_id: int, at: str) -> tuple[int, int]:
     )
     cur = db.execute(
         "INSERT INTO activity (app_class, title, first_seen, last_seen, seconds, day,"
-        " workspace, idle_secs, repo, branch, project, block_id)"
+        " workspace, idle_secs, repo, branch, project, block_id, note)"
         " VALUES (:app_class, :title, :first_seen, :last_seen, :seconds, :day,"
-        " :workspace, :idle_secs, :repo, :branch, :project, :block_id)",
+        " :workspace, :idle_secs, :repo, :branch, :project, :block_id, :note)",
         {
             "app_class": row["app_class"],
             "title": row["title"],
@@ -110,6 +131,7 @@ def split_session(db: Database, session_id: int, at: str) -> tuple[int, int]:
             "branch": row["branch"],
             "project": row["project"],
             "block_id": row["block_id"],
+            "note": row["note"],
         },
     )
     db.commit()

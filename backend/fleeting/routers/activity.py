@@ -175,7 +175,20 @@ def clear_app_idle(request: Request, app_class: str) -> None:
 
 
 class RelabelIn(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
+    title: str | None = Field(default=None, max_length=120)
+    # #334 the same PATCH carries a session annotation.
+    note: str | None = Field(default=None, max_length=400)
+
+
+class AnnotateIn(BaseModel):
+    # #334 an annotation may be cleared, hence no min_length.
+    note: str = Field(max_length=400)
+
+
+class GapFillIn(BaseModel):
+    at: str = Field(min_length=1, max_length=40)
+    minutes: int = Field(ge=1, le=1440)
+    note: str = Field(min_length=1, max_length=400)
 
 
 class SplitIn(BaseModel):
@@ -196,14 +209,67 @@ def session_edit_trail(request: Request, limit: int = Query(50, ge=1, le=200)) -
 
 @router.patch("/sessions/{session_id}")
 def relabel_session(request: Request, session_id: int, body: RelabelIn) -> dict:
-    from ..services.session_edit import relabel_session as relabel
+    """#54 rename, #334 annotate — one PATCH, whichever field is present."""
+    from ..services.session_edit import annotate_session, relabel_session as relabel
 
+    db = request.app.state.st.db
     try:
-        return relabel(request.app.state.st.db, session_id, body.title)
+        if body.note is not None:
+            return annotate_session(db, session_id, body.note)
+        if body.title is None:
+            raise ValueError("nothing to change")
+        return relabel(db, session_id, body.title)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/sessions/annotations")
+def session_annotations(request: Request, day: str) -> list[dict]:
+    from ..services.session_edit import session_annotations as annotated
+
+    return annotated(request.app.state.st.db, _valid_day(day))
+
+
+@router.get("/gaps")
+def activity_gaps(
+    request: Request, day: str | None = None, min_minutes: int = Query(45, ge=5, le=720)
+) -> dict:
+    """#337 stretches of the day with nothing recorded in them."""
+    from ..services.gaps import day_gaps, gap_summary
+
+    day = _valid_day(day or _local_today())
+    gaps = day_gaps(request.app.state.st.db, day, min_minutes=min_minutes)
+    return {"day": day, "gaps": gaps, "summary": gap_summary(gaps)}
+
+
+@router.post("/gaps/fill")
+def fill_gap(request: Request, body: GapFillIn) -> dict:
+    """#337 record what happened in a gap as a synthetic session."""
+    from ..services.gaps import day_gaps, fill_gap as fill
+
+    db = request.app.state.st.db
+    day = body.at[:10]
+    window = fill(day_gaps(db, day), body.at, body.minutes, body.note)
+    if window is None:
+        raise HTTPException(status_code=422, detail="that time is not inside a recorded gap")
+    cur = db.execute(
+        "INSERT INTO activity (app_class, title, first_seen, last_seen, seconds, day, note)"
+        " VALUES ('recall', ?, ?, ?, ?, ?, ?)",
+        (
+            f"gap: {body.note[:80]}",
+            window["start"],
+            window["end"],
+            max(60, body.minutes * 60),
+            day,
+            body.note,
+        ),
+    )
+    db.commit()
+    row = dict(db.execute("SELECT * FROM activity WHERE id = ?", (cur.lastrowid,)).fetchone())
+    request.app.state.st.bus.publish("activity.live", row)
+    return row
 
 
 @router.delete("/sessions/{session_id}", status_code=204)

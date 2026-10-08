@@ -205,6 +205,17 @@ def build_transcript(sessions: list[dict], max_chars: int = MAX_TRANSCRIPT_CHARS
                 lines.append(f"    · {cleaned} ({fmt_secs(t['seconds'])})")
     lines.append("")
 
+    # #334 the user's own words about a stretch come before our guess about it.
+    annotated = [s for s in sessions if (s.get("note") or "").strip()]
+    if annotated:
+        lines.append("What you said you were doing:")
+        for s in sorted(annotated, key=lambda x: x["first_seen"]):
+            lines.append(
+                f"- [{s['first_seen'][11:16]}] {s['note']} "
+                f"({fmt_secs(s.get('seconds') or 0)}, {s['app_class']})"
+            )
+        lines.append("")
+
     blocks = merge_focus_blocks(sessions)
     lines.append("Merged focus blocks (chronological, micro-switches removed):")
     for b in blocks[:25]:
