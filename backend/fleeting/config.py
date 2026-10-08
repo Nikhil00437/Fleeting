@@ -28,6 +28,7 @@ def xdg(env_var: str, fallback: Path) -> Path:
     return fallback / APP_NAME
 
 
+VAULT_DIR = Path.home() / "Documents" / "FleetingVault"
 CONFIG_DIR = xdg("XDG_CONFIG_HOME", Path.home() / ".config")
 DATA_DIR = xdg("XDG_DATA_HOME", Path.home() / ".local" / "share")
 CONFIG_PATH = CONFIG_DIR / "config.toml"
@@ -45,7 +46,11 @@ class ServerConfig:
 
 @dataclass
 class PathsConfig:
-    vault_dir: str = str(Path.home() / "Documents" / "FleetingVault")
+    # default_factory, not a plain default: a default is evaluated when this
+    # class is created, so patching VAULT_DIR later would not reach a Config
+    # built afterwards — which is how test notes ended up mirrored into the
+    # user's real vault and imported back by the running app.
+    vault_dir: str = field(default_factory=lambda: str(VAULT_DIR))
     vault_sync: bool = True
 
 

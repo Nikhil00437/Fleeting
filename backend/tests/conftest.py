@@ -1,10 +1,36 @@
-"""Shared fixtures: isolated DB/config/vault per test, LLM disabled."""
+"""Shared fixtures: isolated DB/config/vault per test, LLM disabled.
+
+The session-wide redirect in `pytest_configure` is the important part: it runs
+before test modules are imported, and `fleeting.main` builds its app at import
+time. Without it, merely importing a test module migrates and rewrites the
+user's real database — which is how the 0.7 development runs left rows in it.
+`test_no_real_writes.py` asserts the redirect actually holds.
+"""
 
 from __future__ import annotations
+
+import tempfile
+from pathlib import Path
 
 import pytest
 
 import fleeting.config as fcfg
+
+# Paths that point at the user's real data. Captured before anything moves
+# them, so tests can prove they are no longer reachable.
+REAL_PATHS = ("DB_PATH", "CONFIG_PATH", "AUDIO_DIR", "ATTACHMENTS_DIR", "LOG_PATH", "VAULT_DIR")
+_REAL = {name: fcfg.__dict__[name] for name in REAL_PATHS}
+
+
+def _sandbox() -> Path:
+    return Path(fcfg.__dict__["DB_PATH"]).parent
+
+def pytest_configure(config):
+    """Redirect every real path before any test module is imported."""
+    sandbox = Path(tempfile.mkdtemp(prefix="fleeting-pytest-"))
+    for name in REAL_PATHS:
+        setattr(fcfg, name, sandbox / Path(fcfg.__dict__[name]).name)
+    sandbox.joinpath("fleeting.db").touch()  # a real (empty) db for imports to migrate
 
 
 @pytest.fixture

@@ -13,7 +13,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
-from ..config import AUDIO_DIR, Config, ensure_dirs
+from .. import config as _config
+from ..config import Config, ensure_dirs
 from ..db import Database
 from ..events import EventBus
 from . import dailylog, markdown
@@ -173,9 +174,14 @@ def create_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
 
 
 def cfg_audio_dir() -> Path:
-    """Where voice memos live; used to clean up files on delete."""
+    """Where voice memos live; used to clean up files on delete.
+
+    Read from the config module rather than bound at import: a module-level
+    `from ..config import AUDIO_DIR` snapshot cannot be redirected, which is
+    how test stubs ended up in the user's real audio directory.
+    """
     ensure_dirs()
-    return AUDIO_DIR
+    return _config.AUDIO_DIR
 
 
 def delete_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:

@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .activity import ActivityCollector
-from .config import LOG_PATH, Config, ensure_dirs
+from .config import Config, ensure_dirs
 from .db import Database
 from .events import EventBus
 from .process import Processor
@@ -93,6 +93,10 @@ def _setup_logging() -> None:
     ensure_dirs()
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     try:
+        # read at call time: a bound import cannot be redirected, and the test
+        # suite must not append to the user's real log.
+        from .config import LOG_PATH
+
         handlers.append(logging.FileHandler(LOG_PATH, encoding="utf-8"))
     except OSError:
         pass
