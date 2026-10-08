@@ -13,6 +13,7 @@ from ..config import expand_path
 from ..services import dailylog, weeklylog
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
+daily_router = APIRouter(prefix="/api/daily-log", tags=["daily-log"])
 
 
 def _local_today() -> str:
@@ -468,16 +469,53 @@ def files_activity(request: Request, hours: float = 24.0) -> dict:
 
 
 @router.get("/daily-log")
+@daily_router.get("")
 def get_daily_log(request: Request, day: str | None = None) -> dict:
     st = request.app.state.st
     day = _valid_day(day or _local_today())
     row = st.db.get_daily_log(day)
     if not row:
-        return {"day": day, "summary_md": None, "model": None, "created_at": None}
+        return {"day": day, "summary_md": None, "model": None, "created_at": None, "edited": 0}
     return row
 
 
+@router.put("/daily-log/{day}/edit", response_model=None)
+@daily_router.put("/{day}/edit", response_model=None)
+def edit_daily_log(request: Request, day: str, body: dict) -> Response | dict:
+    st = request.app.state.st
+    day = _valid_day(day)
+    row = st.db.get_daily_log(day)
+    if not row:
+        raise HTTPException(404, f"daily log for {day} not found")
+    raw_body = body.get("body", "")
+    trimmed = raw_body.strip() if isinstance(raw_body, str) else ""
+    if not trimmed:
+        st.db.clear_daily_log_edit(day)
+        dailylog.mirror_to_vault(st.cfg, day, dailylog.effective_body(st.db.get_daily_log(day)))
+        st.bus.publish("dailylog.updated", {"day": day})
+        return Response(status_code=204)
+    st.db.set_daily_log_edit(day, raw_body)
+    dailylog.mirror_to_vault(st.cfg, day, raw_body)
+    st.bus.publish("dailylog.updated", {"day": day})
+    return {"ok": True, "edited": 1, "body": raw_body}
+
+
+@router.delete("/daily-log/{day}/edit", status_code=204)
+@daily_router.delete("/{day}/edit", status_code=204)
+def clear_daily_log_edit(request: Request, day: str) -> Response:
+    st = request.app.state.st
+    day = _valid_day(day)
+    row = st.db.get_daily_log(day)
+    if not row:
+        raise HTTPException(404, f"daily log for {day} not found")
+    st.db.clear_daily_log_edit(day)
+    dailylog.mirror_to_vault(st.cfg, day, dailylog.effective_body(st.db.get_daily_log(day)))
+    st.bus.publish("dailylog.updated", {"day": day})
+    return Response(status_code=204)
+
+
 @router.post("/daily-log/generate")
+@daily_router.post("/generate")
 async def generate_log(request: Request, body: dict) -> dict:
     st = request.app.state.st
     day = _valid_day(str(body.get("day") or _local_today()))

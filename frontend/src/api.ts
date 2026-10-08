@@ -529,6 +529,17 @@ export const api = {
   dailyLog: (day?: string) =>
     req<DailyLog>(`/activity/daily-log${day ? `?day=${day}` : ""}`),
 
+  editDailyLog: (day: string, body: string) =>
+    req<{ ok?: boolean; edited?: number; body?: string }>(`/activity/daily-log/${day}/edit`, {
+      method: "PUT",
+      body: JSON.stringify({ body }),
+    }),
+
+  clearDailyLogEdit: (day: string) =>
+    req<void>(`/activity/daily-log/${day}/edit`, {
+      method: "DELETE",
+    }),
+
   generateDailyLog: (day: string, rolling = false) =>
     req<DailyLog>("/activity/daily-log/generate", {
       method: "POST",

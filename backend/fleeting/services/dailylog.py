@@ -371,9 +371,19 @@ def fallback_digest(
     return "\n".join(lines)
 
 
+def effective_body(row: dict | None) -> str:
+    """Return the human-edited report body if present, else AI summary_md."""
+    if not row:
+        return ""
+    edited = row.get("edited_body")
+    if edited and edited.strip():
+        return edited
+    return row.get("summary_md") or ""
+
+
 def mirror_to_vault(cfg: Config, day: str, md: str) -> None:
     """Optional vault copy — off by default; the report lives inside the app."""
-    if not cfg.activity.mirror_daily_log:
+    if not (cfg.activity.mirror_daily_log or cfg.paths.vault_sync):
         return
     try:
         vault = expand_path(cfg.paths.vault_dir)
@@ -462,8 +472,9 @@ async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bo
         )
 
     db.upsert_daily_log(day, md, model)
-    mirror_to_vault(cfg, day, md)
+    row = db.get_daily_log(day)
+    mirror_to_vault(cfg, day, effective_body(row))
     from ..notify import send
 
     send("Fleeting", f"Your daily digest for {day} is ready — open the app to read it.")
-    return db.get_daily_log(day)  # type: ignore[return-value]
+    return row  # type: ignore[return-value]

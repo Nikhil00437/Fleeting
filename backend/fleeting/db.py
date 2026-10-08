@@ -383,6 +383,14 @@ MIGRATIONS: list[str] = [
       updated_at TEXT NOT NULL
     );
     """,
+    # v22 — 0.8 reports, insights & charts: streaks persistence.
+    """CREATE TABLE IF NOT EXISTS streaks (
+      kind TEXT NOT NULL,
+      day TEXT NOT NULL,
+      count INTEGER,
+      PRIMARY KEY (kind, day)
+    ) WITHOUT ROWID;
+    """,
 ]
 
 
@@ -402,6 +410,12 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     )),
     # #340 per-app idle threshold; NULL means "use the global setting".
     ("app_rules", (("idle_min", "INTEGER"),)),
+    # 0.8 daily_logs columns (#72 edited_body, #348 prompt_override, #350 evidence)
+    ("daily_logs", (
+        ("edited_body", "TEXT"),
+        ("prompt_override", "TEXT"),
+        ("evidence", "TEXT"),
+    )),
 )
 
 
@@ -1043,7 +1057,11 @@ class Database:
 
     def get_daily_log(self, day: str) -> dict | None:
         row = self.execute("SELECT * FROM daily_logs WHERE day = ?", (day,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        d["edited"] = 1 if d.get("edited_body") else 0
+        return d
 
     def get_weekly_log(self, week_start: str) -> dict | None:
         row = self.execute(
@@ -1067,7 +1085,12 @@ class Database:
             "SELECT * FROM daily_logs WHERE day >= ? AND day <= ? ORDER BY day ASC",
             (start_day, end_day),
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["edited"] = 1 if d.get("edited_body") else 0
+            result.append(d)
+        return result
 
     def upsert_daily_log(self, day: str, summary_md: str, model: str) -> None:
         self.execute(
@@ -1076,6 +1099,23 @@ class Database:
             {"day": day, "md": summary_md, "model": model, "ts": now_iso()},
         )
         self.commit()
+
+    def set_daily_log_edit(self, day: str, body: str) -> None:
+        trimmed = body.strip() if body else ""
+        if not trimmed:
+            self.execute("UPDATE daily_logs SET edited_body = NULL WHERE day = ?", (day,))
+            self.commit()
+            return
+        self.execute("UPDATE daily_logs SET edited_body = ? WHERE day = ?", (body, day))
+        self.commit()
+
+    def clear_daily_log_edit(self, day: str) -> bool:
+        row = self.execute("SELECT edited_body FROM daily_logs WHERE day = ?", (day,)).fetchone()
+        if not row or not row["edited_body"]:
+            return False
+        self.execute("UPDATE daily_logs SET edited_body = NULL WHERE day = ?", (day,))
+        self.commit()
+        return True
 
     # ---- key/value store (pause flags etc.) ------------------------------
 

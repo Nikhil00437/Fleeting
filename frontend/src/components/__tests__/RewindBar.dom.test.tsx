@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import RewindBar from "../RewindBar";
-import type { ActivitySession } from "../types";
+import type { ActivitySession } from "../../types";
 
 const session = (id: number, hh: number, minutes = 1800, title = "vim"): ActivitySession =>
   ({

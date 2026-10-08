@@ -415,6 +415,8 @@ export interface ActivityDay {
 export interface DailyLog {
   day: string;
   summary_md: string | null;
+  edited_body?: string | null;
+  edited?: number;
   model: string | null;
   created_at: string | null;
 }
