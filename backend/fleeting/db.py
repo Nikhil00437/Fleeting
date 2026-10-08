@@ -362,7 +362,31 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_assistant_chats_updated
       ON assistant_chats(pinned, updated_at DESC);
     """,
+    # v20 — 0.7 timeline & activity depth. workspace (#338) and project (#53)
+    # are recorded at write time, never guessed at read time. block_id groups
+    # sessions into work blocks (#335); idle_secs is the AFK time subtracted
+    # from a session by the per-app idle threshold (#340). session_edits is
+    # #54's audit trail — one row per hand-corrected session, so a later
+    # regression never silently drops a user fix.
+    """CREATE TABLE IF NOT EXISTS session_edits (
+      session_key TEXT PRIMARY KEY,
+      note TEXT NOT NULL DEFAULT '',
+      applied_at TEXT NOT NULL
+    );
+    """,
 ]
+
+
+# v20 columns, applied idempotently by migrate(). Same reason the v8 triggers
+# live in Python and not in the migration SQL: a database old enough to
+# predate activity tracking has no `activity` table, and a bare
+# `ALTER TABLE activity` would abort the whole migration chain.
+_ACTIVITY_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("workspace", "TEXT"),
+    ("project", "TEXT"),
+    ("block_id", "TEXT"),
+    ("idle_secs", "INTEGER NOT NULL DEFAULT 0"),
+)
 
 
 # Kept insert-sync between `activity` and its FTS index. Mirrors notes_ai/ad/au.
@@ -478,7 +502,24 @@ class Database:
                 )
                 raise
         self._backfill_activity_index()
+        self._migrate_activity_columns()
         self._migrate_action_items()
+
+    def _migrate_activity_columns(self) -> None:
+        """Add the v20 columns if this database predates them (see _ACTIVITY_COLUMNS)."""
+        if not self.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activity'"
+        ).fetchone():
+            return
+        present = {r["name"] for r in self.execute("PRAGMA table_info(activity)")}
+        added = False
+        for column, decl in _ACTIVITY_COLUMNS:
+            if column in present:
+                continue
+            self.execute(f"ALTER TABLE activity ADD COLUMN {column} {decl}")
+            added = True
+        if added:
+            self.commit()
 
     def _backfill_activity_index(self) -> None:
         """Index existing activity rows for the search FTS table.

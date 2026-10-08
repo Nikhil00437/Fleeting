@@ -19,6 +19,7 @@ import asyncio
 import inspect
 import json
 import logging
+import re
 import subprocess
 from datetime import datetime
 from typing import Awaitable, Callable
@@ -28,6 +29,30 @@ from .config import ActivityConfig
 log = logging.getLogger("fleeting.activity")
 
 TITLE_MAX = 120
+
+# #66 redaction. Emails go unconditionally — a window title is the single
+# most common place a stray address ends up (mail, forms, logins) — and any
+# configured token matches as a plain substring, case-insensitively. Applied
+# at write time: a redacted title that only disappeared on read would still
+# be sitting in the DB, which is the whole point of the rule.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+REDACTED = "\u00abredacted\u00bb"
+
+
+def redact_title(title: str, patterns: list[str] | None = None) -> str:
+    """Scrub a window title.
+
+    A configured pattern takes the whole whitespace-delimited token with it,
+    not just the literal: people configure `ghp_` meaning "any GitHub token",
+    and leaving `«redacted»TOTALLYSECRET` behind would defeat the point.
+    """
+    out = _EMAIL_RE.sub(REDACTED, title or "")
+    for pat in patterns or []:
+        pat = pat.strip()
+        if not pat:
+            continue
+        out = re.sub(rf"\S*{re.escape(pat)}\S*", REDACTED, out, flags=re.IGNORECASE)
+    return out
 
 
 def _local_now() -> datetime:
@@ -98,6 +123,7 @@ class ActivityCollector:
         self._last_cursor: tuple[int, int] | None = None
         self._idle_streak_secs = 0
         self._today: str = _local_now().strftime("%Y-%m-%d")
+        self._redact: list[str] = [p.strip() for p in cfg.redact_patterns.split(",") if p.strip()]
 
     # ---- public ----------------------------------------------------------
 
@@ -240,10 +266,14 @@ class ActivityCollector:
             self._close_current()
             return
 
+        # #66: redact before anything reaches the session dict or the DB, so
+        # the raw title is never persisted and never sits in memory longer.
+        title = redact_title(win.get("title") or "", self._redact)[:TITLE_MAX]
+
         # accrue real elapsed time, clamped so suspend/resume or hiccups
         # don't credit one poll with hours
         max_step = self.cfg.poll_secs * 2
-        key = (win["class"], win["title"])
+        key = (win["class"], title)
         if self.current and (self.current["app_class"], self.current["title"]) == key:
             elapsed = (now - datetime.fromisoformat(self.current["last_seen"])).total_seconds()
             self.current["last_seen"] = _local_iso(now)
@@ -254,7 +284,7 @@ class ActivityCollector:
             self._close_current()
             self.current = {
                 "app_class": win["class"],
-                "title": win["title"],
+                "title": title,
                 "first_seen": _local_iso(now),
                 "last_seen": _local_iso(now),
                 "seconds": 0,

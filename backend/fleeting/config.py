@@ -101,6 +101,9 @@ class ActivityConfig:
     poll_secs: int = 20
     idle_after_min: int = 3
     excluded_apps: str = "zen"  # comma-separated class substrings, e.g. "zen, keepassxc"
+    # #66 comma-separated tokens scrubbed out of window titles before they are
+    # stored, e.g. "ghp_,sk-or-v1". Emails are always scrubbed regardless.
+    redact_patterns: str = ""
     auto_daily_log: bool = True
     # Monday-morning summary of the finished week, on top of the daily report.
     auto_weekly_log: bool = True
