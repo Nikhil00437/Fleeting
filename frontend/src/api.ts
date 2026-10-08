@@ -40,7 +40,7 @@ import type {
   WeeklyLogRow,
   QueryLogEntry,
   TranscriptResult,
-
+  StandupOut,
 } from "./types";
 
 const BASE = "/api";
@@ -566,6 +566,20 @@ export const api = {
     req<Note>(`/activity/daily-log/${day}/reflection`, {
       method: "POST",
       body: JSON.stringify({ prompt, text }),
+    }),
+
+  /** #69 Standup generator: yesterday, today, blockers */
+  standup: (day?: string) =>
+    req<StandupOut>(`/activity/standup${day ? `?day=${day}` : ""}`),
+  generateStandup: (day?: string) =>
+    req<StandupOut>("/activity/standup/generate", {
+      method: "POST",
+      body: JSON.stringify({ day }),
+    }),
+  saveStandupAsNote: (day: string, standup_md: string) =>
+    req<{ ok: boolean; note: Note }>("/activity/standup/save-as-note", {
+      method: "POST",
+      body: JSON.stringify({ day, standup_md }),
     }),
 
   /** #74 export report as Markdown or PDF. */

@@ -653,3 +653,13 @@ export interface UnifiedResult {
   counts?: { notes: number; sessions: number; commits: number };
   total: number;
 }
+
+export interface StandupOut {
+  day: string;
+  previous_day: string;
+  standup_md: string;
+  model: string;
+  yesterday_tasks: TaskItem[];
+  today_tasks: TaskItem[];
+  blockers: TaskItem[];
+}

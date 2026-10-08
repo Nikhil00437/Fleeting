@@ -4,6 +4,7 @@ import { renderMarkdown } from "../markdown";
 import { ActivityIcon, BotIcon, CopyIcon, EditIcon, ExportIcon, LinkIcon, SettingsIcon, SparkIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
+import StandupModal from "./StandupModal";
 import type { Note } from "../types";
 
 interface Props {
@@ -72,6 +73,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [reflectionText, setReflectionText] = useState("");
   const [reflectionNote, setReflectionNote] = useState<Note | null>(null);
   const [savingReflection, setSavingReflection] = useState(false);
+  const [showStandup, setShowStandup] = useState(false);
 
   const isToday = day === todayLocal();
 
@@ -206,6 +208,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
               Today
             </button>
           )}
+          <button
+            onClick={() => setShowStandup(true)}
+            data-testid="open-standup-button"
+            className="flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-xs font-semibold text-ink-200 hover:border-ember-400/40"
+            title="Generate daily standup: yesterday, today, blockers"
+          >
+            <SparkIcon className="h-3.5 w-3.5 text-amber-400" />
+            Standup
+          </button>
         </div>
       </div>
 
@@ -654,6 +665,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
       </div>
     </div>
       </div>
+
+      {showStandup && (
+        <StandupModal
+          isOpen={showStandup}
+          onClose={() => setShowStandup(false)}
+          onToast={onToast}
+          day={day}
+        />
+      )}
     </div>
   );
 }

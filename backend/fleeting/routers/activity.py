@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from ..activity import aggregate_day, app_blocked
 from ..config import expand_path
-from ..services import dailylog, weeklylog
+from ..services import dailylog, standup, weeklylog
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 daily_router = APIRouter(prefix="/api/daily-log", tags=["daily-log"])
@@ -743,3 +743,44 @@ async def generate_previous_weekly(request: Request) -> dict:
     except ValueError:
         return {"ok": True, "skipped": True, "week": start}
     return {"ok": True, "skipped": False, "week": start, "report": row}
+ 
+ 
+@router.get("/standup")
+async def get_standup(request: Request, day: str | None = None) -> dict:
+    """#69 Standup generator: yesterday, today, blockers."""
+    st = request.app.state.st
+    return await standup.generate_standup(st.db, st.cfg, day=day)
+
+
+@router.post("/standup/generate")
+async def generate_standup_endpoint(request: Request, body: dict) -> dict:
+    """#69 Force regeneration of daily standup."""
+    st = request.app.state.st
+    day = body.get("day")
+    return await standup.generate_standup(st.db, st.cfg, day=day)
+
+
+@router.post("/standup/save-as-note")
+def save_standup_as_note(request: Request, body: dict) -> dict:
+    """Save the generated standup as a markdown note."""
+    st = request.app.state.st
+    day = str(body.get("day") or "")
+    md = str(body.get("standup_md") or "").strip()
+    if not md:
+        raise HTTPException(400, "standup_md cannot be empty")
+    title = f"Daily Standup — {day}" if day else "Daily Standup"
+    tags = ["standup", "daily"]
+    if day:
+        tags.append(f"daily/{day}")
+    note = st.db.insert_note(
+        {
+            "title": title,
+            "raw_text": md,
+            "type": "text",
+            "tags": tags,
+            "source": {"type": "standup", "day": day},
+        }
+    )
+    st.bus.publish("note.created", {"id": note["id"]})
+    return {"ok": True, "note": note}
+
