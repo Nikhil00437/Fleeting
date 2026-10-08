@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 from .config import ActivityConfig
+from .services.projects import detect_project
 
 log = logging.getLogger("fleeting.activity")
 
@@ -163,6 +164,7 @@ class ActivityCollector:
         self._idle_streak_secs = 0
         self._today: str = _local_now().strftime("%Y-%m-%d")
         self._redact: list[str] = [p.strip() for p in cfg.redact_patterns.split(",") if p.strip()]
+        self._watch_dirs: list[str] = [w.strip() for w in cfg.watch_dirs.split(",") if w.strip()]
 
     # ---- public ----------------------------------------------------------
 
@@ -323,12 +325,18 @@ class ActivityCollector:
         else:
             self._close_current()
             ctx = git_context(cwd) if (cwd := self._cwd_of(win.get("pid"))) else None
+            # #53 detected once, at session open: a later title change must not
+            # retroactively relabel the time already spent.
+            project = detect_project(
+                title, repo=ctx[0] if ctx else None, roots=self._watch_dirs
+            )
             self.current = {
                 "app_class": win["class"],
                 "title": title,
                 "workspace": workspace,
                 "repo": ctx[0] if ctx else None,
                 "branch": ctx[1] if ctx else None,
+                "project": project,
                 "first_seen": _local_iso(now),
                 "last_seen": _local_iso(now),
                 "seconds": 0,
@@ -362,6 +370,7 @@ class ActivityCollector:
             "workspace": (str(session["workspace"]) if session.get("workspace") is not None else None),
             "repo": session.get("repo"),
             "branch": session.get("branch"),
+            "project": session.get("project"),
         }
 
     def _close_current(self) -> None:

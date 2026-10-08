@@ -47,6 +47,18 @@ def activity_day(request: Request, day: str | None = None) -> dict:
     }
 
 
+@router.get("/projects")
+def activity_projects(
+    request: Request, day: str | None = None, include_empty: bool = False
+) -> dict:
+    """#53 time per project for a day, heaviest first."""
+    from ..services.projects import project_seconds
+
+    day = _valid_day(day or _local_today())
+    rows = project_seconds(request.app.state.st.db, day, include_empty=include_empty)
+    return {"day": day, "projects": rows}
+
+
 @router.get("/days")
 def activity_days(request: Request) -> list[str]:
     return request.app.state.st.db.activity_days()
