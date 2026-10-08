@@ -44,13 +44,15 @@ export default function SessionEditor({
   onToast: OnToast;
 }) {
   const [title, setTitle] = useState(session.title);
+  const [note, setNote] = useState(session.note ?? "");
   const [splitAt, setSplitAt] = useState(() => midpoint(session));
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setTitle(session.title);
+    setNote(session.note ?? "");
     setSplitAt(midpoint(session));
-  }, [session.id, session.title]);
+  }, [session.id, session.title, session.note]);
 
   const run = (action: () => Promise<unknown>, ok: string, close = true) => {
     setBusy(true);
@@ -86,6 +88,22 @@ export default function SessionEditor({
         className="rounded-lg border border-ember-500/30 bg-ember-500/10 px-2 py-1 text-[11px] text-ember-300 disabled:opacity-50"
       >
         Save name
+      </button>
+
+      {/* #334 what this stretch was actually for; daily reports quote it */}
+      <input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        aria-label="Session note"
+        placeholder="What were you doing?"
+        className="min-w-40 flex-1 rounded-lg border border-ink-800 bg-ink-900 px-2 py-1 text-xs text-ink-100 placeholder-ink-500"
+      />
+      <button
+        disabled={busy || note === (session.note ?? "")}
+        onClick={() => run(() => api.annotateSession(session.id, note), "Note saved", false)}
+        className="rounded-lg border border-iris-500/30 bg-iris-500/10 px-2 py-1 text-[11px] text-iris-300 disabled:opacity-50"
+      >
+        Save note
       </button>
 
       <span className="ml-2 font-mono text-[10.5px] text-ink-500">split at</span>

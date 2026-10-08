@@ -16,6 +16,7 @@ import type {
   LLMProbeOverrides,
   ActivityDay,
   ActivitySession,
+  ActivityGap,
   DailyLog,
   AppRule,
   FilesActivity,
@@ -453,6 +454,24 @@ export const api = {
     }),
   deleteSession: (id: number) =>
     req<void>(`/activity/sessions/${id}`, { method: "DELETE" }),
+
+  /** #334 annotate a session. */
+  annotateSession: (id: number, note: string) =>
+    req<ActivitySession>(`/activity/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ note }),
+    }),
+
+  /** #337 untracked stretches of a day, and what you did in one. */
+  activityGaps: (day?: string) =>
+    req<{ day: string; gaps: ActivityGap[]; summary: string }>(
+      `/activity/gaps${day ? `?day=${day}` : ""}`,
+    ),
+  fillGap: (at: string, minutes: number, note: string) =>
+    req<ActivitySession>("/activity/gaps/fill", {
+      method: "POST",
+      body: JSON.stringify({ at, minutes, note }),
+    }),
 
   activityWeek: (days = 7) => req<{ day: string; seconds: number }[]>(`/activity/week?days=${days}`),
 

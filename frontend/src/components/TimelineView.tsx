@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import GapCard from "./GapCard";
 import SessionEditor from "./SessionEditor";
 import { appColor, appMonogram, fmtSecs, prettyAppName } from "../apps";
 import { AreaTrend, Bars, Donut, SessionRibbon } from "./charts";
@@ -18,7 +19,7 @@ import {
   SearchIcon,
   XIcon,
 } from "./Icons";
-import type { ActivityDay, ActivitySession, FilesActivity } from "../types";
+import type { ActivityGap, ActivityDay, ActivitySession, FilesActivity } from "../types";
 
 function todayLocal(): string {
   const d = new Date();
@@ -101,6 +102,8 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   const [rangeDays, setRangeDays] = useState<7 | 14 | 30>(7);
   const [trendMode, setTrendMode] = useState<"bars" | "area">("bars");
   const [week, setWeek] = useState<{ day: string; seconds: number }[]>([]);
+  // #337 untracked stretches for the shown day.
+  const [gaps, setGaps] = useState<ActivityGap[]>([]);
   // #53 time per project for the shown day.
   const [projects, setProjects] = useState<{ project: string | null; seconds: number }[]>([]);
 
@@ -130,6 +133,13 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   useEffect(() => {
     api.activityWeek(rangeDays).then(setWeek).catch(() => {});
   }, [rangeDays, refreshKey]);
+
+  useEffect(() => {
+    api
+      .activityGaps(day)
+      .then((r) => setGaps(r.gaps))
+      .catch(() => setGaps([]));
+  }, [day, refreshKey]);
 
   useEffect(() => {
     api
@@ -495,6 +505,9 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                 </button>
               )}
             </div>
+
+            {/* #337 holes in the record, with a way to fill them */}
+            <GapCard gaps={gaps} onFilled={load} onToast={onToast} />
 
             {/* #53 projects — detected at write time, so this is what was
                 actually worked on, not a re-read of today's titles */}

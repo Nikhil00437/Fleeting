@@ -304,6 +304,13 @@ export interface LLMProbeOverrides {
   api_key?: string;
 }
 
+/** #337 an untracked stretch of the day. */
+export interface ActivityGap {
+  start: string;
+  end: string;
+  minutes: number;
+}
+
 export interface ActivitySession {
   id: number;
   app_class: string;
@@ -312,6 +319,11 @@ export interface ActivitySession {
   last_seen: string;
   seconds: number;
   day: string;
+  workspace?: string | null;
+  project?: string | null;
+  branch?: string | null;
+  /** #334 what this stretch was actually for. */
+  note?: string | null;
 }
 
 export interface ActivityApp {
