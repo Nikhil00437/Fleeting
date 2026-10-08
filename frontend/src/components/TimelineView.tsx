@@ -3,6 +3,7 @@ import { api } from "../api";
 import ActivityHeatmap from "./ActivityHeatmap";
 import FocusMetrics from "./FocusMetrics";
 import GapCard from "./GapCard";
+import { ProjectDashboardModal } from "./ProjectDashboardModal";
 import PrivateBadge from "./PrivateBadge";
 import RangeAsk from "./RangeAsk";
 import RewindBar from "./RewindBar";
@@ -117,6 +118,7 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
   const [gaps, setGaps] = useState<ActivityGap[]>([]);
   // #53 time per project for the shown day.
   const [projects, setProjects] = useState<{ project: string | null; seconds: number }[]>([]);
+  const [dashboardProject, setDashboardProject] = useState<string | null>(null);
 
   // Interactive cross-filters
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
@@ -569,14 +571,16 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
                 <p className="micro-label mb-1.5">Projects</p>
                 <div className="flex flex-wrap gap-1.5">
                   {projects.slice(0, 8).map((p) => (
-                    <span
+                    <button
+                      type="button"
                       key={p.project ?? "(none)"}
-                      className="rounded-lg border border-ink-800 bg-ink-900/60 px-2 py-1 font-mono text-[10.5px] text-ink-200"
-                      title={`${p.project ?? "unlabelled"} — ${fmtSecs(p.seconds)}`}
+                      onClick={() => p.project && setDashboardProject(p.project)}
+                      className="cursor-pointer rounded-lg border border-ink-800 bg-ink-900/60 px-2 py-1 font-mono text-[10.5px] text-ink-200 transition-colors hover:border-ember-500/50 hover:bg-ink-800/80"
+                      title={`${p.project ?? "unlabelled"} — ${fmtSecs(p.seconds)} (Click for dashboard)`}
                     >
                       {p.project ?? "unlabelled"}
                       <span className="ml-1.5 text-ink-400">{fmtSecs(p.seconds)}</span>
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -972,6 +976,13 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
           </div>
         </div>
       </div>
+      {dashboardProject && (
+        <ProjectDashboardModal
+          initialProject={dashboardProject}
+          onClose={() => setDashboardProject(null)}
+          onOpenNote={onOpenNote}
+        />
+      )}
     </div>
   );
 }

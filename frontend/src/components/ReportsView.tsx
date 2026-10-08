@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../markdown";
-import { ActivityIcon, BotIcon, CopyIcon, EditIcon, ExportIcon, LinkIcon, SettingsIcon, SparkIcon } from "./Icons";
+import { ActivityIcon, BotIcon, CopyIcon, EditIcon, ExportIcon, FolderIcon, LinkIcon, SettingsIcon, SparkIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
 import UnfinishedThreadsCard from "./UnfinishedThreadsCard";
@@ -10,6 +10,7 @@ import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
 import WhatShippedModal from "./WhatShippedModal";
+import { ProjectDashboardModal } from "./ProjectDashboardModal";
 import ReportComparison from "./ReportComparison";
 import type { Note } from "../types";
 
@@ -83,6 +84,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [showReview, setShowReview] = useState(false);
   const [showPlayground, setShowPlayground] = useState(false);
   const [showWhatShipped, setShowWhatShipped] = useState(false);
+  const [showProjects, setShowProjects] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
   const [compareDay, setCompareDay] = useState(() => shiftDay(todayLocal(), -1));
 
@@ -254,6 +256,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           >
             <SparkIcon className="h-3.5 w-3.5 text-emerald-400" />
             What Shipped
+          </button>
+          <button
+            onClick={() => setShowProjects(true)}
+            data-testid="open-projects-button"
+            className="flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-xs font-semibold text-ink-200 hover:border-ember-400/40"
+            title="Per-project dashboards with telemetry, commits, tasks and notes (#167)"
+          >
+            <FolderIcon className="h-3.5 w-3.5 text-ember-400" />
+            Projects
           </button>
         </div>
       </div>
@@ -766,6 +777,12 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           isOpen={showWhatShipped}
           onClose={() => setShowWhatShipped(false)}
           onToast={onToast}
+        />
+      )}
+
+      {showProjects && (
+        <ProjectDashboardModal
+          onClose={() => setShowProjects(false)}
         />
       )}
     </div>

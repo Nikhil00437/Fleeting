@@ -65,6 +65,25 @@ def activity_projects(
     return {"day": day, "projects": rows}
 
 
+@router.get("/projects/summary")
+def activity_projects_summary(request: Request) -> dict:
+    """#167 all projects with total tracked time, active days and last active."""
+    from ..services.projects import list_projects_summary
+
+    return {"projects": list_projects_summary(request.app.state.st.db)}
+
+
+@router.get("/projects/{project}/dashboard")
+def activity_project_dashboard(
+    request: Request, project: str, days: int = Query(30, ge=1, le=365)
+) -> dict:
+    """#167 per-project dashboard with telemetry, apps, branches, commits, tasks and notes."""
+    from ..services.projects import get_project_dashboard
+
+    return get_project_dashboard(request.app.state.st.db, project, days=days)
+
+
+
 @router.get("/days")
 def activity_days(request: Request) -> list[str]:
     return request.app.state.st.db.activity_days()

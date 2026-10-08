@@ -46,6 +46,8 @@ import type {
   ReportPlaygroundResult,
   CaptureFrequencyStats,
   WhatShippedOut,
+  ProjectSummary,
+  ProjectDashboard,
 } from "./types";
 
 const BASE = "/api";
@@ -458,6 +460,14 @@ export const api = {
     req<{ day: string; projects: { project: string | null; seconds: number }[] }>(
       `/activity/projects${day ? `?day=${day}` : ""}`,
     ),
+
+  /** #167 all projects with summary metrics */
+  projectsSummary: () => req<{ projects: ProjectSummary[] }>("/activity/projects/summary"),
+
+  /** #167 full per-project dashboard */
+  projectDashboard: (project: string, days = 30) =>
+    req<ProjectDashboard>(`/activity/projects/${encodeURIComponent(project)}/dashboard?days=${days}`),
+
 
   /** #54 manual session editing. */
   relabelSession: (id: number, title: string) =>

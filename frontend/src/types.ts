@@ -207,6 +207,67 @@ export interface RepoInfo {
   task_count: number;
 }
 
+export interface ProjectSummary {
+  project: string;
+  total_seconds: number;
+  active_days: number;
+  last_active: string | null;
+}
+
+export interface ProjectDashboardCommit {
+  repo: string;
+  subject: string;
+  author: string | null;
+  committed_at: string;
+}
+
+export interface ProjectDashboardTask {
+  id: string;
+  text: string;
+  done: number;
+  priority: string;
+  due_date: string | null;
+  estimate_min: number | null;
+  spent_min: number | null;
+  repo: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface ProjectDashboardNote {
+  id: string;
+  title: string;
+  created_at: string;
+  tags: string[];
+}
+
+export interface ProjectDashboard {
+  project: string;
+  total_seconds: number;
+  window_seconds: number;
+  active_days: number;
+  last_active: string | null;
+  daily_breakdown: { day: string; seconds: number }[];
+  apps: { app: string; seconds: number; percent: number }[];
+  branches: { branch: string; seconds: number }[];
+  recent_sessions: {
+    id: number;
+    title: string;
+    app_class: string;
+    seconds: number;
+    day: string;
+    first_seen: string;
+  }[];
+  commits: ProjectDashboardCommit[];
+  tasks: {
+    total: number;
+    completed: number;
+    pending: number;
+    items: ProjectDashboardTask[];
+  };
+  notes: ProjectDashboardNote[];
+}
+
 export interface TaskRef extends TaskItem {
   item_id?: string;
 }
