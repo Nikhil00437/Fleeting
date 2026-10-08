@@ -3,6 +3,7 @@ import { api } from "../api";
 import { appColor } from "../apps";
 import { fmtDuration, relTime } from "../time";
 import NoteCard from "./NoteCard";
+import { groupNotes, type GroupBy } from "./grouping";
 import { runNoteAction } from "./actionRunner";
 import { bucketCounts, emptyUnified, sessionLabel } from "./unifiedSearch";
 import {
@@ -86,6 +87,8 @@ export default function SearchView({
   const [topQueries, setTopQueries] = useState<QueryLogEntry[]>([]);
   // #319: voice-transcript hits with audio timestamps.
   const [transcripts, setTranscripts] = useState<TranscriptResult[]>([]);
+  /** #316 result grouping. */
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const debounceRef = useRef<number>(0);
 
   useEffect(() => {
@@ -167,6 +170,9 @@ export default function SearchView({
     if (typeFilter === "all") return base;
     return base.filter((n) => n.type === typeFilter);
   }, [query, results, browseNotes, typeFilter]);
+
+  /** #316: results rendered as one flat list or as labelled buckets. */
+  const groups = useMemo(() => groupNotes(activeList, groupBy), [activeList, groupBy]);
 
   const typeCounts = useMemo(() => {
     const base = query.trim() ? (results ?? []) : browseNotes;
@@ -547,6 +553,29 @@ export default function SearchView({
               <span className="rounded-md border border-ink-800 bg-ink-900/80 px-2 py-0.5 font-mono text-[10.5px] text-ink-300">
                 {activeList.length} {activeList.length === 1 ? "capture" : "captures"}
               </span>
+              {/* #316 group by day / tag / project */}
+              {scope === "notes" && activeList.length > 1 && (
+                <div
+                  className="flex items-center gap-0.5 rounded-lg border border-ink-800 bg-ink-900/80 p-0.5"
+                  role="group"
+                  aria-label="Group results by"
+                >
+                  {(["none", "day", "tag", "project"] as const).map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => setGroupBy(g)}
+                      aria-pressed={groupBy === g}
+                      className={`rounded-md px-2 py-0.5 font-mono text-[10.5px] ${
+                        groupBy === g
+                          ? "bg-ember-500/25 font-semibold text-ember-300"
+                          : "text-ink-400 hover:text-ink-200"
+                      }`}
+                    >
+                      {g === "none" ? "Flat" : g}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center gap-0.5 rounded-lg border border-ink-800 bg-ink-900/80 p-0.5">
                 {(["notes", "activity"] as const).map((sc) => (
                   <button
@@ -625,7 +654,14 @@ export default function SearchView({
                   selectedId || previewNote ? "xl:grid-cols-2" : "md:grid-cols-2"
                 }`}
               >
-                {activeList.map((n) => (
+                {groups.map((g) => (
+                 <div key={g.key} className={g.label ? "space-y-2" : ""}>
+                  {g.label && (
+                    <h3 className="micro-label !text-[9.5px] pt-1">
+                      {g.label} · {g.items.length}
+                    </h3>
+                  )}
+                  {g.items.map((n) => (
                   <div
                     key={n.id}
                     onMouseEnter={() => setPreviewId(n.id)}
@@ -673,6 +709,8 @@ export default function SearchView({
                       }
                     />
                   </div>
+                  ))}
+                 </div>
                 ))}
               </div>
 
