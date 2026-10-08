@@ -49,23 +49,74 @@ function weeksOf(grid: HeatmapData): Array<Array<HeatmapCell | null>> {
 }
 
 export default function ActivityHeatmap({ onOpenDay }: { onOpenDay?: (day: string) => void }) {
+  const [metric, setMetric] = useState<"activity" | "notes" | "tasks">("activity");
   const [grid, setGrid] = useState<HeatmapData | null>(null);
 
   useEffect(() => {
-    api.activityHeatmap(12).then(setGrid).catch(() => setGrid(null));
-  }, []);
+    api.activityHeatmap(12, undefined, metric).then(setGrid).catch(() => setGrid(null));
+  }, [metric]);
 
   const columns = useMemo(() => (grid ? weeksOf(grid) : []), [grid]);
 
   if (!grid) return null;
 
+  const sectionLabel =
+    metric === "notes"
+      ? "Notes created by day"
+      : metric === "tasks"
+      ? "Tasks completed by day"
+      : "Active minutes by day";
+
+  const peakDisplay =
+    metric === "notes"
+      ? `peak ${grid.peak_minutes} notes`
+      : metric === "tasks"
+      ? `peak ${grid.peak_minutes} tasks`
+      : `peak ${Math.floor(grid.peak_minutes / 60)}h`;
+
+  const cellTitle = (day: string, count: number) => {
+    if (metric === "notes") return `${day}: ${count} notes`;
+    if (metric === "tasks") return `${day}: ${count} tasks`;
+    return `${day}: ${count} min`;
+  };
+
+  const cellAria = (day: string, count: number) => {
+    if (metric === "notes") return `${day}: ${count} notes`;
+    if (metric === "tasks") return `${day}: ${count} tasks`;
+    return `${day}: ${count} minutes`;
+  };
+
   return (
-    <section className="glass-studio rounded-2xl p-4" aria-label="Active minutes by day">
-      <div className="mb-2 flex items-baseline justify-between">
-        <p className="micro-label">Calendar — active minutes</p>
-        <span className="font-mono text-[10px] text-ink-500">
-          peak {Math.floor(grid.peak_minutes / 60)}h
-        </span>
+    <section className="glass-studio rounded-2xl p-4" aria-label={sectionLabel}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-1">
+        <div className="flex items-center gap-2">
+          <p className="micro-label">
+            Calendar — {metric === "notes" ? "notes created" : metric === "tasks" ? "tasks completed" : "active minutes"}
+          </p>
+          <div className="flex rounded-md border border-white/[0.06] bg-ink-950/80 p-0.5 text-[9.5px]">
+            {(
+              [
+                ["activity", "Time"],
+                ["notes", "Notes"],
+                ["tasks", "Tasks"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                data-testid={`heatmap-metric-${m}`}
+                onClick={() => setMetric(m)}
+                className={`rounded-sm px-1.5 py-0.5 font-medium transition-colors ${
+                  metric === m
+                    ? "bg-ember-500/20 font-semibold text-ember-300"
+                    : "text-ink-400 hover:text-ink-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <span className="font-mono text-[10px] text-ink-500">{peakDisplay}</span>
       </div>
       <div className="flex gap-1">
         <div className="flex flex-col justify-between pr-1 pt-0.5">
@@ -85,8 +136,8 @@ export default function ActivityHeatmap({ onOpenDay }: { onOpenDay?: (day: strin
                   <button
                     key={cell.day}
                     onClick={onOpenDay ? () => onOpenDay(cell.day) : undefined}
-                    title={`${cell.day}: ${cell.minutes} min`}
-                    aria-label={`${cell.day}: ${cell.minutes} minutes`}
+                    title={cellTitle(cell.day, cell.minutes)}
+                    aria-label={cellAria(cell.day, cell.minutes)}
                     className={`h-2.5 w-2.5 rounded-[2px] ${RAMP[step(cell.minutes, grid.peak_minutes)]}`}
                   />
                 );

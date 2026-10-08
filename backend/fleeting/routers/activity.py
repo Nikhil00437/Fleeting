@@ -346,12 +346,20 @@ def metric_compare(
 
 @router.get("/metrics/heatmap")
 def metric_heatmap(
-    request: Request, weeks: int = Query(12, ge=1, le=52), end: str | None = None
+    request: Request,
+    weeks: int = Query(12, ge=1, le=52),
+    end: str | None = None,
+    metric: str = Query("activity", pattern="^(activity|notes|tasks)$"),
 ) -> dict:
-    """#59 calendar grid of active minutes."""
+    """#59, #252 calendar grid of active minutes, notes created or tasks completed."""
     from ..services.metrics import heatmap
 
-    return heatmap(request.app.state.st.db, weeks=weeks, end=_valid_day(end) if end else None)
+    return heatmap(
+        request.app.state.st.db,
+        weeks=weeks,
+        end=_valid_day(end) if end else None,
+        metric=metric,
+    )
 
 
 @router.get("/focus-score")

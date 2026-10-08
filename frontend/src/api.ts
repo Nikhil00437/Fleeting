@@ -515,10 +515,15 @@ export const api = {
     req<TodayVsAverage>(
       `/activity/metrics/compare${new URLSearchParams({ ...(day ? { day } : {}), window: String(window) }).toString()}`,
     ),
-  activityHeatmap: (weeks = 12, end?: string) =>
-    req<HeatmapData>(
-      `/activity/metrics/heatmap${new URLSearchParams({ weeks: String(weeks), ...(end ? { end } : {}) }).toString()}`,
-    ),
+  activityHeatmap: (
+    weeks = 12,
+    end?: string,
+    metric: "activity" | "notes" | "tasks" = "activity",
+  ) => {
+    const sp = new URLSearchParams({ weeks: String(weeks), metric });
+    if (end) sp.set("end", end);
+    return req<HeatmapData>(`/activity/metrics/heatmap?${sp.toString()}`);
+  },
 
   /** #57 daily focus score (0-100) and trend */
   focusScore: (day?: string) =>

@@ -83,25 +83,66 @@ def today_vs_average(db: Database, day: str, *, window: int = 7) -> dict:
     }
 
 
-def heatmap(db: Database, *, weeks: int = 12, end: str | None = None) -> dict:
-    """#59 a calendar grid of active minutes, one cell per day.
+def heatmap(
+    db: Database,
+    *,
+    weeks: int = 12,
+    end: str | None = None,
+    metric: str = "activity",
+) -> dict:
+    """#59, #252 calendar grid of active minutes, notes created or tasks completed.
 
-    Cells are `YYYY-MM-DD` keys with a minute count; the UI decides the colour
+    Cells are `YYYY-MM-DD` keys with a count; the UI decides the colour
     ramp, so there is exactly one place to change how "busy" looks.
     """
     end_day = date.fromisoformat(end) if end else datetime.now().astimezone().date()
     start_day = end_day - timedelta(days=weeks * 7 - 1)
-    rows = db.execute(
-        "SELECT day, SUM(seconds) AS seconds FROM activity"
-        " WHERE day >= ? AND day <= ? AND seconds >= 1 GROUP BY day",
-        (start_day.isoformat(), end_day.isoformat()),
-    ).fetchall()
+
+    if metric == "notes":
+        rows = db.execute(
+            """
+            SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
+            FROM notes
+            WHERE trashed_at IS NULL
+              AND date(created_at, 'localtime') >= ?
+              AND date(created_at, 'localtime') <= ?
+            GROUP BY date(created_at, 'localtime')
+            """,
+            (start_day.isoformat(), end_day.isoformat()),
+        ).fetchall()
+        cells = [{"day": r["day"], "minutes": r["count"], "value": r["count"]} for r in rows]
+        peak = max([r["count"] for r in rows], default=0)
+    elif metric == "tasks":
+        rows = db.execute(
+            """
+            SELECT date(completed_at, 'localtime') AS day, COUNT(*) AS count
+            FROM tasks
+            WHERE done = 1
+              AND completed_at IS NOT NULL
+              AND date(completed_at, 'localtime') >= ?
+              AND date(completed_at, 'localtime') <= ?
+            GROUP BY date(completed_at, 'localtime')
+            """,
+            (start_day.isoformat(), end_day.isoformat()),
+        ).fetchall()
+        cells = [{"day": r["day"], "minutes": r["count"], "value": r["count"]} for r in rows]
+        peak = max([r["count"] for r in rows], default=0)
+    else:
+        rows = db.execute(
+            "SELECT day, SUM(seconds) AS seconds FROM activity"
+            " WHERE day >= ? AND day <= ? AND seconds >= 1 GROUP BY day",
+            (start_day.isoformat(), end_day.isoformat()),
+        ).fetchall()
+        cells = [{"day": r["day"], "minutes": round((r["seconds"] or 0) / 60), "value": round((r["seconds"] or 0) / 60)} for r in rows]
+        peak = max([round((r["seconds"] or 0) / 60) for r in rows], default=0)
+
     return {
         "from": start_day.isoformat(),
         "to": end_day.isoformat(),
         "weeks": weeks,
-        "cells": [{"day": r["day"], "minutes": round((r["seconds"] or 0) / 60)} for r in rows],
-        "peak_minutes": max([round((r["seconds"] or 0) / 60) for r in rows], default=0),
+        "metric": metric,
+        "cells": cells,
+        "peak_minutes": peak,
     }
 
 

@@ -60,6 +60,20 @@ describe("ActivityHeatmap (#59)", () => {
     await waitFor(() => expect(api.activityHeatmap).toHaveBeenCalled());
     expect(container.innerHTML).toBe("");
   });
+
+  it("switches metric between activity, notes and tasks (#252)", async () => {
+    const spy = vi.spyOn(api, "activityHeatmap").mockResolvedValue(grid());
+    render(<ActivityHeatmap />);
+    await screen.findByLabelText("2026-10-01: 300 minutes");
+
+    const notesBtn = screen.getByTestId("heatmap-metric-notes");
+    fireEvent.click(notesBtn);
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, undefined, "notes"));
+
+    const tasksBtn = screen.getByTestId("heatmap-metric-tasks");
+    fireEvent.click(tasksBtn);
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, undefined, "tasks"));
+  });
 });
 
 describe("FocusMetrics (#58, #62)", () => {

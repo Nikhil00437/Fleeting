@@ -474,13 +474,15 @@ export interface TodayVsAverage {
 export interface HeatmapCell {
   day: string;
   minutes: number;
+  value?: number;
 }
 
-/** #59 calendar grid of active minutes. */
+/** #59, #252 calendar grid of active minutes, notes created, or tasks completed. */
 export interface HeatmapData {
   from: string;
   to: string;
   weeks: number;
+  metric?: "activity" | "notes" | "tasks";
   cells: HeatmapCell[];
   peak_minutes: number;
 }
