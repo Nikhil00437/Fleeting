@@ -9,6 +9,7 @@ import CaptureFrequencyCard from "./CaptureFrequencyCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
+import WhatShippedModal from "./WhatShippedModal";
 import ReportComparison from "./ReportComparison";
 import type { Note } from "../types";
 
@@ -81,6 +82,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [showStandup, setShowStandup] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [showPlayground, setShowPlayground] = useState(false);
+  const [showWhatShipped, setShowWhatShipped] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
   const [compareDay, setCompareDay] = useState(() => shiftDay(todayLocal(), -1));
 
@@ -243,6 +245,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           >
             <BotIcon className="h-3.5 w-3.5 text-amber-400" />
             Playground
+          </button>
+          <button
+            onClick={() => setShowWhatShipped(true)}
+            data-testid="open-what-shipped-button"
+            className="flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-xs font-semibold text-ink-200 hover:border-emerald-400/40"
+            title="Weekly changelog combining commits, completed tasks, and notes (#166)"
+          >
+            <SparkIcon className="h-3.5 w-3.5 text-emerald-400" />
+            What Shipped
           </button>
         </div>
       </div>
@@ -747,6 +758,14 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           onClose={() => setShowPlayground(false)}
           onToast={onToast}
           initialDay={shiftDay(todayLocal(), -1)}
+        />
+      )}
+
+      {showWhatShipped && (
+        <WhatShippedModal
+          isOpen={showWhatShipped}
+          onClose={() => setShowWhatShipped(false)}
+          onToast={onToast}
         />
       )}
     </div>

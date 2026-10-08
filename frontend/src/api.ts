@@ -45,6 +45,7 @@ import type {
   UnfinishedThread,
   ReportPlaygroundResult,
   CaptureFrequencyStats,
+  WhatShippedOut,
 } from "./types";
 
 const BASE = "/api";
@@ -597,6 +598,15 @@ export const api = {
     req<{ ok: boolean; note: Note }>("/activity/review/save-as-note", {
       method: "POST",
       body: JSON.stringify({ kind, period, review_md, title }),
+    }),
+
+  /** #166 weekly "what shipped" view combining commits, tasks, and notes */
+  whatShipped: (week?: string) =>
+    req<WhatShippedOut>(`/activity/what-shipped${week ? `?week=${week}` : ""}`),
+  saveWhatShippedAsNote: (week: string, markdown: string, title?: string) =>
+    req<{ ok: boolean; note: Note }>("/activity/what-shipped/save-as-note", {
+      method: "POST",
+      body: JSON.stringify({ week, markdown, title }),
     }),
 
   /** #169 persistent unfinished threads list from reports. */

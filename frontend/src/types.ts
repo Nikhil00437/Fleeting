@@ -725,4 +725,34 @@ export interface CaptureFrequencyStats {
   }[];
 }
 
+export interface WhatShippedCommit {
+  repo: string;
+  subject: string;
+  author: string | null;
+  committed_at: string | null;
+}
+
+export interface WhatShippedOut {
+  week_start: string;
+  week_end: string;
+  commits: WhatShippedCommit[];
+  commits_by_repo: Record<string, WhatShippedCommit[]>;
+  completed_tasks: TaskItem[];
+  notes: {
+    id: string;
+    type: string;
+    title: string;
+    tags: string[];
+    created_at: string;
+  }[];
+  markdown: string;
+  counts: {
+    commits: number;
+    tasks: number;
+    notes: number;
+    total: number;
+  };
+}
+
+
 

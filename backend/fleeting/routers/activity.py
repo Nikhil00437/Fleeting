@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from ..activity import aggregate_day, app_blocked
 from ..config import expand_path
-from ..services import dailylog, periodic_review, standup, unfinished_threads, weeklylog
+from ..services import dailylog, periodic_review, standup, unfinished_threads, weeklylog, what_shipped
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 daily_router = APIRouter(prefix="/api/daily-log", tags=["daily-log"])
@@ -895,6 +895,39 @@ def convert_thread_to_task_endpoint(request: Request, body: dict) -> dict:
     task = unfinished_threads.convert_thread_to_task(st.db, thread_id, text)
     st.bus.publish("task.created", {"id": task["id"]})
     return {"ok": True, "task": task}
+
+
+@router.get("/what-shipped")
+def get_what_shipped_endpoint(request: Request, week: str | None = None) -> dict:
+    """#166 Weekly 'what shipped' view combining commits, tasks, and notes."""
+    st = request.app.state.st
+    return what_shipped.get_what_shipped(st.db, st.cfg, week_start=week)
+
+
+@router.post("/what-shipped/save-as-note")
+def save_what_shipped_as_note(request: Request, body: dict) -> dict:
+    """Save the weekly 'what shipped' changelog as a note."""
+    st = request.app.state.st
+    week = str(body.get("week") or "")
+    md = str(body.get("markdown") or "").strip()
+    if not md:
+        raise HTTPException(400, "markdown cannot be empty")
+    title = str(body.get("title") or (f"What Shipped — Week of {week}" if week else "What Shipped"))
+    tags = ["shipped", "weekly"]
+    if week:
+        tags.append(f"week/{week}")
+    note = st.db.insert_note(
+        {
+            "title": title,
+            "raw_text": md,
+            "type": "text",
+            "tags": tags,
+            "source": {"type": "what_shipped", "week": week},
+        }
+    )
+    st.bus.publish("note.created", {"id": note["id"]})
+    return {"ok": True, "note": note}
+
 
 
 
