@@ -6,6 +6,7 @@ import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
+import ReportComparison from "./ReportComparison";
 import type { Note } from "../types";
 
 interface Props {
@@ -76,6 +77,8 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [savingReflection, setSavingReflection] = useState(false);
   const [showStandup, setShowStandup] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareDay, setCompareDay] = useState(() => shiftDay(todayLocal(), -1));
 
   const isToday = day === todayLocal();
 
@@ -241,9 +244,20 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
       <OrphansCard onToast={onToast} refreshKey={refreshKey} />
     </div>
 
-    {/* Daily AI Report */}
+    {/* Daily AI Report or Side-by-Side Comparison (#71) */}
     <div className="xl:col-span-2">
-      <div className="glass-studio glow-border flex h-full flex-col rounded-2xl p-4">
+      {compareMode ? (
+        <ReportComparison
+          dayA={day}
+          dayB={compareDay}
+          onDayAChange={setDay}
+          onDayBChange={setCompareDay}
+          onClose={() => setCompareMode(false)}
+          onToast={onToast}
+          refreshKey={refreshKey}
+        />
+      ) : (
+        <div className="glass-studio glow-border flex h-full flex-col rounded-2xl p-4">
         <div className="mb-3 flex items-center gap-2.5 border-b border-white/[0.06] pb-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-iris-500/25 to-ember-500/20 text-iris-300 ring-1 ring-white/10">
             <BotIcon className="h-4 w-4" />
@@ -350,6 +364,15 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           >
             <SettingsIcon className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Options</span>
+          </button>
+          <button
+            onClick={() => setCompareMode(true)}
+            data-testid="toggle-compare-button"
+            className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-xs text-ink-300 transition-colors hover:border-white/20 hover:text-ink-100"
+            title="Compare with another day's report side-by-side (#71)"
+            aria-label="Compare side-by-side"
+          >
+            <span className="hidden sm:inline">Compare</span>
           </button>
           <button
             onClick={() => void generate()}
@@ -674,6 +697,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           </div>
         )}
       </div>
+      )}
     </div>
       </div>
 
