@@ -55,6 +55,12 @@ export const SearchIcon = ({ className = base }: IconProps) => (
   </svg>
 );
 
+export const PlusIcon = ({ className = base }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
 export const CheckIcon = ({ className = base }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="m4 12.5 5 5L20 6.5" />

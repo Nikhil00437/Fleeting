@@ -42,6 +42,7 @@ import type {
   TranscriptResult,
   StandupOut,
   PeriodicReviewOut,
+  UnfinishedThread,
 } from "./types";
 
 const BASE = "/api";
@@ -590,6 +591,20 @@ export const api = {
     req<{ ok: boolean; note: Note }>("/activity/review/save-as-note", {
       method: "POST",
       body: JSON.stringify({ kind, period, review_md, title }),
+    }),
+
+  /** #169 persistent unfinished threads list from reports. */
+  unfinishedThreads: () =>
+    req<UnfinishedThread[]>("/activity/unfinished-threads"),
+  resolveThread: (thread_id: string, action: "resolve" | "dismiss" = "resolve") =>
+    req<{ ok: boolean; thread_id: string; action: string }>("/activity/unfinished-threads/resolve", {
+      method: "POST",
+      body: JSON.stringify({ thread_id, action }),
+    }),
+  convertThreadToTask: (thread_id: string, text: string) =>
+    req<{ ok: boolean; task: TaskItem }>("/activity/unfinished-threads/convert-to-task", {
+      method: "POST",
+      body: JSON.stringify({ thread_id, text }),
     }),
 
   /** #74 export report as Markdown or PDF. */

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from ..activity import aggregate_day, app_blocked
 from ..config import expand_path
-from ..services import dailylog, periodic_review, standup, weeklylog
+from ..services import dailylog, periodic_review, standup, unfinished_threads, weeklylog
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 daily_router = APIRouter(prefix="/api/daily-log", tags=["daily-log"])
@@ -835,5 +835,38 @@ def save_periodic_review_as_note(request: Request, body: dict) -> dict:
     )
     st.bus.publish("note.created", {"id": note["id"]})
     return {"ok": True, "note": note}
+
+
+@router.get("/unfinished-threads")
+def get_threads_endpoint(request: Request) -> list[dict]:
+    """#169 Persistent unfinished threads list from reports."""
+    st = request.app.state.st
+    return unfinished_threads.get_unfinished_threads(st.db)
+
+
+@router.post("/unfinished-threads/resolve")
+def resolve_thread_endpoint(request: Request, body: dict) -> dict:
+    """Resolve or dismiss an unfinished thread."""
+    st = request.app.state.st
+    thread_id = str(body.get("thread_id") or "")
+    action = str(body.get("action") or "resolve")
+    if not thread_id:
+        raise HTTPException(400, "thread_id is required")
+    unfinished_threads.resolve_thread(st.db, thread_id, action)
+    return {"ok": True, "thread_id": thread_id, "action": action}
+
+
+@router.post("/unfinished-threads/convert-to-task")
+def convert_thread_to_task_endpoint(request: Request, body: dict) -> dict:
+    """Convert an unfinished thread to an actionable task."""
+    st = request.app.state.st
+    thread_id = str(body.get("thread_id") or "")
+    text = str(body.get("text") or "").strip()
+    if not thread_id or not text:
+        raise HTTPException(400, "thread_id and text are required")
+    task = unfinished_threads.convert_thread_to_task(st.db, thread_id, text)
+    st.bus.publish("task.created", {"id": task["id"]})
+    return {"ok": True, "task": task}
+
 
 

@@ -682,3 +682,15 @@ export interface PeriodicReviewOut {
     top_apps: { app_class: string; seconds: number }[];
   };
 }
+
+export interface UnfinishedThread {
+  id: string;
+  text: string;
+  source_day: string;
+  source_type: "daily_log" | "task";
+  task_id?: string;
+  created_at: string;
+  age_days: number;
+  waiting_for?: string | null;
+  blocked_by?: string | null;
+}

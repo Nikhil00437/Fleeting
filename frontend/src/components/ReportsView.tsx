@@ -4,6 +4,7 @@ import { renderMarkdown } from "../markdown";
 import { ActivityIcon, BotIcon, CopyIcon, EditIcon, ExportIcon, LinkIcon, SettingsIcon, SparkIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
+import UnfinishedThreadsCard from "./UnfinishedThreadsCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportComparison from "./ReportComparison";
@@ -242,6 +243,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #422 housekeeping */}
     <div className="xl:col-span-2">
       <OrphansCard onToast={onToast} refreshKey={refreshKey} />
+    </div>
+
+    {/* #169 persistent unfinished threads */}
+    <div className="xl:col-span-2">
+      <UnfinishedThreadsCard onToast={onToast} refreshKey={refreshKey} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}
