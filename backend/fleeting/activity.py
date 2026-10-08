@@ -42,6 +42,54 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 REDACTED = "\u00abredacted\u00bb"
 
 
+def resolve_app_class(db, app_class: str) -> str:
+    """#64: follow rename/merge aliases to the canonical class.
+
+    A cycle (a→b, b→a) is possible in a hand-edited table, so the walk is
+    bounded by the number of aliases rather than trusting the data.
+    """
+    aliases = db.app_aliases()
+    seen = {app_class}
+    current = app_class
+    while current in aliases:
+        nxt = aliases[current]
+        if nxt in seen:
+            log.warning("app alias cycle at %r; keeping %r", current, app_class)
+            break
+        seen.add(nxt)
+        current = nxt
+    return current
+
+
+def set_app_alias(db, from_class: str, to_class: str) -> None:
+    """Rename `from_class` to `to_class`, folding its history in.
+
+    Rewriting the rows is the point of a merge: leaving yesterday's
+    `firefox-esr` untouched would split the day in two, which is the exact
+    mess the rename exists to clean up. The activity FTS trigger keeps the
+    search index in step with the UPDATE.
+    """
+    from_class, to_class = from_class.strip(), to_class.strip()
+    if not from_class or not to_class:
+        raise ValueError("both app classes are required")
+    if from_class == to_class:
+        raise ValueError("source and target are the same")
+    db.execute(
+        "INSERT INTO app_aliases (from_class, to_class, updated_at) VALUES (?, ?, ?)"
+        " ON CONFLICT(from_class) DO UPDATE SET to_class=excluded.to_class,"
+        " updated_at=excluded.updated_at",
+        (from_class, to_class, _local_iso(_local_now())),
+    )
+    db.execute("UPDATE activity SET app_class = ? WHERE app_class = ?", (to_class, from_class))
+    db.commit()
+
+
+def delete_app_alias(db, from_class: str) -> bool:
+    cur = db.execute("DELETE FROM app_aliases WHERE from_class = ?", (from_class,))
+    db.commit()
+    return cur.rowcount > 0
+
+
 def git_context(cwd: str | os.PathLike[str]) -> tuple[str, str] | None:
     """#336 (repo dir name, branch) for a working directory, or None.
 
@@ -303,7 +351,13 @@ class ActivityCollector:
         self._last_cursor = cursor
         idle = self._idle_streak_secs >= self.cfg.idle_after_min * 60
 
-        if win is None or self._excluded(win["class"]):
+        if win is None:
+            self._close_current()
+            return
+        # #64 the app is renamed once, here, so the session key and every
+        # stored row agree on which app this was.
+        app_class = resolve_app_class(self.db, win["class"])
+        if self._excluded(app_class):
             self._close_current()
             return
 
@@ -315,7 +369,7 @@ class ActivityCollector:
         # accrue real elapsed time, clamped so suspend/resume or hiccups
         # don't credit one poll with hours
         max_step = self.cfg.poll_secs * 2
-        key = (win["class"], title)
+        key = (app_class, title)
         if self.current and (self.current["app_class"], self.current["title"]) == key:
             elapsed = (now - datetime.fromisoformat(self.current["last_seen"])).total_seconds()
             self.current["last_seen"] = _local_iso(now)
@@ -331,7 +385,7 @@ class ActivityCollector:
                 title, repo=ctx[0] if ctx else None, roots=self._watch_dirs
             )
             self.current = {
-                "app_class": win["class"],
+                "app_class": app_class,
                 "title": title,
                 "workspace": workspace,
                 "repo": ctx[0] if ctx else None,

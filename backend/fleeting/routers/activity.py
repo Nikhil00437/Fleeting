@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..activity import aggregate_day, app_blocked
 from ..config import expand_path
@@ -102,6 +102,43 @@ def set_app_tracked(request: Request, body: dict) -> dict:
         raise HTTPException(422, "app_class is required")
     st.db.set_app_rule(app_class, tracked)
     return {"app_class": app_class, "tracked": tracked}
+
+
+class AppAliasIn(BaseModel):
+    from_class: str = Field(min_length=1, max_length=120)
+    to_class: str = Field(min_length=1, max_length=120)
+
+
+@router.get("/apps/aliases")
+def app_aliases(request: Request) -> list[dict]:
+    """#64 renamed/merged classes."""
+    db = request.app.state.st.db
+    return [
+        {"from_class": k, "to_class": v}
+        for k, v in sorted(db.app_aliases().items())
+    ]
+
+
+@router.post("/apps/alias")
+def set_app_alias(request: Request, body: AppAliasIn) -> dict:
+    """#64 rename or merge an app. Rewrites its history in the same call."""
+    from ..activity import set_app_alias as apply_alias
+
+    db = request.app.state.st.db
+    try:
+        apply_alias(db, body.from_class.strip(), body.to_class.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, **body.model_dump()}
+
+
+@router.delete("/apps/alias/{from_class}", status_code=204)
+def delete_app_alias(request: Request, from_class: str) -> None:
+    """Stops future renaming; already-merged history stays merged."""
+    from ..activity import delete_app_alias as drop_alias
+
+    if not drop_alias(request.app.state.st.db, from_class):
+        raise HTTPException(status_code=404, detail="alias not found")
 
 
 @router.get("/week")

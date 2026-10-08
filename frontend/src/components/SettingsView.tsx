@@ -425,7 +425,15 @@ export default function SettingsView({
           )}
 
           {tab === "apps" && (
-            <AppsTab apps={apps} toggleApp={toggleApp} bulkSetApps={bulkSetApps} />
+            <AppsTab
+              apps={apps}
+              toggleApp={toggleApp}
+              bulkSetApps={bulkSetApps}
+              refresh={() => {
+                api.knownApps().then(setApps).catch(() => {});
+              }}
+              onToast={onToast}
+            />
           )}
 
           {tab === "vault" && (

@@ -453,6 +453,16 @@ export const api = {
 
   knownApps: () => req<AppRule[]>("/activity/apps"),
 
+  /** #64 rename/merge app classes (rewrites their history). */
+  appAliases: () => req<{ from_class: string; to_class: string }[]>("/activity/apps/aliases"),
+  setAppAlias: (from_class: string, to_class: string) =>
+    req<{ ok: boolean }>("/activity/apps/alias", {
+      method: "POST",
+      body: JSON.stringify({ from_class, to_class }),
+    }),
+  deleteAppAlias: (from_class: string) =>
+    req<void>(`/activity/apps/alias/${encodeURIComponent(from_class)}`, { method: "DELETE" }),
+
   setAppTracked: (app_class: string, tracked: boolean) =>
     req<{ app_class: string; tracked: boolean }>("/activity/apps/tracked", {
       method: "POST",

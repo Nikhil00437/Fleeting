@@ -1,18 +1,63 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SearchIcon, XIcon } from "../Icons";
 import { StackBar } from "../charts";
 import { appColor, appMonogram, fmtSecs, prettyAppName } from "../../apps";
 import { Toggle } from "./shared";
+import { api } from "../../api";
 import type { AppRule } from "../../types";
 
 interface Props {
   apps: AppRule[] | null;
   toggleApp: (app: AppRule) => Promise<void>;
   bulkSetApps: (tracked: boolean, targets: AppRule[]) => Promise<void>;
+  /** Re-reads the app list after a merge changed which classes exist. */
+  refresh?: () => void;
+  onToast?: (message: string, kind?: "ok" | "err") => void;
 }
 
 /** App Rules tab: per-app tracing switches with bulk trace/mute. */
-export default function AppsTab({ apps, toggleApp, bulkSetApps }: Props) {
+export default function AppsTab({ apps, toggleApp, bulkSetApps, refresh, onToast }: Props) {
+  // #64 rename/merge: two classes that are really one app split your day in
+  // half, so merging rewrites history instead of only the future.
+  const [aliases, setAliases] = useState<{ from_class: string; to_class: string }[]>([]);
+  const [mergeFrom, setMergeFrom] = useState("");
+  const [mergeInto, setMergeInto] = useState("");
+
+  const loadAliases = () => {
+    api.appAliases().then(setAliases).catch(() => setAliases([]));
+  };
+  useEffect(loadAliases, []);
+
+  const merge = () => {
+    const from = mergeFrom.trim();
+    const to = mergeInto.trim();
+    if (!from || !to || from === to) {
+      onToast?.("Pick two different apps to merge", "err");
+      return;
+    }
+    api
+      .setAppAlias(from, to)
+      .then(() => {
+        onToast?.(`Merged ${from} into ${to}`);
+        setMergeFrom("");
+        setMergeInto("");
+        loadAliases();
+        refresh?.();
+      })
+      .catch((e) => onToast?.(e instanceof Error ? e.message : String(e), "err"));
+  };
+
+  const unmerge = (from: string) => {
+    api
+      .deleteAppAlias(from)
+      .then(() => {
+        onToast?.(`${from} will report under its own name again`);
+        loadAliases();
+        refresh?.();
+      })
+      .catch((e) => onToast?.(e instanceof Error ? e.message : String(e), "err"));
+  };
+
   const [appQuery, setAppQuery] = useState("");
   const [appFilter, setAppFilter] = useState<"all" | "traced" | "muted">("all");
   const [appSort, setAppSort] = useState<"time" | "sessions" | "name">("time");
@@ -165,6 +210,63 @@ export default function AppsTab({ apps, toggleApp, bulkSetApps }: Props) {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* #64 rename & merge */}
+          <div className="glass-studio rounded-2xl p-4">
+            <h2 className="text-sm font-semibold text-ink-100">Rename &amp; Merge Apps</h2>
+            <p className="text-xs text-ink-400">
+              Two classes that are really one app (firefox and firefox-esr) split your day in
+              half. Merging folds the older history into the target name.
+            </p>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <select
+                value={mergeFrom}
+                onChange={(e) => setMergeFrom(e.target.value)}
+                aria-label="App to rename"
+                className="h-8 rounded-xl border border-ink-800 bg-ink-950 px-2 text-xs text-ink-100"
+              >
+                <option value="">App to rename…</option>
+                {(apps ?? []).map((a) => (
+                  <option key={a.app_class} value={a.app_class}>
+                    {a.app_class}
+                  </option>
+                ))}
+              </select>
+              <span className="text-ink-500">into</span>
+              <input
+                value={mergeInto}
+                onChange={(e) => setMergeInto(e.target.value)}
+                placeholder="canonical name"
+                aria-label="Canonical app name"
+                className="h-8 w-48 rounded-xl border border-ink-800 bg-ink-950 px-2 text-xs text-ink-100 placeholder-ink-500"
+              />
+              <button
+                onClick={merge}
+                className="h-8 rounded-xl border border-ember-500/30 bg-ember-500/10 px-3 text-xs text-ember-300 hover:bg-ember-500/20"
+              >
+                Merge
+              </button>
+            </div>
+            {aliases.length > 0 && (
+              <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                {aliases.map((a) => (
+                  <li
+                    key={a.from_class}
+                    className="flex items-center gap-1.5 rounded-lg border border-ink-800 bg-ink-900/60 px-2 py-1 font-mono text-[10.5px] text-ink-300"
+                  >
+                    {a.from_class} → {a.to_class}
+                    <button
+                      onClick={() => unmerge(a.from_class)}
+                      aria-label={`Undo merge of ${a.from_class}`}
+                      className="text-ink-500 hover:text-red-300"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {apps === null ? (

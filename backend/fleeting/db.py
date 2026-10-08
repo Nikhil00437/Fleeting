@@ -374,6 +374,15 @@ MIGRATIONS: list[str] = [
       applied_at TEXT NOT NULL
     );
     """,
+    # v21 — #64 per-app rename and merge. One row per renamed class; the
+    # collector resolves new sessions through it and the merge rewrites
+    # history, so a day is never split across two spellings of one app.
+    """CREATE TABLE IF NOT EXISTS app_aliases (
+      from_class TEXT PRIMARY KEY,
+      to_class TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -1112,6 +1121,11 @@ class Database:
         """app_class -> tracked? Only apps with an explicit rule appear."""
         rows = self.execute("SELECT app_class, tracked FROM app_rules").fetchall()
         return {r["app_class"]: bool(r["tracked"]) for r in rows}
+
+    def app_aliases(self) -> dict[str, str]:
+        """#64 renamed/merged app classes: original -> canonical."""
+        rows = self.execute("SELECT from_class, to_class FROM app_aliases").fetchall()
+        return {r["from_class"]: r["to_class"] for r in rows}
 
     def set_app_rule(self, app_class: str, tracked: bool) -> None:
         self.execute(
