@@ -49,6 +49,8 @@ import type {
   ProjectSummary,
   ProjectDashboard,
   EstimateAccuracyData,
+  DailyFocusScore,
+  FocusScoreTrend,
 } from "./types";
 
 const BASE = "/api";
@@ -517,6 +519,15 @@ export const api = {
     req<HeatmapData>(
       `/activity/metrics/heatmap${new URLSearchParams({ weeks: String(weeks), ...(end ? { end } : {}) }).toString()}`,
     ),
+
+  /** #57 daily focus score (0-100) and trend */
+  focusScore: (day?: string) =>
+    req<DailyFocusScore>(`/activity/focus-score${day ? `?day=${day}` : ""}`),
+  focusScoreTrend: (days = 14, end?: string) => {
+    const sp = new URLSearchParams({ days: String(days) });
+    if (end) sp.set("end", end);
+    return req<FocusScoreTrend>(`/activity/focus-score/trend?${sp.toString()}`);
+  },
 
   /** #342 session rows or a day×project timesheet, as CSV. */
   activityExportUrl: (format: "csv" | "timesheet", params: { day?: string; day_from?: string; day_to?: string }) => {

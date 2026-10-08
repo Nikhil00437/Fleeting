@@ -7,6 +7,7 @@ import OrphansCard from "./OrphansCard";
 import UnfinishedThreadsCard from "./UnfinishedThreadsCard";
 import CaptureFrequencyCard from "./CaptureFrequencyCard";
 import EstimateAccuracyCard from "./EstimateAccuracyCard";
+import FocusScoreCard from "./FocusScoreCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -293,6 +294,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #170 time-estimate accuracy */}
     <div className="xl:col-span-2">
       <EstimateAccuracyCard refreshKey={refreshKey} />
+    </div>
+
+    {/* #57 daily focus score trend */}
+    <div className="xl:col-span-2">
+      <FocusScoreCard refreshKey={refreshKey} onSelectDay={setDay} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}

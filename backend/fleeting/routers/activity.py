@@ -354,6 +354,29 @@ def metric_heatmap(
     return heatmap(request.app.state.st.db, weeks=weeks, end=_valid_day(end) if end else None)
 
 
+@router.get("/focus-score")
+@router.get("/metrics/focus-score")
+def metric_focus_score(request: Request, day: str | None = None) -> dict:
+    """#57 daily focus score (0-100)."""
+    from ..services.metrics import daily_focus_score
+
+    return daily_focus_score(request.app.state.st.db, _valid_day(day or _local_today()))
+
+
+@router.get("/focus-score/trend")
+@router.get("/metrics/focus-score/trend")
+def metric_focus_score_trend(
+    request: Request, days: int = Query(14, ge=1, le=365), end: str | None = None
+) -> dict:
+    """#57 daily focus score shown as a trend."""
+    from ..services.metrics import focus_score_trend
+
+    return focus_score_trend(
+        request.app.state.st.db, days=days, end_day=_valid_day(end) if end else None
+    )
+
+
+
 @router.post("/ask")
 async def ask_about_window(request: Request, body: WindowAskIn) -> dict:
     """#63 what was I doing between these two times?"""

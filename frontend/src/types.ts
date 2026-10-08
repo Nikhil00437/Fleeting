@@ -214,6 +214,30 @@ export interface ProjectSummary {
   last_active: string | null;
 }
 
+export interface DailyFocusScore {
+  day: string;
+  score: number;
+  grade: "Deep Focus" | "Productive" | "Moderate" | "Scattered" | "Rest / Inactive";
+  total_seconds: number;
+  components: {
+    duration: number;
+    stretch: number;
+    project: number;
+  };
+  switches: number;
+  seconds_per_switch: number | null;
+  project_seconds: number;
+}
+
+export interface FocusScoreTrend {
+  days: DailyFocusScore[];
+  average_score: number;
+  streak_days: number;
+  direction: "improving" | "declining" | "stable";
+  active_days_count: number;
+  best_day: { day: string; score: number } | null;
+}
+
 export interface EstimateAccuracyTask {
   id: string;
   text: string;
