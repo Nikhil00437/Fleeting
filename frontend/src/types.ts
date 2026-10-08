@@ -299,6 +299,32 @@ export interface TaskFunnelData {
   >;
 }
 
+export interface BurndownSeriesPoint {
+  day: string;
+  tasks_added: number;
+  tasks_completed: number;
+  captures_added: number;
+  captures_resolved: number;
+  added: number;
+  resolved: number;
+  net: number;
+  open_backlog: number;
+  ideal_burndown: number;
+}
+
+export interface BurndownData {
+  window_days: number;
+  current_backlog: number;
+  current_open_tasks: number;
+  current_pending_captures: number;
+  total_added: number;
+  total_resolved: number;
+  avg_daily_resolved: number;
+  days_to_zero: number | null;
+  projected_date: string | null;
+  series: BurndownSeriesPoint[];
+}
+
 export interface ProjectDashboardCommit {
   repo: string;
   subject: string;

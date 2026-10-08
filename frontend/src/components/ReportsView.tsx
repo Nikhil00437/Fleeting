@@ -9,6 +9,7 @@ import CaptureFrequencyCard from "./CaptureFrequencyCard";
 import EstimateAccuracyCard from "./EstimateAccuracyCard";
 import FocusScoreCard from "./FocusScoreCard";
 import TaskFunnelCard from "./TaskFunnelCard";
+import BurndownChartCard from "./BurndownChartCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -305,6 +306,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #250 task conversion funnel */}
     <div className="xl:col-span-2">
       <TaskFunnelCard refreshKey={refreshKey} />
+    </div>
+
+    {/* #423 backlog burndown chart */}
+    <div className="xl:col-span-2">
+      <BurndownChartCard refreshKey={refreshKey} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}

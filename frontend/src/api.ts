@@ -52,6 +52,7 @@ import type {
   DailyFocusScore,
   FocusScoreTrend,
   TaskFunnelData,
+  BurndownData,
 } from "./types";
 
 const BASE = "/api";
@@ -402,6 +403,10 @@ export const api = {
   /** #250 task conversion funnel: captured -> planned -> started -> completed */
   taskFunnel: (days?: number) =>
     req<TaskFunnelData>(days ? `/tasks/funnel?days=${days}` : "/tasks/funnel"),
+
+  /** #423 backlog burndown chart: added vs resolved & running backlog */
+  burndown: (days: number = 30) =>
+    req<BurndownData>(`/tasks/burndown?days=${days}`),
 
   /** #38 weekly review input: slipped / due this week / closed. */
   /** #40: render tasks as todo.txt or a Markdown checklist (also files it in the vault). */

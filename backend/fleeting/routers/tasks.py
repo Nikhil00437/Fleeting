@@ -385,6 +385,17 @@ def get_task_funnel_endpoint(
     return get_task_funnel(request.app.state.st.db, days=days)
 
 
+@router.get("/burndown")
+def get_task_burndown_endpoint(
+    request: Request,
+    days: int = Query(30, ge=3, le=180, description="Window in days (3-180)"),
+) -> dict:
+    """#423 backlog burndown chart for unprocessed items and open tasks."""
+    from ..services.burndown import get_backlog_burndown
+
+    return get_backlog_burndown(request.app.state.st.db, days=days)
+
+
 
 @router.get("/{task_id}", response_model=TaskOut)
 def get_task(task_id: str, request: Request) -> TaskOut:
