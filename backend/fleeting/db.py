@@ -973,18 +973,22 @@ class Database:
         Commits immediately: the collector writes from a worker thread whose
         connection is separate from request handlers.
         """
+        # workspace/project/idle_secs are set when the session opens; the
+        # UPDATE deliberately leaves them alone so a poll can never rewrite
+        # the context the session was opened with.
         if row.get("id") is not None:
             self.execute(
                 "UPDATE activity SET app_class=:app_class, title=:title, first_seen=:first_seen,"
-                " last_seen=:last_seen, seconds=:seconds, day=:day WHERE id=:id",
-                row,
+                " last_seen=:last_seen, seconds=:seconds, day=:day, idle_secs=:idle_secs WHERE id=:id",
+                {**row, "idle_secs": row.get("idle_secs", 0)},
             )
             self.commit()
             return int(row["id"])
         cur = self.execute(
-            "INSERT INTO activity (app_class, title, first_seen, last_seen, seconds, day)"
-            " VALUES (:app_class, :title, :first_seen, :last_seen, :seconds, :day)",
-            row,
+            "INSERT INTO activity (app_class, title, first_seen, last_seen, seconds, day,"
+            " workspace, idle_secs) VALUES (:app_class, :title, :first_seen, :last_seen,"
+            " :seconds, :day, :workspace, :idle_secs)",
+            {**row, "workspace": row.get("workspace"), "idle_secs": row.get("idle_secs", 0)},
         )
         self.commit()
         return int(cur.lastrowid)

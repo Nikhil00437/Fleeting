@@ -64,7 +64,7 @@ def _local_iso(dt: datetime) -> str:
 
 
 def probe_hyprland() -> tuple[dict | None, tuple[int, int] | None]:
-    """Default probe: (active window {class,title} | None, cursor (x,y) | None)."""
+    """Default probe: (active window {class,title,workspace} | None, cursor | None)."""
     win = None
     cursor = None
     try:
@@ -76,6 +76,19 @@ def probe_hyprland() -> tuple[dict | None, tuple[int, int] | None]:
             win = {"class": str(data["class"]), "title": str(data.get("title") or "")[:TITLE_MAX]}
     except (subprocess.SubprocessError, ValueError, OSError):
         pass
+    # #338 the workspace is a property of the window, not the session, and it
+    # costs one more hyprcall; a failure here must not cost the window itself.
+    if win is not None:
+        try:
+            ws = json.loads(
+                subprocess.run(
+                    ["hyprctl", "-j", "activeworkspace"], capture_output=True, timeout=5
+                ).stdout.decode(errors="replace")
+            )
+            if isinstance(ws, dict) and ws.get("id") is not None:
+                win["workspace"] = str(ws["id"])
+        except (subprocess.SubprocessError, ValueError, OSError):
+            pass
     try:
         out = subprocess.run(["hyprctl", "cursorpos"], capture_output=True, timeout=5).stdout.decode()
         x, y = out.split(",")
@@ -269,6 +282,7 @@ class ActivityCollector:
         # #66: redact before anything reaches the session dict or the DB, so
         # the raw title is never persisted and never sits in memory longer.
         title = redact_title(win.get("title") or "", self._redact)[:TITLE_MAX]
+        workspace = win.get("workspace")
 
         # accrue real elapsed time, clamped so suspend/resume or hiccups
         # don't credit one poll with hours
@@ -285,6 +299,7 @@ class ActivityCollector:
             self.current = {
                 "app_class": win["class"],
                 "title": title,
+                "workspace": workspace,
                 "first_seen": _local_iso(now),
                 "last_seen": _local_iso(now),
                 "seconds": 0,
@@ -304,6 +319,9 @@ class ActivityCollector:
             "last_seen": session["last_seen"],
             "seconds": session["seconds"],
             "day": session["first_seen"][:10],
+            # #338 pinned at session start: a workspace switch mid-session is
+            # history that already happened on the old workspace.
+            "workspace": (str(session["workspace"]) if session.get("workspace") is not None else None),
         }
 
     def _close_current(self) -> None:
