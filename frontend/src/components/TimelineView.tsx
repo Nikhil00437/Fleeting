@@ -100,6 +100,8 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   const [rangeDays, setRangeDays] = useState<7 | 14 | 30>(7);
   const [trendMode, setTrendMode] = useState<"bars" | "area">("bars");
   const [week, setWeek] = useState<{ day: string; seconds: number }[]>([]);
+  // #53 time per project for the shown day.
+  const [projects, setProjects] = useState<{ project: string | null; seconds: number }[]>([]);
 
   // Interactive cross-filters
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
@@ -124,6 +126,13 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   useEffect(() => {
     api.activityWeek(rangeDays).then(setWeek).catch(() => {});
   }, [rangeDays, refreshKey]);
+
+  useEffect(() => {
+    api
+      .activityProjects(day)
+      .then((r) => setProjects(r.projects))
+      .catch(() => setProjects([]));
+  }, [day, refreshKey]);
 
   useEffect(() => {
     setSelectedHour(null);
@@ -459,6 +468,26 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                 </button>
               )}
             </div>
+
+            {/* #53 projects — detected at write time, so this is what was
+                actually worked on, not a re-read of today's titles */}
+            {projects.length > 0 && (
+              <div className="mb-3 border-t border-white/[0.06] pt-3">
+                <p className="micro-label mb-1.5">Projects</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {projects.slice(0, 8).map((p) => (
+                    <span
+                      key={p.project ?? "(none)"}
+                      className="rounded-lg border border-ink-800 bg-ink-900/60 px-2 py-1 font-mono text-[10.5px] text-ink-200"
+                      title={`${p.project ?? "unlabelled"} — ${fmtSecs(p.seconds)}`}
+                    >
+                      {p.project ?? "unlabelled"}
+                      <span className="ml-1.5 text-ink-400">{fmtSecs(p.seconds)}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {apps.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">

@@ -429,6 +429,12 @@ export const api = {
   activityDay: (day?: string) =>
     req<ActivityDay>(`/activity/day${day ? `?day=${day}` : ""}`),
 
+  /** #53 time per project for a day. */
+  activityProjects: (day?: string) =>
+    req<{ day: string; projects: { project: string | null; seconds: number }[] }>(
+      `/activity/projects${day ? `?day=${day}` : ""}`,
+    ),
+
   activityWeek: (days = 7) => req<{ day: string; seconds: number }[]>(`/activity/week?days=${days}`),
 
   liveSession: () => req<{ session: ActivitySession | null; paused: boolean }>("/activity/live"),
