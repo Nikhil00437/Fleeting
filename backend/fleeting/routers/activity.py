@@ -232,6 +232,21 @@ def session_annotations(request: Request, day: str) -> list[dict]:
     return annotated(request.app.state.st.db, _valid_day(day))
 
 
+@router.get("/timeline")
+def activity_timeline(
+    request: Request, day: str | None = None, kinds: str = "session,task,note"
+) -> dict:
+    """#339 what you did, finished and wrote, merged into one feed."""
+    from ..services.timeline import day_events
+
+    wanted = tuple(k.strip() for k in kinds.split(",") if k.strip())
+    unknown = [k for k in wanted if k not in ("session", "task", "note")]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"unknown kinds: {', '.join(unknown)}")
+    day = _valid_day(day or _local_today())
+    return {"day": day, "events": day_events(request.app.state.st.db, day, kinds=wanted)}
+
+
 @router.get("/gaps")
 def activity_gaps(
     request: Request, day: str | None = None, min_minutes: int = Query(45, ge=5, le=720)
