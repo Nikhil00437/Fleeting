@@ -1092,11 +1092,20 @@ class Database:
             result.append(d)
         return result
 
-    def upsert_daily_log(self, day: str, summary_md: str, model: str) -> None:
+    def upsert_daily_log(
+        self, day: str, summary_md: str, model: str, *, evidence: str | None = None
+    ) -> None:
         self.execute(
-            "INSERT INTO daily_logs (day, summary_md, model, created_at) VALUES (:day, :md, :model, :ts)"
-            " ON CONFLICT(day) DO UPDATE SET summary_md=:md, model=:model, created_at=:ts",
-            {"day": day, "md": summary_md, "model": model, "ts": now_iso()},
+            """
+            INSERT INTO daily_logs (day, summary_md, model, created_at, evidence)
+            VALUES (:day, :md, :model, :ts, :evidence)
+            ON CONFLICT(day) DO UPDATE SET
+                summary_md = :md,
+                model = :model,
+                created_at = :ts,
+                evidence = COALESCE(:evidence, daily_logs.evidence)
+            """,
+            {"day": day, "md": summary_md, "model": model, "ts": now_iso(), "evidence": evidence},
         )
         self.commit()
 

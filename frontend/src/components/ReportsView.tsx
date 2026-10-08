@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../markdown";
-import { ActivityIcon, BotIcon, CopyIcon, EditIcon } from "./Icons";
+import { ActivityIcon, BotIcon, CopyIcon, EditIcon, LinkIcon } from "./Icons";
 import WeeklyDigestCard from "./WeeklyDigestCard";
 import OrphansCard from "./OrphansCard";
 
@@ -55,6 +55,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [evidenceMode, setEvidenceMode] = useState(false);
 
   const isToday = day === todayLocal();
 
@@ -232,6 +233,21 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
               >
                 <CopyIcon className="h-3.5 w-3.5" />
               </button>
+              {Boolean(log.evidence && log.evidence.length > 0) && (
+                <button
+                  onClick={() => setEvidenceMode(!evidenceMode)}
+                  className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs transition-colors ${
+                    evidenceMode
+                      ? "border-iris-400/50 bg-iris-500/15 text-iris-300 ring-1 ring-iris-500/30"
+                      : "border-white/10 bg-white/[0.03] text-ink-300 hover:border-white/20 hover:text-ink-100"
+                  }`}
+                  title="Evidence mode: expand sentences and sections to their source telemetry (#73, #350)"
+                  aria-label="Toggle evidence mode"
+                >
+                  <LinkIcon className="h-3 w-3" />
+                  <span className="hidden sm:inline">Evidence</span>
+                </button>
+              )}
             </>
           )}
           <button
@@ -307,6 +323,84 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
               __html: renderMarkdown(cleanDigestMarkdown(log.edited_body ?? log.summary_md)),
             }}
           />
+        )}
+
+        {!generating && !editing && evidenceMode && log?.evidence && log.evidence.length > 0 && (
+          <div className="mt-3 rounded-xl border border-iris-500/20 bg-iris-950/20 p-3 text-xs" aria-label="Evidence Explorer">
+            <div className="mb-2 flex items-center justify-between border-b border-iris-500/15 pb-2">
+              <span className="font-semibold text-iris-200">
+                Evidence Mode — Source telemetry & notes (#73, #350)
+              </span>
+              <span className="font-mono text-[10px] text-iris-400">
+                {log.evidence.length} citations
+              </span>
+            </div>
+
+            <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+              {log.evidence.map((item, idx) => {
+                const isHeader = item.text === item.section;
+                const totalSources = (item.sessions?.length || 0) + (item.notes?.length || 0) + (item.commits?.length || 0);
+                if (totalSources === 0) return null;
+
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-lg p-2.5 ${
+                      isHeader
+                        ? "border border-white/[0.08] bg-white/[0.03]"
+                        : "ml-2 border border-ink-800 bg-ink-900/60"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className={`text-xs ${isHeader ? "font-semibold text-ink-100" : "text-ink-200 italic"}`}>
+                        {isHeader ? `§ ${item.section}` : `“${item.text}”`}
+                      </p>
+                      <span className="shrink-0 rounded bg-ink-800 px-1.5 py-0.5 text-[10px] font-mono text-ink-400">
+                        {totalSources} {totalSources === 1 ? "source" : "sources"}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {item.sessions?.map((s, si) => (
+                        <div
+                          key={`s-${si}`}
+                          className="flex items-center gap-1 rounded border border-iris-500/25 bg-iris-500/10 px-2 py-0.5 text-[10px] text-iris-300"
+                          title={`${s.app}: ${s.title} (${Math.round(s.seconds / 60)}m)`}
+                        >
+                          <span className="font-medium">{s.app}</span>
+                          {s.start && <span className="font-mono text-[9px] text-iris-400">[{s.start}–{s.end}]</span>}
+                          <span className="text-iris-400">({Math.round(s.seconds / 60)}m)</span>
+                          {s.title && <span className="max-w-44 truncate text-ink-400">· {s.title}</span>}
+                        </div>
+                      ))}
+
+                      {item.notes?.map((n, ni) => (
+                        <div
+                          key={`n-${ni}`}
+                          className="flex items-center gap-1 rounded border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300"
+                          title={`Linked note: ${n.title}`}
+                        >
+                          <span className="font-medium">Note:</span>
+                          <span className="max-w-52 truncate">{n.title}</span>
+                        </div>
+                      ))}
+
+                      {item.commits?.map((c, ci) => (
+                        <div
+                          key={`c-${ci}`}
+                          className="flex items-center gap-1 rounded border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300"
+                          title={`${c.repo}: ${c.subject}`}
+                        >
+                          <span className="font-medium">{c.repo}:</span>
+                          <span className="max-w-52 truncate">{c.subject}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {!generating && !log?.summary_md && (

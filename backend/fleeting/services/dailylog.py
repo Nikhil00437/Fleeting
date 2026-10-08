@@ -9,6 +9,7 @@ noisy 0-minute switches or redundant app tables).
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -394,6 +395,134 @@ def mirror_to_vault(cfg: Config, day: str, md: str) -> None:
         log.exception("failed to mirror daily log for %s", day)
 
 
+def build_evidence(
+    md: str,
+    sessions: list[dict],
+    notes: list[dict] | None = None,
+    git: list[dict] | None = None,
+) -> list[dict]:
+    """Link digest sections and sentences/bullets to underlying sessions, notes and commits (#73, #350)."""
+    notes = notes or []
+    git = git or []
+    evidence: list[dict] = []
+
+    def session_matches(text: str, s: dict) -> bool:
+        low = text.lower()
+        app = (s.get("app_class") or "").lower()
+        if app and app in low:
+            return True
+        title = (s.get("title") or "").lower()
+        words = [w for w in re.findall(r"[a-zA-Z0-9_.-]{4,}", title) if w not in {"https", "http", "www", "com", "org", "page", "window"}]
+        for w in words:
+            if w in low:
+                return True
+        proj = (s.get("project") or "").lower()
+        if proj and proj in low:
+            return True
+        return False
+
+    def note_matches(text: str, n: dict) -> bool:
+        low = text.lower()
+        title = (n.get("title") or "").lower()
+        if not title:
+            return False
+        if title in low:
+            return True
+        words = [w for w in re.findall(r"[a-zA-Z0-9_.-]{4,}", title) if w not in {"note", "todo", "task"}]
+        for w in words:
+            if w in low:
+                return True
+        return False
+
+    def commit_matches(text: str, c: dict) -> bool:
+        low = text.lower()
+        repo = (c.get("repo") or "").lower()
+        if repo and repo in low:
+            return True
+        subj = (c.get("subject") or "").lower()
+        words = [w for w in re.findall(r"[a-zA-Z0-9_.-]{4,}", subj) if w not in {"feat", "fix", "docs", "chore", "test"}]
+        for w in words:
+            if w in low:
+                return True
+        return False
+
+    def format_session(s: dict) -> dict:
+        return {
+            "id": s.get("id"),
+            "app": s.get("app_class", ""),
+            "title": s.get("title", ""),
+            "seconds": s.get("seconds", 0),
+            "start": (s.get("first_seen") or "")[11:16],
+            "end": (s.get("last_seen") or "")[11:16],
+        }
+
+    def format_note(n: dict) -> dict:
+        return {
+            "id": n.get("id", ""),
+            "title": n.get("title", ""),
+        }
+
+    def format_commit(c: dict) -> dict:
+        return {
+            "repo": c.get("repo", ""),
+            "subject": c.get("subject", ""),
+        }
+
+    section_chunks = re.split(r"(?m)^##\s+", md)
+    for chunk in section_chunks[1:]:
+        lines = chunk.strip().splitlines()
+        if not lines:
+            continue
+        sec_title = lines[0].strip()
+
+        sec_sessions = [format_session(s) for s in sessions if session_matches(chunk, s)]
+        sec_notes = [format_note(n) for n in notes if note_matches(chunk, n)]
+        sec_commits = [format_commit(c) for c in git if commit_matches(chunk, c)]
+
+        if "captured notes" in sec_title.lower() and not sec_notes and notes:
+            sec_notes = [format_note(n) for n in notes[:5]]
+
+        evidence.append({
+            "section": sec_title,
+            "text": sec_title,
+            "sessions": sec_sessions,
+            "notes": sec_notes,
+            "commits": sec_commits,
+        })
+
+        for line in lines[1:]:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            is_bullet = line_str.startswith(("-", "*")) or bool(re.match(r"^\d+\.", line_str))
+            clean_line = re.sub(r"^[-*]\s+|\d+\.\s+", "", line_str).strip()
+
+            sentences = [clean_line] if is_bullet else [s.strip() for s in re.split(r"(?<=[.!?])\s+", clean_line) if s.strip()]
+
+            for sent in sentences:
+                if len(sent) < 8:
+                    continue
+                item_sessions = [format_session(s) for s in sessions if session_matches(sent, s)]
+                item_notes = [format_note(n) for n in notes if note_matches(sent, n)]
+                item_commits = [format_commit(c) for c in git if commit_matches(sent, c)]
+
+                if "captured notes" in sec_title.lower() and not item_notes and notes:
+                    for n in notes:
+                        if note_matches(sent, n):
+                            item_notes.append(format_note(n))
+
+                if item_sessions or item_notes or item_commits:
+                    evidence.append({
+                        "section": sec_title,
+                        "text": sent,
+                        "sessions": item_sessions,
+                        "notes": item_notes,
+                        "commits": item_commits,
+                    })
+
+    return evidence
+
+
 async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bool = False) -> dict:
     """Generate (or regenerate) the daily log. Returns the row.
 
@@ -471,7 +600,10 @@ async def generate_daily_log(db: Database, cfg: Config, day: str, *, rolling: bo
             count=1,
         )
 
-    db.upsert_daily_log(day, md, model)
+    evidence_list = build_evidence(md, sessions, notes=notes, git=git)
+    evidence_json = json.dumps(evidence_list) if evidence_list else None
+
+    db.upsert_daily_log(day, md, model, evidence=evidence_json)
     row = db.get_daily_log(day)
     mirror_to_vault(cfg, day, effective_body(row))
     from ..notify import send

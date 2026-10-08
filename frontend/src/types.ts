@@ -412,6 +412,33 @@ export interface ActivityDay {
   sessions: ActivitySession[];
 }
 
+export interface ReportEvidenceSession {
+  id?: number;
+  app: string;
+  title: string;
+  seconds: number;
+  start: string;
+  end: string;
+}
+
+export interface ReportEvidenceNote {
+  id: string;
+  title: string;
+}
+
+export interface ReportEvidenceCommit {
+  repo: string;
+  subject: string;
+}
+
+export interface ReportEvidenceItem {
+  section: string;
+  text: string;
+  sessions: ReportEvidenceSession[];
+  notes: ReportEvidenceNote[];
+  commits: ReportEvidenceCommit[];
+}
+
 export interface DailyLog {
   day: string;
   summary_md: string | null;
@@ -419,6 +446,7 @@ export interface DailyLog {
   edited?: number;
   model: string | null;
   created_at: string | null;
+  evidence?: ReportEvidenceItem[];
 }
 
 export interface AppRule {

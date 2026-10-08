@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -475,8 +476,17 @@ def get_daily_log(request: Request, day: str | None = None) -> dict:
     day = _valid_day(day or _local_today())
     row = st.db.get_daily_log(day)
     if not row:
-        return {"day": day, "summary_md": None, "model": None, "created_at": None, "edited": 0}
-    return row
+        return {"day": day, "summary_md": None, "model": None, "created_at": None, "edited": 0, "evidence": []}
+    out = dict(row)
+    raw_ev = out.get("evidence")
+    if isinstance(raw_ev, str):
+        try:
+            out["evidence"] = json.loads(raw_ev)
+        except Exception:
+            out["evidence"] = []
+    elif not raw_ev:
+        out["evidence"] = []
+    return out
 
 
 @router.put("/daily-log/{day}/edit", response_model=None)
