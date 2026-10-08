@@ -137,6 +137,14 @@ def set_app_tracked(request: Request, body: dict) -> dict:
     return {"app_class": app_class, "tracked": tracked}
 
 
+class WindowAskIn(BaseModel):
+    # #63 a range dragged on the timeline.
+    day: str = Field(min_length=10, max_length=10)
+    start: str = Field(min_length=1, max_length=40)
+    end: str = Field(min_length=1, max_length=40)
+    question: str = Field(default="", max_length=400)
+
+
 class PrivateIn(BaseModel):
     minutes: int = Field(ge=1, le=1440)
 
@@ -323,6 +331,19 @@ def metric_heatmap(
     from ..services.metrics import heatmap
 
     return heatmap(request.app.state.st.db, weeks=weeks, end=_valid_day(end) if end else None)
+
+
+@router.post("/ask")
+async def ask_about_window(request: Request, body: WindowAskIn) -> dict:
+    """#63 what was I doing between these two times?"""
+    from ..services.activity_ask import answer_window
+
+    try:
+        return await answer_window(
+            request.app.state.st.db, request.app.state.st.cfg, body.day, body.start, body.end, body.question
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/timeline")

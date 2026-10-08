@@ -21,6 +21,7 @@ import type {
   HeatmapData,
   SwitchMetrics,
   TodayVsAverage,
+  WindowAnswer,
   DailyLog,
   AppRule,
   FilesActivity,
@@ -473,6 +474,13 @@ export const api = {
     req<ActivitySession>(`/activity/sessions/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ note }),
+    }),
+
+  /** #63 ask about a stretch of the timeline. */
+  askWindow: (day: string, start: string, end: string, question = "") =>
+    req<WindowAnswer>("/activity/ask", {
+      method: "POST",
+      body: JSON.stringify({ day, start, end, question }),
     }),
 
   /** #58 context switches, #62 today vs average, #59 calendar heatmap. */

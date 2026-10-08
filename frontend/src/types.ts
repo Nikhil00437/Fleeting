@@ -308,6 +308,26 @@ export interface LLMProbeOverrides {
   api_key?: string;
 }
 
+/** #63 the answer to "what was I doing in this stretch?". */
+export interface WindowAnswer {
+  day: string;
+  start: string;
+  end: string;
+  question: string;
+  answer: string;
+  used_llm: boolean;
+  sessions: {
+    id: number;
+    app_class: string;
+    title: string;
+    first_seen: string;
+    last_seen: string;
+    seconds: number;
+    project: string | null;
+    note: string | null;
+  }[];
+}
+
 /** #58 context switches for a day. */
 export interface SwitchMetrics {
   day: string;
