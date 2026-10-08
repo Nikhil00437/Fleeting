@@ -355,7 +355,7 @@ describe("AssistantView Component & Logic", () => {
       expect(html).toContain("data-testid=\"clear-chat-btn\"");
     });
 
-    it("renders Clear conversation button when messages exist", () => {
+    it("renders the New conversation button when messages exist", () => {
       const html = renderToStaticMarkup(
         <AssistantView
           onOpenNote={vi.fn()}
@@ -366,10 +366,11 @@ describe("AssistantView Component & Logic", () => {
       );
 
       expect(html).toContain("data-testid=\"clear-chat-btn\"");
-      expect(html).toContain("Clear");
+      // #111: clearing became starting a new thread — the old one is saved.
+      expect(html).toContain("New");
     });
 
-    it("does not render Clear conversation button when dialogue is empty", () => {
+    it("does not render the New conversation button when dialogue is empty", () => {
       const html = renderToStaticMarkup(
         <AssistantView
           onOpenNote={vi.fn()}

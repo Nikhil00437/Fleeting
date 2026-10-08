@@ -23,6 +23,8 @@ import type {
   SearchMode,
   AssistantChatIn,
   AssistantChatOut,
+  ChatHistoryItem,
+  ChatMessage,
   AssistantSuggestionsOut,
   ProcessApp,
   ProcessInfo,
@@ -260,6 +262,22 @@ export const api = {
   /** #49/#322: recent + most-searched queries in one round trip. */
   searchHistory: () =>
     req<{ recent: QueryLogEntry[]; top: QueryLogEntry[] }>("/search/history"),
+
+  /** #111 conversation history: list/search, upsert the thread, pin, delete. */
+  chatHistory: (q = "") =>
+    req<ChatHistoryItem[]>(`/assistant/history${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  saveChatHistory: (chatId: string, messages: ChatMessage[]) =>
+    req<ChatHistoryItem>(`/assistant/history/${chatId}`, {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+    }),
+  pinChat: (chatId: string, pinned: boolean) =>
+    req<ChatHistoryItem>(`/assistant/history/${chatId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ pinned }),
+    }),
+  deleteChat: (chatId: string) =>
+    req<void>(`/assistant/history/${chatId}`, { method: "DELETE" }),
 
   /** #319: voice-note transcripts with word-timestamp hits. */
   transcriptSearch: (q: string, limit = 6) => {

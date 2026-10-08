@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import {
   BotIcon,
@@ -8,6 +8,7 @@ import {
   TrashIcon,
 } from "./Icons";
 import type {
+  ChatHistoryItem,
   ChatMessage,
   PendingAction,
   RepoInfo,
@@ -302,6 +303,12 @@ export default function AssistantView({
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>("all");
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
+  // #111 conversation history: the id of the thread on screen, plus the
+  // sidebar list. The transcript is posted back on every change — the client
+  // already holds it, so the streaming chat path stays untouched.
+  const [chatId, setChatId] = useState(() => `chat-${Date.now()}`);
+  const [history, setHistory] = useState<ChatHistoryItem[]>([]);
+  const [historyQuery, setHistoryQuery] = useState("");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -328,6 +335,33 @@ export default function AssistantView({
       .then(setRepos)
       .catch(() => {});
   }, []);
+
+  const loadHistory = useCallback((q = "") => {
+    api
+      .chatHistory(q)
+      .then(setHistory)
+      .catch(() => setHistory([]));
+  }, []);
+
+  useEffect(() => {
+    loadHistory(historyQuery);
+  }, [loadHistory, historyQuery]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    api
+      .saveChatHistory(
+        chatId,
+        messages
+          .filter((m) => !m.isError)
+          .map((m) => ({ role: m.role, content: m.content })),
+      )
+      .catch(() => {});
+    // Re-list on a timer rather than per keystroke: streaming updates the
+    // transcript many times a second and the sidebar doesn't need that.
+    const t = window.setTimeout(() => loadHistory(historyQuery), 1500);
+    return () => window.clearTimeout(t);
+  }, [messages, chatId, loadHistory, historyQuery]);
 
   // Auto-scroll to bottom of message thread
   useEffect(() => {
@@ -378,10 +412,39 @@ export default function AssistantView({
     onToast("Action cancelled");
   };
 
-  const handleClearChat = () => {
+  const handleOpenChat = (item: ChatHistoryItem) => {
+    setChatId(item.id);
+    setMessages(
+      item.messages.map((m, idx) => ({
+        id: `${item.id}-${idx}`,
+        role: m.role,
+        content: m.content,
+        sources: m.sources,
+        timestamp: item.updated_at,
+      })),
+    );
+  };
+
+  const handleNewChat = () => {
+    setChatId(`chat-${Date.now()}`);
     setMessages([]);
-    onToast("Chat conversation cleared");
+    setHistoryQuery("");
+    onToast("Started a new conversation");
     inputRef.current?.focus();
+  };
+
+  const handlePinChat = (item: ChatHistoryItem) => {
+    api.pinChat(item.id, !item.pinned).catch((e) => onToast(String(e), "err"));
+    loadHistory(historyQuery);
+  };
+
+  const handleDeleteChat = (item: ChatHistoryItem) => {
+    api.deleteChat(item.id).catch((e) => onToast(String(e), "err"));
+    if (item.id === chatId) {
+      setChatId(`chat-${Date.now()}`);
+      setMessages([]);
+    }
+    loadHistory(historyQuery);
   };
 
   const toggleSources = (msgId: string) => {
@@ -432,13 +495,13 @@ export default function AssistantView({
           {messages.length > 0 && (
             <button
               type="button"
-              onClick={handleClearChat}
-              className="flex items-center gap-1.5 rounded-xl border border-ink-800/90 bg-ink-950/80 px-2.5 py-1 text-xs text-ink-300 transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
-              title="Clear conversation"
+              onClick={handleNewChat}
+              className="flex items-center gap-1.5 rounded-xl border border-ink-800/90 bg-ink-950/80 px-2.5 py-1 text-xs text-ink-300 transition-colors hover:border-ember-500/30 hover:text-ember-300"
+              title="Start a new conversation"
               data-testid="clear-chat-btn"
             >
-              <TrashIcon className="h-3 w-3" />
-              <span>Clear</span>
+              <SparkIcon className="h-3 w-3" />
+              <span>New</span>
             </button>
           )}
 
@@ -447,6 +510,74 @@ export default function AssistantView({
           </span>
         </div>
       </div>
+
+      {/* #111 conversation history: search, pin, reopen. */}
+      <aside
+        className="flex shrink-0 flex-col gap-1.5 border-b border-ink-800/70 bg-ink-950/40 p-2.5 lg:w-72 lg:border-b-0 lg:border-r"
+        aria-label="Conversation history"
+      >
+        <div className="flex items-center gap-2">
+          <input
+            value={historyQuery}
+            onChange={(e) => setHistoryQuery(e.target.value)}
+            placeholder="Search past conversations"
+            aria-label="Search conversation history"
+            className="min-w-0 flex-1 rounded-lg border border-ink-800 bg-ink-900/80 px-2 py-1 text-xs text-ink-100 outline-none placeholder:text-ink-500 focus:border-ember-500/40"
+          />
+          <button
+            type="button"
+            onClick={handleNewChat}
+            title="New conversation"
+            aria-label="New conversation"
+            className="rounded-lg border border-ink-800 px-2 py-1 text-xs text-ink-300 hover:text-ember-300"
+          >
+            +
+          </button>
+        </div>
+        {history.length === 0 ? (
+          <p className="px-1 py-2 text-[11px] text-ink-500">
+            {historyQuery ? "No conversation mentions that." : "Threads you start are saved here."}
+          </p>
+        ) : (
+          <ul className="max-h-44 space-y-0.5 overflow-y-auto lg:max-h-none lg:flex-1">
+            {history.map((item) => (
+              <li key={item.id} className="group flex items-start gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleOpenChat(item)}
+                  className={`min-w-0 flex-1 rounded-lg px-2 py-1 text-left hover:bg-white/[0.04] ${
+                    item.id === chatId ? "bg-ember-500/10" : ""
+                  }`}
+                >
+                  <span className="flex items-center gap-1">
+                    {item.pinned ? <span aria-label="Pinned">📌</span> : null}
+                    <span className="truncate text-[11.5px] text-ink-100">{item.title}</span>
+                  </span>
+                  {item.preview && (
+                    <span className="block truncate text-[10.5px] text-ink-400">{item.preview}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePinChat(item)}
+                  aria-label={item.pinned ? `Unpin ${item.title}` : `Pin ${item.title}`}
+                  className="mt-1 rounded p-1 text-ink-500 opacity-0 hover:text-ember-300 focus:opacity-100 group-hover:opacity-100"
+                >
+                  📌
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteChat(item)}
+                  aria-label={`Delete ${item.title}`}
+                  className="mt-1 rounded p-1 text-ink-500 opacity-0 hover:text-red-300 focus:opacity-100 group-hover:opacity-100"
+                >
+                  <TrashIcon className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
 
       {/* Main Conversation Thread Viewport */}
       <div

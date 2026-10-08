@@ -69,6 +69,18 @@ export interface QueryLogEntry {
   last_at: string;
 }
 
+/** #111: one saved assistant conversation. */
+export interface ChatHistoryItem {
+  id: string;
+  title: string;
+  pinned: number;
+  created_at: string;
+  updated_at: string;
+  messages: ChatMessage[];
+  hit_count: number;
+  preview: string;
+}
+
 /** #319: a timestamped transcript match (t = seconds into the audio). */
 export interface TranscriptHit {
   t: number;
@@ -388,6 +400,8 @@ export interface Collection {
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  /** Citations, persisted with the transcript (#111). */
+  sources?: SourceRef[];
 }
 
 export interface SourceRef {

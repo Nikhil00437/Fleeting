@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import SearchView from "../SearchView";
-import { api } from "../../api";
 import type { Note } from "../../types";
 
 const note = (id: string, over: Partial<Note> = {}): Note =>
@@ -33,7 +32,7 @@ afterEach(() => {
 
 describe("SearchView grouping", () => {
   it("offers day/tag/project only once there is more than one result", async () => {
-    render(<SearchView notes={[note("a")]} onPin={() => {}} />);
+    render(<SearchView notes={[note("a")]} onPin={() => {}} onOpen={() => {}} focusRef={{ current: null }} />);
     expect(screen.queryByLabelText("Group results by")).toBeNull();
 
     cleanup();
@@ -41,6 +40,7 @@ describe("SearchView grouping", () => {
       <SearchView
         notes={[note("a"), note("b", { created_at: "2026-09-01T09:00:00Z" })]}
         onPin={() => {}}
+        onOpen={() => {}} focusRef={{ current: null }}
       />,
     );
     expect(screen.getByLabelText("Group results by")).toBeTruthy();
@@ -55,6 +55,7 @@ describe("SearchView grouping", () => {
           note("c", { created_at: "2026-09-01T09:00:00Z" }),
         ]}
         onPin={() => {}}
+        onOpen={() => {}} focusRef={{ current: null }}
       />,
     );
     screen.getByText("day").click();
