@@ -184,7 +184,32 @@ export default function ActivityTab({ s, patch, save }: FormProps) {
               </div>
 
               <div className="rounded-xl border border-ink-800 bg-ink-950/50 p-3.5">
-                <label className={labelCls} htmlFor="idle-cutoff">
+                <label className={labelCls} htmlFor="idle-source">
+                  Idle Signal (#60)
+                </label>
+                <select
+                  id="idle-source"
+                  value={s.activity_idle_source}
+                  onChange={(e) => {
+                    patch({ activity_idle_source: e.target.value });
+                    void save(
+                      { activity_idle_source: e.target.value },
+                      "idle signal updated",
+                    );
+                  }}
+                  className={inputCls}
+                >
+                  <option value="auto">Auto — logind, cursor fallback</option>
+                  <option value="logind">Session idle only (logind)</option>
+                  <option value="cursor">Cursor movement only</option>
+                </select>
+                {!s.activity_idle_available && s.activity_idle_source !== "cursor" && (
+                  <p className="mt-1 text-[10.5px] text-ink-400">
+                    logind is not answering on this host, so the cursor heuristic is in use.
+                  </p>
+                )}
+
+                <label className={`${labelCls} mt-3`} htmlFor="idle-cutoff">
                   Idle Cutoff (minutes cursor still)
                 </label>
                 <input

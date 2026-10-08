@@ -111,6 +111,9 @@ class ActivityConfig:
     # #335 minutes of silence before a run of sessions becomes a new work
     # block. 10 keeps "read docs, answer a Slack thread" as one block.
     block_gap_min: int = 10
+    # #60 where the idle verdict comes from: logind's IdleHint on the user
+    # bus, the cursor heuristic, or auto (logind with a cursor fallback).
+    idle_source: str = "auto"
     mirror_daily_log: bool = False  # report lives inside the app only, by default
     # Bearer token required on mutating /api requests. Empty = disabled, which
     # keeps the single-user loopback setup working with no extra setup.

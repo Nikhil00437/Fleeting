@@ -8,11 +8,18 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ..activity import session_idle_probe
 from ..config import CONFIG_PATH, LLMConfig, expand_path, save_config
 from ..models import LLMProbeIn, SettingsIn
 from ..services import llm
 
 log = logging.getLogger("fleeting.settings")
+
+
+def _idle_hint_readable() -> bool:
+    """#60 whether logind actually answers on this host."""
+    return session_idle_probe()
+
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -52,6 +59,10 @@ def _settings_payload(request: Request) -> dict:
         "activity_paused": st.activity.is_paused() if st.activity else False,
         "activity_poll_secs": cfg.activity.poll_secs,
         "activity_idle_after_min": cfg.activity.idle_after_min,
+        # #60 which idle signal the collector is using, and whether the
+        # session manager's answer is actually readable on this host.
+        "activity_idle_source": cfg.activity.idle_source,
+        "activity_idle_available": _idle_hint_readable(),
         "activity_excluded_apps": cfg.activity.excluded_apps,
         "activity_auto_daily_log": cfg.activity.auto_daily_log,
         "activity_watch_dirs": cfg.activity.watch_dirs,
@@ -145,6 +156,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.activity.poll_secs = max(5, body.activity_poll_secs)
     if body.activity_idle_after_min is not None:
         cfg.activity.idle_after_min = max(1, body.activity_idle_after_min)
+    if body.activity_idle_source is not None:
+        cfg.activity.idle_source = body.activity_idle_source
     if body.activity_excluded_apps is not None:
         cfg.activity.excluded_apps = body.activity_excluded_apps.strip()
     if body.activity_auto_daily_log is not None:

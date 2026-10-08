@@ -473,6 +473,8 @@ class SettingsIn(BaseModel):
     activity_enabled: bool | None = None
     activity_poll_secs: int | None = Field(default=None, ge=5, le=300)
     activity_idle_after_min: int | None = Field(default=None, ge=1, le=60)
+    # #60 auto | logind | cursor
+    activity_idle_source: str | None = Field(default=None, pattern="^(auto|logind|cursor)$")
     activity_excluded_apps: str | None = Field(default=None, max_length=500)
     activity_auto_daily_log: bool | None = None
     activity_watch_dirs: str | None = Field(default=None, max_length=1000)

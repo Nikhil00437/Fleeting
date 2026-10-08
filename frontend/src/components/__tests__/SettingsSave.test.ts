@@ -36,6 +36,8 @@ const base: Settings = {
   activity_paused: false,
   activity_poll_secs: 20,
   activity_idle_after_min: 3,
+  activity_idle_source: "auto",
+  activity_idle_available: true,
   activity_excluded_apps: "zen",
   activity_auto_daily_log: true,
   activity_auto_weekly_log: true,

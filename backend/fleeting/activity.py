@@ -42,6 +42,67 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 REDACTED = "\u00abredacted\u00bb"
 
 
+LOGIND_BUS_ARGS = (
+    "busctl",
+    "--user",
+    "get-property",
+    "org.freedesktop.login1.Manager",
+    "/org/freedesktop/login1",
+    "org.freedesktop.login1.Manager",
+)
+
+
+def parse_idle_hint(raw: str | None) -> bool | datetime | None:
+    """Read a `busctl get-property` answer: `s "true"` or a `t <µs>` stamp.
+
+    Returns None for anything unrecognised — an unknown answer must not be
+    mistaken for "idle", which would silently stop all tracking.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if text.startswith("s "):
+        value = text[2:].strip().strip('"')
+        if value in ("true", "false"):
+            return value == "true"
+        return None
+    if text.startswith("t "):
+        parts = text[2:].split()
+        if parts and parts[0].isdigit():
+            return datetime.fromtimestamp(int(parts[0]) / 1_000_000).astimezone()
+    return None
+
+
+def session_idle_probe() -> bool:
+    """#60 can logind's idle property be read here? Cheap version of the
+    collector's own probe, for the settings screen."""
+    try:
+        raw = _busctl(LOGIND_BUS_ARGS + ("IdleHint",))
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return isinstance(parse_idle_hint(raw), bool)
+
+
+def session_idle(
+    state: tuple[bool | None, datetime | None],
+    idle_streak_secs: int,
+    threshold_secs: int,
+) -> bool:
+    """One verdict from both signals.
+
+    logind's own answer wins: it knows about keyboards, screens and lid state,
+    none of which the cursor can see. A missing or unreadable answer falls back
+    to the cursor streak, because tracking with a slightly wrong answer beats
+    not tracking at all.
+    """
+    hint, since = state
+    if hint is not None:
+        return hint
+    if since is not None and since.year > 1971:  # 0 means "not idle since"
+        return True
+    return idle_streak_secs >= threshold_secs
+
+
 def idle_minutes_for(db, cfg: ActivityConfig, app_class: str) -> int:
     """#340 the idle threshold that applies to one app right now."""
     return int(db.app_idle_rules().get(app_class, cfg.idle_after_min))
@@ -131,6 +192,11 @@ def redact_title(title: str, patterns: list[str] | None = None) -> str:
     return out
 
 
+def _busctl(args: tuple[str, ...]) -> str:
+    """Run one busctl query and hand back its stdout."""
+    return subprocess.run(args, capture_output=True, timeout=5).stdout.decode(errors="replace")
+
+
 def _local_now() -> datetime:
     return datetime.now().astimezone()
 
@@ -218,6 +284,8 @@ class ActivityCollector:
         self._today: str = _local_now().strftime("%Y-%m-%d")
         # #335 the tail of the current block: {end, project, id}. A session
         # continues it when it starts soon after and on the same project.
+        self._bus_call = _busctl
+        self._last_hint: tuple[bool | None, datetime | None] | None = None
         self._last_block: dict | None = None
         self._block_seq = 0
         self._redact: list[str] = [p.strip() for p in cfg.redact_patterns.split(",") if p.strip()]
@@ -365,8 +433,13 @@ class ActivityCollector:
         if cursor is not None:
             self._idle_streak_secs = 0 if moved else self._idle_streak_secs + self.cfg.poll_secs
         self._last_cursor = cursor
-        idle = self._idle_streak_secs >= (
-            idle_minutes_for(self.db, self.cfg, app_class) * 60 if win else 0
+        # One bus round-trip per poll cycle, not per poll.
+        self._last_hint = None
+        hint = self._idle_hint() if win else (None, None)
+        idle = session_idle(
+            hint,
+            self._idle_streak_secs,
+            idle_minutes_for(self.db, self.cfg, app_class) * 60 if win else 0,
         )
 
         if win is None:
@@ -417,6 +490,35 @@ class ActivityCollector:
                 "row_id": None,
             }
             self.current["row_id"] = self.db.upsert_activity(self._row(self.current))
+
+    def _idle_hint(self) -> tuple[bool | None, datetime | None]:
+        """#60 ask logind whether the session is idle.
+
+        Cached for a poll cycle: two busctl calls per 20s poll would be a lot of
+        process spawns for an answer that changes on the order of minutes.
+        """
+        if self.cfg.idle_source == "cursor":
+            return (None, None)
+        if self._last_hint is not None:
+            hint, since = self._last_hint
+            return hint, since
+        try:
+            raw_hint = self._bus_call(LOGIND_BUS_ARGS + ("IdleHint",))
+            raw_since = self._bus_call(LOGIND_BUS_ARGS + ("IdleSinceHint",))
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.debug("idle hint unavailable (%s); using the cursor heuristic", exc)
+            self._last_hint = (None, None)
+            return self._last_hint
+        hint = parse_idle_hint(raw_hint)
+        if hint is None:
+            # Unreadable property: keep tracking rather than stalling.
+            self._last_hint = (None, None)
+        elif isinstance(hint, bool):
+            since = parse_idle_hint(raw_since)
+            self._last_hint = (hint, since if isinstance(since, datetime) else None)
+        else:
+            self._last_hint = (None, None)
+        return self._last_hint
 
     def _block_for(self, now: datetime, project: str | None) -> str:
         """#335: the block this session belongs to, extending the current one

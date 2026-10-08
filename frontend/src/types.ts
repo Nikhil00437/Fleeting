@@ -270,6 +270,10 @@ export interface Settings {
   activity_paused: boolean;
   activity_poll_secs: number;
   activity_idle_after_min: number;
+  /** #60 auto | logind | cursor */
+  activity_idle_source: string;
+  /** Whether logind's idle property is readable on this host. */
+  activity_idle_available: boolean;
   activity_excluded_apps: string;
   activity_auto_daily_log: boolean;
   activity_auto_weekly_log: boolean;
