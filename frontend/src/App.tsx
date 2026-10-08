@@ -1002,7 +1002,9 @@ export default function App() {
        onTasksChanged={refreshStats}
       />
      )}
-     {view === "timeline" && <TimelineView onToast={toast} refreshKey={timelineKey} />}
+     {view === "timeline" && (
+      <TimelineView onToast={toast} refreshKey={timelineKey} onOpenNote={setSelectedId} />
+    )}
      {view === "reports" && <ReportsView onToast={toast} refreshKey={timelineKey} />}
      {view === "tasks" && (
       <TasksView

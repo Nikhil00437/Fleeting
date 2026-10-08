@@ -19,7 +19,7 @@ import {
   SearchIcon,
   XIcon,
 } from "./Icons";
-import type { ActivityGap, ActivityDay, ActivitySession, FilesActivity } from "../types";
+import type { ActivityGap, ActivityDay, ActivitySession, DayEvent, FilesActivity } from "../types";
 
 function todayLocal(): string {
   const d = new Date();
@@ -87,9 +87,11 @@ const shortDayLabel = (day: string, totalDays: number) => {
 interface Props {
   onToast: (message: string, kind?: "ok" | "err") => void;
   refreshKey: number;
+  /** #339 clicking a note marker opens that note. */
+  onOpenNote?: (id: string) => void;
 }
 
-export default function TimelineView({ onToast, refreshKey }: Props) {
+export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props) {
   const [day, setDay] = useState(todayLocal());
   const [data, setData] = useState<ActivityDay | null>(null);
   const [live, setLive] = useState<ActivitySession | null>(null);
@@ -102,6 +104,8 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   const [rangeDays, setRangeDays] = useState<7 | 14 | 30>(7);
   const [trendMode, setTrendMode] = useState<"bars" | "area">("bars");
   const [week, setWeek] = useState<{ day: string; seconds: number }[]>([]);
+  // #339 note/task markers for the ribbon.
+  const [events, setEvents] = useState<DayEvent[]>([]);
   // #337 untracked stretches for the shown day.
   const [gaps, setGaps] = useState<ActivityGap[]>([]);
   // #53 time per project for the shown day.
@@ -133,6 +137,13 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
   useEffect(() => {
     api.activityWeek(rangeDays).then(setWeek).catch(() => {});
   }, [rangeDays, refreshKey]);
+
+  useEffect(() => {
+    api
+      .activityTimeline(day, "task,note")
+      .then((r) => setEvents(r.events))
+      .catch(() => setEvents([]));
+  }, [day, refreshKey]);
 
   useEffect(() => {
     api
@@ -635,6 +646,16 @@ export default function TimelineView({ onToast, refreshKey }: Props) {
                 selectedApp={selectedApp}
                 onSelectApp={handleSelectApp}
                 isToday={isToday}
+                markers={events.map((e) => ({
+                  kind: e.kind as "task" | "note",
+                  id: String(e.id),
+                  at: e.at,
+                  label: e.label,
+                }))}
+                onMarkerClick={(m) => {
+                  if (m.kind === "note") onOpenNote?.(m.id);
+                  else onToast(`finished task: ${m.label}`);
+                }}
               />
             </div>
 

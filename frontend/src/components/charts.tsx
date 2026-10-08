@@ -1040,11 +1040,21 @@ export function StackBar({
 
 /* ---------------- SessionRibbon (24-hour horizontal Gantt strip) ---------------- */
 
+/** #339 a note captured or a task finished, pinned to its hour. */
+export interface TimelineMarker {
+  kind: "task" | "note";
+  id: string;
+  at: string;
+  label: string;
+}
+
 interface SessionRibbonProps {
   sessions: ActivitySession[];
   selectedApp?: string | null;
   onSelectApp?: (app: string) => void;
   isToday?: boolean;
+  markers?: TimelineMarker[];
+  onMarkerClick?: (marker: TimelineMarker) => void;
 }
 
 export function SessionRibbon({
@@ -1052,6 +1062,8 @@ export function SessionRibbon({
   selectedApp = null,
   onSelectApp,
   isToday = false,
+  markers = [],
+  onMarkerClick,
 }: SessionRibbonProps) {
   const [hovered, setHovered] = useState<ActivitySession | null>(null);
 
@@ -1134,6 +1146,23 @@ export function SessionRibbon({
             </div>
           );
         })}
+
+        {/* #339 notes captured and tasks finished, pinned to the hour they
+            happened — the answer to "what did I do about this?" sits next to
+            the work it belongs to. */}
+        {markers.map((m, idx) => (
+          <button
+            key={`${m.kind}-${m.id}-${idx}`}
+            onClick={onMarkerClick ? () => onMarkerClick(m) : undefined}
+            title={`${m.label} — ${hhmm(m.at)}`}
+            aria-label={`${m.kind}: ${m.label} at ${hhmm(m.at)}`}
+            className="absolute top-0.5 z-10 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-ink-950/70 shadow-[0_1px_3px_rgba(0,0,0,.5)] transition-transform hover:scale-125"
+            style={{
+              left: `${(Math.max(0, Math.min(24, toHourFrac(m.at))) / 24) * 100}%`,
+              background: m.kind === "task" ? "#4ade80" : "#a78bfa",
+            }}
+          />
+        ))}
 
         {sessions.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-ink-400">No tracked sessions for this day</div>}
 

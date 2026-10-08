@@ -17,6 +17,7 @@ import type {
   ActivityDay,
   ActivitySession,
   ActivityGap,
+  DayEvent,
   DailyLog,
   AppRule,
   FilesActivity,
@@ -461,6 +462,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ note }),
     }),
+
+  /** #339 what you did, finished and wrote, in one feed. */
+  activityTimeline: (day?: string, kinds = "session,task,note") =>
+    req<{ day: string; events: DayEvent[] }>(
+      `/activity/timeline?${new URLSearchParams({ ...(day ? { day } : {}), kinds }).toString()}`,
+    ),
 
   /** #337 untracked stretches of a day, and what you did in one. */
   activityGaps: (day?: string) =>

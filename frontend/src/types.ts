@@ -304,6 +304,17 @@ export interface LLMProbeOverrides {
   api_key?: string;
 }
 
+/** #339 one entry in the merged day feed. */
+export interface DayEvent {
+  kind: "session" | "task" | "note";
+  id: string | number;
+  at: string;
+  label: string;
+  detail?: string;
+  seconds?: number;
+  done?: boolean;
+}
+
 /** #337 an untracked stretch of the day. */
 export interface ActivityGap {
   start: string;
