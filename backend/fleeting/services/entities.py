@@ -10,6 +10,7 @@ against something you can inspect and edit.
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -133,6 +134,23 @@ def people_index(db: Database) -> list[dict]:
                 entry["last_seen"] = max(filter(None, (entry["last_seen"], day)))
 
     return sorted(agg.values(), key=lambda p: (-p["mentions"], p["name"].lower()))
+
+
+def stale_people(db: Database, days: int, *, today: date | None = None) -> list[dict]:
+    """#416: people whose last mention is older than `days`.
+
+    `days <= 0` means the feature is off and the answer is always empty — the
+    idea says opt-in, and a stale-contact list nobody asked for is noise.
+
+    Ordered longest silence first, because that is the one worth acting on. A
+    contact with no usable date is skipped rather than guessed at.
+    """
+    if days <= 0:
+        return []
+    now = today or date.today()
+    cutoff = (now - timedelta(days=days)).isoformat()
+    out = [p for p in people_index(db) if p.get("last_seen") and p["last_seen"] < cutoff]
+    return sorted(out, key=lambda p: (p["last_seen"], p["name"].lower()))
 
 
 def notes_for_person(db: Database, name: str) -> list[dict]:

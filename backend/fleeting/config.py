@@ -156,6 +156,13 @@ class TasksConfig:
 
 
 @dataclass
+class EntitiesConfig:
+    # #416: days without a mention before a contact is "stale". 0 disables the
+    # list entirely — the idea says opt-in, and an unwanted one is noise.
+    stale_days: int = 0
+
+
+@dataclass
 class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
@@ -166,6 +173,7 @@ class Config:
     activity: ActivityConfig = field(default_factory=ActivityConfig)
     notes: NotesConfig = field(default_factory=NotesConfig)
     tasks: TasksConfig = field(default_factory=TasksConfig)
+    entities: EntitiesConfig = field(default_factory=EntitiesConfig)
 
 
 # Sections that map to dataclass fields, used for (de)serialization.
@@ -179,6 +187,7 @@ _SECTIONS: dict[str, type] = {
     "activity": ActivityConfig,
     "notes": NotesConfig,
     "tasks": TasksConfig,
+    "entities": EntitiesConfig,
 }
 
 

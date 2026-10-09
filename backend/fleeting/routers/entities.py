@@ -5,9 +5,21 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..models import NoteOut
-from ..services.entities import notes_for_person, people_index
+from ..services.entities import notes_for_person, people_index, stale_people
 
 router = APIRouter(prefix="/api/entities", tags=["entities"])
+
+
+@router.get("/stale")
+def stale(request: Request, days: int = Query(0, ge=0, le=3650)) -> list[dict]:
+    """#416 contacts you have not mentioned in `days` days, longest silence first.
+
+    Defaults to the configured window, which is 0 — off — so this endpoint
+    returns nothing until the feature is switched on in settings.
+    """
+    st = request.app.state.st
+    window = days or st.cfg.entities.stale_days
+    return stale_people(st.db, window)
 
 
 @router.get("/people")
