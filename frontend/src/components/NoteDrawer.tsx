@@ -21,7 +21,7 @@ import {
   XIcon,
 } from "./Icons";
 import { StatusBadge } from "./NoteCard";
-import { ConfidenceBadge } from "./ConfidenceBadge";
+import { ConfidenceBadge, UnverifiedClaims } from "./ConfidenceBadge";
 import { pipelineSteps, totalSecs } from "./pipeline";
 import AudioPlayer from "./AudioPlayer";
 import { runNoteAction } from "./actionRunner";
@@ -137,6 +137,7 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
   >("overview");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [showClaims, setShowClaims] = useState(false);
   const [regenOpen, setRegenOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [allCollections, setAllCollections] = useState<Collection[] | null>(null);
@@ -557,6 +558,14 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
             {/* #96: absent when heuristics ran — there is nothing to be
                 uncertain about, so no number is shown rather than a fake one. */}
             <ConfidenceBadge confidence={note.enrich_confidence} />
+            {/* #263: sentences of the summary with nothing behind them. */}
+            {(note.claims ?? []).some((c) => !c.supported) && (
+              <UnverifiedClaims
+                claims={note.claims}
+                expanded={showClaims}
+                onToggle={() => setShowClaims((v) => !v)}
+              />
+            )}
             {/* #255: verdict on the enrichment, not on the note content. */}
             {meta.enrichment && meta.enrichment !== "heuristic-sensitive" && (
               <span className="inline-flex items-center gap-0.5" data-testid="enrich-feedback">

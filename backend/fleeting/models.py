@@ -408,6 +408,8 @@ class NoteOut(BaseModel):
     enrich_confidence: float | None = None
     # #255 -1 bad, 1 good, 0 no verdict yet.
     enrich_feedback: int = 0
+    # #263 one entry per summary sentence: {text, supported, span}.
+    claims: list[dict] | None = None
 
 
 class CaptureTextIn(BaseModel):

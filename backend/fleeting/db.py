@@ -439,10 +439,12 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("prompt_override", "TEXT"),
         ("evidence", "TEXT"),
     )),
-    # 0.9 enrichment quality: #96 self-reported confidence, #255 thumb verdict.
+    # 0.9 enrichment quality: #96 self-reported confidence, #255 thumb verdict,
+    # #263 per-claim source spans.
     ("notes", (
         ("enrich_confidence", "REAL"),
         ("enrich_feedback", "INTEGER NOT NULL DEFAULT 0"),
+        ("claims", "TEXT"),
     )),
 )
 
@@ -480,7 +482,7 @@ NOTE_COLUMNS = frozenset({
     "audio_path", "status", "error", "pinned", "archived",
     "created_at", "updated_at", "processed_at", "capture_id", "source_title",
     "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
-    "snoozed_until", "enrich_confidence", "enrich_feedback",
+    "snoozed_until", "enrich_confidence", "enrich_feedback", "claims",
 })
 
 # query_log LRU cap (v18) — a local single-user inbox never needs more.
@@ -678,7 +680,7 @@ class Database:
         sets = ", ".join(f"{key} = :{key}" for key in changes)
         changes_sql = dict(changes)
         # JSON-encode list/dict fields
-        for key in ("tags", "action_items", "source", "fields"):
+        for key in ("tags", "action_items", "source", "fields", "claims"):
             if key in changes_sql and not isinstance(changes_sql[key], str):
                 changes_sql[key] = json.dumps(
                     changes_sql[key],
@@ -2707,6 +2709,9 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         # before the columns existed must still deserialize.
         "enrich_confidence": row["enrich_confidence"] if "enrich_confidence" in row.keys() else None,
         "enrich_feedback": int(row["enrich_feedback"] or 0) if "enrich_feedback" in row.keys() else 0,
+        # #263: JSON array of {text, supported, span}. Absent on rows written
+        # before the column existed.
+        "claims": json.loads(row["claims"] or "null") if "claims" in row.keys() else None,
     }
     for key in extra:
         if key in row.keys():
@@ -2729,6 +2734,10 @@ def _note_to_sql(note: dict) -> dict:
             )
         elif key == "source" and val.strip() in ("", "null"):
             out[key] = "{}"
+    # #263 claims is nullable on purpose — None means "never verified", which
+    # is different from an empty list meaning "verified, nothing to claim".
+    if out.get("claims") is not None and not isinstance(out["claims"], str):
+        out["claims"] = json.dumps(out["claims"], ensure_ascii=False)
     out.setdefault("title", "")
     out.setdefault("summary", "")
     out.setdefault("raw_text", "")

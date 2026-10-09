@@ -37,6 +37,8 @@ export interface Note {
   enrich_confidence?: number | null;
   /** #255: -1 bad, 1 good, 0 no verdict yet. */
   enrich_feedback?: number;
+  /** #263: one entry per summary sentence, with the span it came from. */
+  claims?: { text: string; supported: boolean; span: string | null }[] | null;
 }
 
 export interface Stats {

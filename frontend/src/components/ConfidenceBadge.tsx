@@ -1,5 +1,6 @@
 /** #96: how confident the model was in this note's enrichment. */
 import { LOW_CONFIDENCE, describeConfidence } from "./noteMeta";
+import type { Note } from "../types";
 
 /**
  * Renders nothing when the score is absent. Heuristic enrichment reports no
@@ -23,5 +24,50 @@ export function ConfidenceBadge({ confidence }: { confidence: number | null | un
     >
       {label}
     </span>
+  );
+}
+
+/**
+ * #263: the sentences of the summary with no source behind them. A title is
+ * enough to act on — the drawer shows the claims themselves, because "this
+ * sentence might be invented" is only useful if you can read the sentence.
+ */
+export function UnverifiedClaims({
+  claims,
+  onToggle,
+  expanded,
+}: {
+  claims: Note["claims"];
+  onToggle: () => void;
+  expanded: boolean;
+}) {
+  const bad = (claims ?? []).filter((c) => !c.supported);
+  if (!bad.length) return null;
+  return (
+    <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-2.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        data-testid="unverified-claims-toggle"
+        className="flex w-full items-center gap-1.5 text-left font-mono text-[10px] text-amber-300 transition-colors hover:text-amber-200 cursor-pointer"
+      >
+        <span className="font-medium">
+          {bad.length} unverified {bad.length === 1 ? "claim" : "claims"}
+        </span>
+        <span className="ml-auto" aria-hidden="true">
+          {expanded ? "▲" : "▼"}
+        </span>
+      </button>
+      {expanded && (
+        <ul className="mt-1.5 space-y-1">
+          {bad.map((c, i) => (
+            <li key={`claim-${i}`} className="text-[11px] leading-relaxed text-ink-300">
+              {c.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

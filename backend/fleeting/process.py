@@ -19,6 +19,7 @@ from .config import Config
 from .db import Database, now_iso
 from .events import EventBus
 from .services import llm, markdown
+from .services.claims import unverified, verify_claims
 from .services.embeddings import embed_note
 from .services.fewshot import build_few_shot
 from .services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
@@ -212,6 +213,10 @@ class Processor:
                 enriched = {**enriched, "tags": apply_preferred_tags(enriched["tags"], vocab)}
 
             # 3) persist structured fields
+            # #263: check the summary against the text it summarises *before*
+            # deciding the review state, so a fabricated sentence lands in the
+            # review queue rather than being presented as fact.
+            claims = verify_claims(enriched["summary"], note.get("raw_text") or "")
             changes = {
                 "title": enriched["title"],
                 "summary": enriched["summary"],
@@ -223,12 +228,21 @@ class Processor:
                 # #96: the model's own verdict on the enrichment, or None. A
                 # reprocess must clear a stale score, so this is always written.
                 "enrich_confidence": enriched.get("confidence"),
+                # Always written: yesterday's citations must not outlive
+                # yesterday's summary.
+                "claims": claims,
             }
             # #474/#424: heuristic enrichment is the low-confidence path — drop
             # the note into the review queue instead of claiming it is done.
             # A real LLM pass starts at 'enriched'; human PATCHes move it to
-            # 'reviewed'/'final'.
+            # 'reviewed'/'final'. #263 adds a third reason to hold a note back.
             if source.get("enrichment") in ("heuristic", "heuristic-sensitive"):
+                changes["review_state"] = "raw"
+            elif unverified(claims):
+                log.info(
+                    "note %s: %d unverified claim(s) in the summary — holding for review",
+                    note_id, len(unverified(claims)),
+                )
                 changes["review_state"] = "raw"
             else:
                 changes["review_state"] = "enriched"
