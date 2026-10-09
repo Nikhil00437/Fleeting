@@ -12,6 +12,7 @@ import TaskFunnelCard from "./TaskFunnelCard";
 import BurndownChartCard from "./BurndownChartCard";
 import RadialDayClock from "./RadialDayClock";
 import ProjectTreemapCard from "./ProjectTreemapCard";
+import WeeklySmallMultiplesCard from "./WeeklySmallMultiplesCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -330,6 +331,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
           setShowProjects(true);
         }}
       />
+    </div>
+
+    {/* #248 weekly small-multiples */}
+    <div className="xl:col-span-2">
+      <WeeklySmallMultiplesCard refreshKey={refreshKey} onSelectDay={setDay} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}

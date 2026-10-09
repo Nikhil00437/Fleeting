@@ -378,6 +378,28 @@ export interface ProjectTreemapData {
   projects: ProjectTreemapItem[];
 }
 
+export interface WeeklySmallMultipleDay {
+  day: string;
+  day_of_week: string;
+  day_index: number;
+  is_today: boolean;
+  is_future: boolean;
+  total_seconds: number;
+  focus_score: number;
+  top_app: string | null;
+  top_project: string | null;
+  hourly: number[];
+}
+
+export interface WeeklySmallMultiplesData {
+  week_start: string;
+  week_end: string;
+  total_seconds: number;
+  avg_daily_seconds: number;
+  max_hourly_seconds: number;
+  days: WeeklySmallMultipleDay[];
+}
+
 export interface ProjectDashboardCommit {
   repo: string;
   subject: string;

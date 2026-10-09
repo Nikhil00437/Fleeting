@@ -410,6 +410,21 @@ def activity_treemap(
     )
 
 
+@router.get("/small-multiples")
+def activity_small_multiples(
+    request: Request,
+    week: str | None = None,
+) -> dict:
+    """#248 weekly small-multiples comparing all seven days."""
+    from ..services.small_multiples import get_weekly_small_multiples
+
+    return get_weekly_small_multiples(
+        request.app.state.st.db,
+        request.app.state.st.cfg,
+        week_start=_valid_day(week) if week else None,
+    )
+
+
 
 @router.post("/ask")
 async def ask_about_window(request: Request, body: WindowAskIn) -> dict:

@@ -55,6 +55,7 @@ import type {
   BurndownData,
   RadialClockData,
   ProjectTreemapData,
+  WeeklySmallMultiplesData,
 } from "./types";
 
 const BASE = "/api";
@@ -558,6 +559,10 @@ export const api = {
     const q = sp.toString();
     return req<ProjectTreemapData>(`/activity/treemap${q ? `?${q}` : ""}`);
   },
+
+  /** #248 weekly small-multiples comparing all seven days */
+  weeklySmallMultiples: (week?: string) =>
+    req<WeeklySmallMultiplesData>(`/activity/small-multiples${week ? `?week=${week}` : ""}`),
 
   /** #342 session rows or a day×project timesheet, as CSV. */
   activityExportUrl: (format: "csv" | "timesheet", params: { day?: string; day_from?: string; day_to?: string }) => {
