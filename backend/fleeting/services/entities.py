@@ -16,12 +16,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..db import Database
 
-# One to three capitalised tokens, allowing internal hyphens and capitalised
-# apostrophes ("O'Brien"). The apostrophe must be followed by a capital, which
-# is what keeps "Priya's" from being captured with its possessive.
-_NAME_RE = re.compile(
-    r"\b([A-Z](?:[a-z\-]+|['’][A-Z][a-z\-]*)(?:\s+[A-Z](?:[a-z\-]+|['’][A-Z][a-z\-]*)){0,2})\b"
-)
+# One to three capitalised tokens, allowing internal hyphens, capitalised
+# apostrophes ("O'Brien") and trailing initials ("Ben C."). The apostrophe must
+# be followed by a capital, which is what keeps "Priya's" from being captured
+# with its possessive. The initial alternative exists because "Ben C." and "Ben"
+# are different people and conflating them is invisible and irreversible.
+_NAME_TOKEN = r"(?:[A-Z](?:[a-z\-]+|['’][A-Z][a-z\-]*)\b|[A-Z]\.)"
+# The lookbehind rejects camelCase: a capital preceded by a lowercase letter is
+# inside a word, not starting a name. Without it "GitHub" yields "Hub" and
+# "OpenAI" yields "I" — and no stoplist can enumerate every product name.
+_NAME_RE = re.compile(rf"(?<![a-z])({_NAME_TOKEN}(?:\s+{_NAME_TOKEN}){{0,2}})")
 
 # Function words and other tokens that can never appear *inside* a name. A run
 # containing any of these is rejected outright: "The bridge network" is not a
@@ -101,6 +105,22 @@ def mention_counts(db: Database) -> dict[str, int]:
     return counts
 
 
+def _canonical(db: Database, name: str, aliases: dict[str, str]) -> str:
+    """Resolve `name` through user-stated aliases (#414), preserving case."""
+    target = aliases.get(name.lower())
+    if not target:
+        return name
+    # Prefer the canonical's own spelling as it appears in the notes, so a
+    # merged row reads "Ben" and not "ben".
+    for row in db.execute(
+        "SELECT DISTINCT raw_text FROM notes WHERE trashed_at IS NULL AND sensitive = 0"
+    ).fetchall():
+        for candidate in extract_people(row["raw_text"] or ""):
+            if candidate.lower() == target.lower() and candidate[0].isupper():
+                return candidate
+    return target
+
+
 def people_index(db: Database) -> list[dict]:
     """People with a mention count and first/last seen dates.
 
@@ -108,7 +128,8 @@ def people_index(db: Database) -> list[dict]:
     a real body, and its author is still mentioned in it.
 
     #412 and #416 both read this one query: "last mentioned" and "who have I
-    not talked to in a while" are the same column, filtered differently.
+    not talked to in a while" are the same column, filtered differently. #414
+    folds aliases in here, so no caller has to remember to.
     """
     rows = db.execute(
         """
@@ -118,13 +139,15 @@ def people_index(db: Database) -> list[dict]:
         """
     ).fetchall()
 
+    aliases = db.alias_map("person")
     agg: dict[str, dict] = {}
     for row in rows:
         day = (row["created_at"] or "")[:10]
         for name, n in count_people(row["raw_text"] or "").items():
+            key = _canonical(db, name, aliases)
             entry = agg.setdefault(
-                name,
-                {"name": name, "mentions": 0, "notes_count": 0,
+                key,
+                {"name": key, "mentions": 0, "notes_count": 0,
                  "first_seen": day, "last_seen": day},
             )
             entry["mentions"] += n
@@ -134,6 +157,32 @@ def people_index(db: Database) -> list[dict]:
                 entry["last_seen"] = max(filter(None, (entry["last_seen"], day)))
 
     return sorted(agg.values(), key=lambda p: (-p["mentions"], p["name"].lower()))
+
+
+def ambiguous_first_names(db: Database) -> list[dict]:
+    """#417: first names shared by more than one person in the index.
+
+    Reported, never resolved. Two real people called Ben is the normal case,
+    not an error, so guessing which one a note means would corrupt the index
+    in a way nobody can see afterwards.
+    """
+    by_first: dict[str, set[str]] = {}
+    for person in people_index(db):
+        first = person["name"].split()[0]
+        by_first.setdefault(first, set()).add(person["name"])
+    return [
+        {"first_name": first, "names": sorted(names)}
+        for first, names in sorted(by_first.items())
+        if len(names) > 1
+    ]
+
+
+def resolve_ambiguity(db: Database, alias: str, canonical: str) -> bool:
+    """#417: the user says which Ben a note meant. Just an alias, recorded."""
+    known = {p["name"].lower() for p in people_index(db)}
+    if canonical.strip().lower() not in known:
+        return False
+    return db.record_entity_alias(alias, canonical)
 
 
 def stale_people(db: Database, days: int, *, today: date | None = None) -> list[dict]:
@@ -167,8 +216,15 @@ def notes_for_person(db: Database, name: str) -> list[dict]:
         """
     ).fetchall()
     out = []
+    aliases = db.alias_map("person")
+    # A canonical name reaches its aliases' notes too, or a merged person
+    # would lose half their history on their own page.
+    wanted = {name.lower()} | {
+        a for a, c in aliases.items() if c.lower() == name.lower()
+    }
     for row in rows:
-        if name in extract_people(row["raw_text"] or ""):
+        found = {n.lower() for n in extract_people(row["raw_text"] or "")}
+        if found & wanted:
             note = db.get_note(row["id"])
             if note:
                 out.append(note)

@@ -55,6 +55,15 @@ def test_common_product_names_are_not_people() -> None:
     assert extract_people("Deployed to GitHub and opened a Docker issue.") == []
 
 
+def test_camel_case_yields_no_name_at_all() -> None:
+    """'GitHub' must not become 'Git' or 'Hub' — no stoplist can cover these."""
+    assert extract_people("OpenAI and JavaScript both shipped.") == []
+
+
+def test_an_initial_is_part_of_the_name() -> None:
+    assert extract_people("Ben C. called.") == ["Ben C."]
+
+
 def test_names_are_deduped_and_keep_first_seen_order() -> None:
     found = extract_people("Priya and Tom. Priya again. Tom again.")
     assert found == ["Priya", "Tom"]

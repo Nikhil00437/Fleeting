@@ -105,3 +105,51 @@ async def test_endpoint_honours_the_configured_window(client) -> None:
 async def test_a_contact_seen_today_is_never_stale(client) -> None:
     client.post("/api/capture/text", json={"text": "Priya reviewed the router change."})
     assert client.get("/api/entities/stale", params={"days": 1}).json() == []
+
+
+@pytest.mark.anyio
+async def test_ambiguity_endpoint_reports_shared_first_names(client) -> None:
+    client.post("/api/capture/text", json={"text": "Ben called about pricing."})
+    client.post("/api/capture/text", json={"text": "Ben Whitaker called about the contract."})
+    amb = client.get("/api/entities/ambiguous").json()
+    assert [a["first_name"] for a in amb] == ["Ben"]
+
+
+@pytest.mark.anyio
+async def test_resolving_ambiguity_merges_through_the_api(client) -> None:
+    client.post("/api/capture/text", json={"text": "Ben called about pricing."})
+    client.post("/api/capture/text", json={"text": "Ben Whitaker called about the contract."})
+    r = client.post(
+        "/api/entities/ambiguous/resolve",
+        json={"alias": "Ben Whitaker", "canonical": "Ben"},
+    )
+    assert r.status_code == 200
+    assert [p["name"] for p in r.json()["people"]] == ["Ben"]
+
+
+@pytest.mark.anyio
+async def test_resolving_toward_nobody_is_rejected(client) -> None:
+    client.post("/api/capture/text", json={"text": "Ben called about pricing."})
+    r = client.post(
+        "/api/entities/ambiguous/resolve",
+        json={"alias": "Ben", "canonical": "Nobody"},
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_alias_can_be_added_and_removed_through_the_api(client) -> None:
+    client.post("/api/capture/text", json={"text": "Ben called about pricing."})
+    client.post("/api/capture/text", json={"text": "Ben C. called about the contract."})
+
+    assert len(client.get("/api/entities/people").json()) == 2
+    assert client.post("/api/entities/aliases", json={"alias": "Ben C.", "canonical": "Ben"}).status_code == 200
+    assert len(client.get("/api/entities/people").json()) == 1
+    assert client.delete("/api/entities/aliases/Ben C.").status_code == 200
+    assert len(client.get("/api/entities/people").json()) == 2
+
+
+@pytest.mark.anyio
+async def test_an_alias_to_itself_is_rejected(client) -> None:
+    r = client.post("/api/entities/aliases", json={"alias": "Ben", "canonical": "Ben"})
+    assert r.status_code == 400

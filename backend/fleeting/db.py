@@ -405,6 +405,16 @@ MIGRATIONS: list[str] = [
       at TEXT NOT NULL
     );
     """,
+    # v25 — 0.9 #414/#417. The user states the alias; nothing infers it.
+    # `kind` keeps people and orgs from colliding if #258 generalises this.
+    """CREATE TABLE IF NOT EXISTS entity_aliases (
+      kind TEXT NOT NULL DEFAULT 'person',
+      alias TEXT NOT NULL,
+      canonical TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (kind, alias)
+    );
+    """,
     # v24 — 0.9 #103 undo. `before` holds the prior row(s) verbatim, so undo
     # replays a restore instead of hand-writing an inverse for each tool.
     """CREATE TABLE IF NOT EXISTS action_undo (
@@ -491,6 +501,9 @@ QUERY_LOG_CAP = 500
 # grow without bound. Each row carries the full prompt context, so this is the
 # one table where size actually matters.
 TRACE_CAP = 200
+# Alias chains are flattened with a hop cap; past this it is a cycle, not a
+# rename chain.
+_ALIAS_MAX_HOPS = 8
 
 
 def now_iso() -> str:
@@ -1486,6 +1499,64 @@ class Database:
             {"limit": max(1, min(int(limit), 100))},
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- entity aliases (#414/#417) ----------------------------------
+    # User-stated, never inferred: a wrong merge of two real people is
+    # invisible afterwards, so the app refuses to guess one.
+
+    def record_entity_alias(self, alias: str, canonical: str, kind: str = "person") -> bool:
+        a, c = alias.strip(), canonical.strip()
+        if not a or not c or a.lower() == c.lower():
+            return False
+        self.execute(
+            """
+            INSERT INTO entity_aliases (kind, alias, canonical, created_at)
+            VALUES (:kind, :alias, :canonical, :at)
+            ON CONFLICT(kind, alias) DO UPDATE SET canonical = excluded.canonical
+            """,
+            {"kind": kind, "alias": a, "canonical": c, "at": now_iso()},
+        )
+        self.commit()
+        return True
+
+    def list_entity_aliases(self, kind: str = "person") -> list[dict]:
+        rows = self.execute(
+            "SELECT alias, canonical FROM entity_aliases WHERE kind = ? ORDER BY alias",
+            (kind,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_entity_alias(self, alias: str, kind: str = "person") -> bool:
+        cur = self.execute(
+            "DELETE FROM entity_aliases WHERE kind = ? AND alias = ?", (kind, alias)
+        )
+        self.commit()
+        return cur.rowcount > 0
+
+    def alias_map(self, kind: str = "person") -> dict[str, str]:
+        """Lowercased alias -> canonical, with chains flattened.
+
+        Chains are resolved at read time with a hop cap rather than rejected at
+        write time: the user can legitimately rename a canonical later, and a
+        cycle has to terminate rather than spin.
+        """
+        direct: dict[str, str] = {}
+        for row in self.list_entity_aliases(kind):
+            direct[row["alias"].lower()] = row["canonical"]
+        resolved: dict[str, str] = {}
+        for alias in list(direct):
+            seen = {alias}
+            target = direct[alias]
+            hops = 0
+            while target.lower() in direct and hops < _ALIAS_MAX_HOPS:
+                nxt = direct[target.lower()]
+                if nxt.lower() in seen:  # cycle: stop at the last real name
+                    break
+                seen.add(nxt.lower())
+                target = nxt
+                hops += 1
+            resolved[alias] = target
+        return resolved
 
     # ---- action undo (#103) ------------------------------------------
     # An undo record is the *before* state of whatever the action changed, so
