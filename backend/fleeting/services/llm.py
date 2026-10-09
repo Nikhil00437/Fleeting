@@ -319,7 +319,12 @@ def model_chain(cfg: LLMConfig) -> list[str]:
     return seen
 
 
-async def enrich_chain(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
+async def enrich_chain(
+    text: str,
+    cfg: LLMConfig,
+    prompt: str | None = None,
+    few_shot: str = "",
+) -> dict:
     """#266: `enrich` across `model_chain`, then the caller's heuristic pass.
 
     Each step gets timeout_secs divided across the chain. Without that, a chain
@@ -340,6 +345,10 @@ async def enrich_chain(text: str, cfg: LLMConfig, prompt: str | None = None) -> 
     headers = auth_headers(cfg)
     today_iso = datetime.now(timezone.utc).date().isoformat()
     base_prompt = ENRICH_SYSTEM_TEMPLATE.format(today_iso=today_iso)
+    # #256: the user's own corrected enrichments, which outrank anything the
+    # template can say about their taste.
+    if few_shot:
+        base_prompt += f"\n\n{few_shot}"
     if prompt:
         base_prompt += f"\n\nCapture-template instruction: {prompt}"
 

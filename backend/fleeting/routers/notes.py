@@ -16,6 +16,7 @@ from ..events import EventBus
 from ..models import NoteOut, NoteUpdateIn, RegenerateIn, SnoozeIn
 from ..services import markdown
 from ..services.embeddings import embed_note
+from ..services.fewshot import build_few_shot
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -412,7 +413,11 @@ async def regenerate_note(note_id: str, body: RegenerateIn, request: Request) ->
     from ..services import llm as llm_svc
 
     try:
-        enriched = await llm_svc.enrich_chain(note["raw_text"], llm_cfg)
+        enriched = await llm_svc.enrich_chain(
+            note["raw_text"],
+            llm_cfg,
+            few_shot=build_few_shot(st.db),
+        )
     except llm_svc.LLMUnavailable as exc:
         raise HTTPException(502, f"model unreachable: {exc}") from exc
 
@@ -423,6 +428,7 @@ async def regenerate_note(note_id: str, body: RegenerateIn, request: Request) ->
             "summary": enriched["summary"],
             "tags": enriched["tags"],
             "review_state": "enriched",
+            "enrich_confidence": enriched.get("confidence"),
         },
     )
     assert note

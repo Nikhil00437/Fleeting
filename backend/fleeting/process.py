@@ -20,6 +20,7 @@ from .db import Database, now_iso
 from .events import EventBus
 from .services import llm, markdown
 from .services.embeddings import embed_note
+from .services.fewshot import build_few_shot
 from .services.transcribe import Transcriber, TranscriptionError
 from .services.youtube import YouTubeError, ingest as yt_ingest
 
@@ -187,9 +188,13 @@ class Processor:
                     template_prompt = (note.get("source") or {}).get("template", {}).get("prompt")
                     # #266: walks llm.fallback_models before giving up on the
                     # model, so one unreachable model does not silently drop
-                    # every capture to heuristics.
+                    # every capture to heuristics. #256: corrected enrichments
+                    # become few-shot examples for the next capture.
                     enriched = await llm.enrich_chain(
-                        note["raw_text"], self.cfg.llm, prompt=template_prompt
+                        note["raw_text"],
+                        self.cfg.llm,
+                        prompt=template_prompt,
+                        few_shot=build_few_shot(self.db),
                     )
                     source["enrichment"] = "local-llm"
                 except llm.LLMUnavailable as exc:
