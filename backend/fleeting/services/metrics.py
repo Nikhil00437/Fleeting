@@ -280,3 +280,86 @@ def focus_score_trend(db: Database, *, days: int = 14, end_day: str | None = Non
         "active_days_count": len(active_scores),
         "best_day": {"day": best_day["day"], "score": best_day["score"]} if best_day else None,
     }
+
+
+def app_switching_flow(db: Database, day: str, *, days: int = 1, top_n: int = 12) -> dict:
+    """#246 app-to-app switching Sankey or flow chart."""
+    if days > 1:
+        start_d = (date.fromisoformat(day) - timedelta(days=days - 1)).isoformat()
+        rows = db.execute(
+            "SELECT app_class, day, first_seen, last_seen, seconds FROM activity"
+            " WHERE day >= ? AND day <= ? AND seconds >= 1 ORDER BY first_seen",
+            (start_d, day),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT app_class, day, first_seen, last_seen, seconds FROM activity"
+            " WHERE day = ? AND seconds >= 1 ORDER BY first_seen",
+            (day,),
+        ).fetchall()
+
+    sessions = [dict(r) for r in rows]
+    transitions: dict[tuple[str, str], int] = {}
+    incoming: dict[str, int] = {}
+    outgoing: dict[str, int] = {}
+    app_seconds: dict[str, int] = {}
+
+    for s in sessions:
+        app = s.get("app_class")
+        if app:
+            app_seconds[app] = app_seconds.get(app, 0) + int(s.get("seconds") or 0)
+
+    for prev, cur in zip(sessions, sessions[1:]):
+        if prev.get("day") != cur.get("day"):
+            continue
+        src = prev.get("app_class")
+        tgt = cur.get("app_class")
+        if src and tgt and src != tgt:
+            transitions[(src, tgt)] = transitions.get((src, tgt), 0) + 1
+            outgoing[src] = outgoing.get(src, 0) + 1
+            incoming[tgt] = incoming.get(tgt, 0) + 1
+
+    total_switches = sum(transitions.values())
+
+    sorted_transitions = sorted(transitions.items(), key=lambda x: x[1], reverse=True)
+    links = [
+        {
+            "source": src,
+            "target": tgt,
+            "value": count,
+            "pct": round((count / total_switches) * 100, 1) if total_switches else 0.0,
+        }
+        for (src, tgt), count in sorted_transitions
+    ]
+
+    all_apps = set(outgoing.keys()) | set(incoming.keys())
+    nodes = [
+        {
+            "id": app,
+            "name": app,
+            "incoming": incoming.get(app, 0),
+            "outgoing": outgoing.get(app, 0),
+            "seconds": app_seconds.get(app, 0),
+        }
+        for app in all_apps
+    ]
+    nodes.sort(key=lambda n: n["outgoing"] + n["incoming"], reverse=True)
+
+    pairs: dict[tuple[str, str], int] = {}
+    for (src, tgt), count in transitions.items():
+        pair_key = (min(src, tgt), max(src, tgt))
+        pairs[pair_key] = pairs.get(pair_key, 0) + count
+
+    top_loops = [
+        {"app_a": pair[0], "app_b": pair[1], "count": count}
+        for pair, count in sorted(pairs.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    return {
+        "day": day,
+        "window_days": days,
+        "total_switches": total_switches,
+        "nodes": nodes[:top_n],
+        "links": links[: top_n * 3],
+        "top_loops": top_loops[:5],
+    }

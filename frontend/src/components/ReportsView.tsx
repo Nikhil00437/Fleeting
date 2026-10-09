@@ -14,6 +14,7 @@ import RadialDayClock from "./RadialDayClock";
 import ProjectTreemapCard from "./ProjectTreemapCard";
 import WeeklySmallMultiplesCard from "./WeeklySmallMultiplesCard";
 import TagAnalyticsCard from "./TagAnalyticsCard";
+import AppSwitchingFlowCard from "./AppSwitchingFlowCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -342,6 +343,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #249 tag co-occurrence matrix and topic stream */}
     <div className="xl:col-span-2">
       <TagAnalyticsCard refreshKey={refreshKey} />
+    </div>
+
+    {/* #246 app-to-app switching Sankey / flow chart */}
+    <div className="xl:col-span-2">
+      <AppSwitchingFlowCard refreshKey={refreshKey} initialDay={day} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}

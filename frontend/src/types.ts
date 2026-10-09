@@ -1024,5 +1024,33 @@ export interface WhatShippedOut {
   };
 }
 
+/** #246 app-to-app switching Sankey or flow chart */
+export interface AppFlowNode {
+  id: string;
+  name: string;
+  incoming: number;
+  outgoing: number;
+  seconds: number;
+}
 
+export interface AppFlowLink {
+  source: string;
+  target: string;
+  value: number;
+  pct: number;
+}
 
+export interface AppFlowLoop {
+  app_a: string;
+  app_b: string;
+  count: number;
+}
+
+export interface AppFlowData {
+  day: string;
+  window_days: number;
+  total_switches: number;
+  nodes: AppFlowNode[];
+  links: AppFlowLink[];
+  top_loops: AppFlowLoop[];
+}

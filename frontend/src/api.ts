@@ -57,6 +57,7 @@ import type {
   ProjectTreemapData,
   WeeklySmallMultiplesData,
   TagGraphData,
+  AppFlowData,
 } from "./types";
 
 const BASE = "/api";
@@ -534,6 +535,15 @@ export const api = {
   /** #58 context switches, #62 today vs average, #59 calendar heatmap. */
   activitySwitches: (day?: string) =>
     req<SwitchMetrics>(`/activity/metrics/switches${day ? `?day=${day}` : ""}`),
+  /** #246 app-to-app switching Sankey or flow chart */
+  activityFlow: (params?: { day?: string; days?: number; top_n?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.day) sp.set("day", params.day);
+    if (params?.days) sp.set("days", String(params.days));
+    if (params?.top_n) sp.set("top_n", String(params.top_n));
+    const q = sp.toString();
+    return req<AppFlowData>(`/activity/metrics/flow${q ? `?${q}` : ""}`);
+  },
   activityCompare: (day?: string, window = 7) =>
     req<TodayVsAverage>(
       `/activity/metrics/compare${new URLSearchParams({ ...(day ? { day } : {}), window: String(window) }).toString()}`,

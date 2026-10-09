@@ -334,6 +334,24 @@ def metric_switches(request: Request, day: str | None = None) -> dict:
     return context_switches(request.app.state.st.db, _valid_day(day or _local_today()))
 
 
+@router.get("/metrics/flow")
+def metric_flow(
+    request: Request,
+    day: str | None = None,
+    days: int = Query(1, ge=1, le=90),
+    top_n: int = Query(12, ge=2, le=50),
+) -> dict:
+    """#246 app-to-app switching Sankey or flow chart."""
+    from ..services.metrics import app_switching_flow
+
+    return app_switching_flow(
+        request.app.state.st.db,
+        _valid_day(day or _local_today()),
+        days=days,
+        top_n=top_n,
+    )
+
+
 @router.get("/metrics/compare")
 def metric_compare(
     request: Request, day: str | None = None, window: int = Query(7, ge=1, le=90)
