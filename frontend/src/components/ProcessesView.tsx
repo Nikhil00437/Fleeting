@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { canSignal, killBlockedReason } from "./processOwnership";
+import HeaderSparkline from "./HeaderSparkline";
 import type { ProcessApp, ProcessInfo, ProcessDetails } from "../types";
 import {
   CpuIcon,
@@ -198,6 +199,21 @@ export default function ProcessesView({
             )}
           </button>
         ))}
+
+        {/* ── #254 Sparkline on list header ──────────────────────── */}
+        {tab === "apps" && apps.length > 0 && (
+          <div className="ml-auto hidden sm:flex items-center py-1">
+            <HeaderSparkline
+              data={apps.slice(0, 7).map((a) => ({
+                label: a.name,
+                value: Math.round(a.memory_mb),
+              }))}
+              color="sky"
+              label="Top apps memory profile"
+              unit="MB"
+            />
+          </div>
+        )}
 
         {/* ── process tab controls ───────────────────────────────── */}
         {tab === "processes" && (

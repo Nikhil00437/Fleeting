@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { dayGroup } from "../time";
 import { AreaTrend, Bars, Ring, StackBar } from "./charts";
+import HeaderSparkline from "./HeaderSparkline";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
 import { buildTagTree, flattenTagTree, normalizeTag, tagMatches } from "./tagTree";
@@ -671,6 +672,17 @@ export default function Inbox({
               {inboxZero.filed}/{inboxZero.total}
             </span>
           </button>
+
+          {/* #254 Sparkline on list header */}
+          {stats?.notes_per_day && stats.notes_per_day.length > 0 && (
+            <HeaderSparkline
+              data={stats.notes_per_day.map((p) => ({ label: p.day, value: p.count }))}
+              color="amber"
+              label="7-day capture trend"
+              unit="captures"
+              className="hidden sm:inline-flex"
+            />
+          )}
 
           <button
             onClick={() => {

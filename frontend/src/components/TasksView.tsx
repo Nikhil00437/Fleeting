@@ -17,6 +17,7 @@ import {
   ZapIcon,
 } from "./Icons";
 import { Ring, StackBar } from "./charts";
+import HeaderSparkline from "./HeaderSparkline";
 import type { RepoInfo, TaskItem, TaskPriority } from "../types";
 
 export interface TasksViewProps {
@@ -534,6 +535,33 @@ export default function TasksView({
     }
   }
 
+  // 7-day completion velocity for header sparkline (#254)
+  const completionTrend = useMemo(() => {
+    if (!tasks) return [];
+    const now = new Date();
+    const days: { label: string; dateStr: string; value: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const dateStr = toLocalDateString(d);
+      const label = d.toLocaleDateString(undefined, { weekday: "short" });
+      days.push({ label, dateStr, value: 0 });
+    }
+    const dayMap = new Map(days.map((d) => [d.dateStr, d]));
+    for (const t of tasks) {
+      if (t.done && t.completed_at) {
+        const datePart = t.completed_at.slice(0, 10);
+        const entry = dayMap.get(datePart);
+        if (entry) {
+          entry.value++;
+        }
+      }
+    }
+    return days.map((d) => ({
+      label: `${d.label} (${d.dateStr.slice(5)})`,
+      value: d.value,
+    }));
+  }, [tasks]);
+
   // Filtered tasks
   const filtered = useMemo(() => {
     if (!tasks) return [];
@@ -963,6 +991,17 @@ export default function TasksView({
         >
           <ZapIcon className="h-3 w-3" /> Triage
         </button>
+
+        {/* #254 Sparkline on list header */}
+        {completionTrend.length > 0 && (
+          <HeaderSparkline
+            data={completionTrend}
+            color="emerald"
+            label="7-day completion velocity"
+            unit="completed"
+            className="hidden xl:inline-flex"
+          />
+        )}
 
         {/* Search Input */}
         <div className="relative ml-auto w-56">
