@@ -53,6 +53,7 @@ import type {
   FocusScoreTrend,
   TaskFunnelData,
   BurndownData,
+  RadialClockData,
 } from "./types";
 
 const BASE = "/api";
@@ -543,6 +544,10 @@ export const api = {
     if (end) sp.set("end", end);
     return req<FocusScoreTrend>(`/activity/focus-score/trend?${sp.toString()}`);
   },
+
+  /** #247 24-hour radial day clock */
+  radialClock: (day?: string) =>
+    req<RadialClockData>(`/activity/radial-clock${day ? `?day=${day}` : ""}`),
 
   /** #342 session rows or a day×project timesheet, as CSV. */
   activityExportUrl: (format: "csv" | "timesheet", params: { day?: string; day_from?: string; day_to?: string }) => {

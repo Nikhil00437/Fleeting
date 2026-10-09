@@ -325,6 +325,37 @@ export interface BurndownData {
   series: BurndownSeriesPoint[];
 }
 
+export interface RadialClockSegment {
+  id: number | null;
+  app_class: string;
+  project: string;
+  title: string;
+  seconds: number;
+  start_time: string;
+  end_time: string;
+  start_deg: number;
+  end_deg: number;
+}
+
+export interface RadialClockHour {
+  hour: number;
+  seconds: number;
+  top_app: string | null;
+  top_project: string | null;
+}
+
+export interface RadialClockData {
+  day: string;
+  total_seconds: number;
+  daytime_seconds: number;
+  night_seconds: number;
+  peak_hour: number;
+  segments: RadialClockSegment[];
+  hourly: RadialClockHour[];
+  apps: { app: string; seconds: number; pct: number }[];
+  projects: { project: string; seconds: number; pct: number }[];
+}
+
 export interface ProjectDashboardCommit {
   repo: string;
   subject: string;

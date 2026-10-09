@@ -384,6 +384,15 @@ def metric_focus_score_trend(
     )
 
 
+@router.get("/radial-clock")
+def activity_radial_clock(request: Request, day: str | None = None) -> dict:
+    """#247 24-hour radial day clock."""
+    from ..services.radial_clock import get_radial_clock
+
+    target_day = _valid_day(day or _local_today())
+    return get_radial_clock(request.app.state.st.db, request.app.state.st.cfg, target_day)
+
+
 
 @router.post("/ask")
 async def ask_about_window(request: Request, body: WindowAskIn) -> dict:

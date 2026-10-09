@@ -1017,14 +1017,17 @@ class Database:
             return int(row["id"])
         cur = self.execute(
             "INSERT INTO activity (app_class, title, first_seen, last_seen, seconds, day,"
-            " workspace, idle_secs, repo, branch) VALUES (:app_class, :title, :first_seen,"
-            " :last_seen, :seconds, :day, :workspace, :idle_secs, :repo, :branch)",
+            " workspace, idle_secs, repo, branch, project, block_id, note) VALUES (:app_class, :title, :first_seen,"
+            " :last_seen, :seconds, :day, :workspace, :idle_secs, :repo, :branch, :project, :block_id, :note)",
             {
                 **row,
                 "workspace": row.get("workspace"),
                 "idle_secs": row.get("idle_secs", 0),
                 "repo": row.get("repo"),
                 "branch": row.get("branch"),
+                "project": row.get("project"),
+                "block_id": row.get("block_id"),
+                "note": row.get("note"),
             },
         )
         self.commit()
