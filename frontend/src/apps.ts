@@ -1,19 +1,6 @@
-/** Deterministic, balanced colors for application charts and activity views. */
+import { getActivePaletteId, getPaletteColors, type ChartPaletteId } from "./chartPalettes";
 
-const PALETTE = [
-  "#bd5d38", // terracotta
-  "#60784f", // olive leaf
-  "#4b786b", // deep teal
-  "#a34e49", // brick
-  "#7d6b49", // brass
-  "#55708a", // slate blue
-  "#936b54", // clay
-  "#557d78", // sea glass
-  "#786b8a", // muted violet
-  "#74875c", // sage
-  "#9b6a3f", // ochre
-  "#5b7180", // blue gray
-];
+/** Deterministic, balanced colors for application charts and activity views. */
 
 const KNOWN_COLORS: Record<string, string> = {
   zcode: "#786b8a",
@@ -57,15 +44,22 @@ const KNOWN_LABELS: Record<string, string> = {
   zen: "Zen Browser",
 };
 
-export function appColor(name: string): string {
+export function appColor(name: string, overridePalette?: ChartPaletteId): string {
+  const activeId = overridePalette ?? getActivePaletteId();
+  const colors = getPaletteColors(activeId);
   const key = (name || "").toLowerCase().trim();
-  if (KNOWN_COLORS[key]) return KNOWN_COLORS[key];
+
+  // If on default palette, preserve handcrafted recognized app branding colors
+  if (activeId === "default" && KNOWN_COLORS[key]) {
+    return KNOWN_COLORS[key];
+  }
+
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) {
     h ^= key.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
-  return PALETTE[h % PALETTE.length];
+  return colors[h % colors.length];
 }
 
 export function prettyAppName(appClass: string): string {

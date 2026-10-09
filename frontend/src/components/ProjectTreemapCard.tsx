@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { FolderIcon, GridIcon } from "./Icons";
 import ChartExportButton from "./ChartExportButton";
+import ChartPalettePicker from "./ChartPalettePicker";
+import { useChartPalette } from "../chartPalettes";
 import type { ProjectTreemapData } from "../types";
 
 function fmtSecs(seconds: number): string {
@@ -161,6 +163,7 @@ export default function ProjectTreemapCard({ refreshKey, onSelectProject }: Prop
     seconds: number;
     pct: number;
   } | null>(null);
+  const { paletteId, colors } = useChartPalette();
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -193,7 +196,15 @@ export default function ProjectTreemapCard({ refreshKey, onSelectProject }: Prop
     const projectBoxes = squarify(data.projects, { x: 0, y: 0, w: totalW, h: totalH });
 
     return projectBoxes.map((pBox, pIdx) => {
-      const palette = PROJECT_PALETTE[pIdx % PROJECT_PALETTE.length];
+      const palette =
+        paletteId === "default"
+          ? PROJECT_PALETTE[pIdx % PROJECT_PALETTE.length]
+          : {
+              fill: colors[pIdx % colors.length],
+              border: colors[pIdx % colors.length],
+              bg: `${colors[pIdx % colors.length]}26`,
+              text: colors[pIdx % colors.length],
+            };
       const pad = 3;
       const innerBounds: TreemapRect = {
         x: pBox.x + pad,
@@ -213,7 +224,7 @@ export default function ProjectTreemapCard({ refreshKey, onSelectProject }: Prop
         appBoxes,
       };
     });
-  }, [data]);
+  }, [data, paletteId, colors]);
 
   if (loading) {
     return (
@@ -264,6 +275,8 @@ export default function ProjectTreemapCard({ refreshKey, onSelectProject }: Prop
               </button>
             ))}
           </div>
+
+          <ChartPalettePicker variant="compact" />
 
           <ChartExportButton
             title={`project_treemap_${windowDays}d`}

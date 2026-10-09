@@ -7,6 +7,7 @@ import {
 } from "../Icons";
 import { type ToastFn } from "./shared";
 import { backfillProgress, describeBackfill } from "../backfill";
+import ChartPalettePicker from "../ChartPalettePicker";
 import type { HealthStatus, Settings } from "../../types";
 
 /** Diagnostics tab: /api/health telemetry and where the config lives. */
@@ -227,6 +228,11 @@ export default function SystemTab({
                 <p className="selectable mt-1 font-mono text-xs text-ink-200">
                   http://{s.host}:{s.port} <span className="text-ink-400">(local-only)</span>
                 </p>
+              </div>
+
+              {/* #175 Accessible Chart Palettes */}
+              <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">
+                <ChartPalettePicker />
               </div>
 
               <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">
