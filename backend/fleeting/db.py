@@ -391,6 +391,20 @@ MIGRATIONS: list[str] = [
       PRIMARY KEY (kind, day)
     ) WITHOUT ROWID;
     """,
+    # v23 — 0.9 assistant & AI quality: #112/#453. One row per LLM call: what
+    # was asked, what context went out, which tools ran. Kept as a plain table
+    # (no FTS, no sync) — it is an audit log, not content.
+    """CREATE TABLE IF NOT EXISTS llm_traces (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      queries TEXT NOT NULL,
+      context TEXT,
+      tool_calls TEXT,
+      tokens INTEGER,
+      ms INTEGER,
+      at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -457,6 +471,10 @@ NOTE_COLUMNS = frozenset({
 
 # query_log LRU cap (v18) — a local single-user inbox never needs more.
 QUERY_LOG_CAP = 500
+# llm_traces cap (#112) — enough history to audit a bad answer, not enough to
+# grow without bound. Each row carries the full prompt context, so this is the
+# one table where size actually matters.
+TRACE_CAP = 200
 
 
 def now_iso() -> str:
@@ -1452,6 +1470,58 @@ class Database:
             {"limit": max(1, min(int(limit), 100))},
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # #112/#453: one row per LLM call. Capped like query_log — an audit log
+    # nobody prunes becomes the biggest table in a local-first app.
+    def record_llm_trace(
+        self,
+        *,
+        kind: str,
+        queries: list[str],
+        context: str = "",
+        tool_calls: list[dict] | None = None,
+        tokens: int | None = None,
+        ms: int = 0,
+    ) -> None:
+        self.execute(
+            """
+            INSERT INTO llm_traces (id, kind, queries, context, tool_calls, tokens, ms, at)
+            VALUES (:id, :kind, :queries, :context, :tool_calls, :tokens, :ms, :at)
+            """,
+            {
+                "id": new_id(),
+                "kind": kind,
+                "queries": json.dumps(queries),
+                "context": context,
+                "tool_calls": json.dumps(tool_calls) if tool_calls else None,
+                "tokens": tokens,
+                "ms": ms,
+                "at": now_iso(),
+            },
+        )
+        self.execute(
+            "DELETE FROM llm_traces WHERE id NOT IN (SELECT id FROM llm_traces ORDER BY at DESC LIMIT ?)",
+            (TRACE_CAP,),
+        )
+        self.commit()
+
+    def list_llm_traces(self, *, kind: str | None = None, limit: int = 50) -> list[dict]:
+        sql = "SELECT * FROM llm_traces"
+        params: dict = {}
+        if kind:
+            sql += " WHERE kind = :kind"
+            params["kind"] = kind
+        sql += " ORDER BY at DESC, rowid DESC LIMIT :limit"
+        params["limit"] = max(1, min(int(limit), 200))
+        rows = self.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            # Callers want the lists back, not the JSON blobs.
+            d["queries"] = json.loads(d["queries"] or "[]")
+            d["tool_calls"] = json.loads(d["tool_calls"]) if d["tool_calls"] else []
+            out.append(d)
+        return out
 
     def add_search_feedback(self, note_id: str, query: str) -> None:
         """#321 'not relevant': demote this note for this query."""

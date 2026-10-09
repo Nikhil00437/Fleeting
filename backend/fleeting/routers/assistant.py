@@ -15,6 +15,7 @@ from ..services import chatlog
 from ..services.assistant import (
     ask_assistant,
     ask_assistant_stream,
+    build_assistant_context,
     get_assistant_suggestions,
 )
 
@@ -101,6 +102,42 @@ def pin_chat_history(request: Request, chat_id: str, body: ChatPinIn) -> dict:
 def delete_chat_history(request: Request, chat_id: str) -> None:
     if not chatlog.delete_chat(request.app.state.st.db, chat_id):
         raise HTTPException(status_code=404, detail="conversation not found")
+
+
+@router.get("/context-preview")
+def context_preview(
+    request: Request,
+    q: str = "",
+    repo: str | None = None,
+    type: str | None = None,
+) -> dict:
+    """#453: the exact context that would be sent, without calling the model.
+
+    The same function the assistant calls, so the preview cannot drift from the
+    real request. Nothing is stored — a preview is a read.
+    """
+    st = request.app.state.st
+    queries: list[str] = []
+    context_text, sources, context_used = build_assistant_context(
+        q, st.db, st.cfg, repo=repo, filter_type=type, queries=queries
+    )
+    return {
+        "query": q,
+        "context": context_text,
+        "sources": sources,
+        "context_used": context_used,
+        "queries": queries or ([q] if q else []),
+    }
+
+
+@router.get("/traces")
+def llm_traces(
+    request: Request,
+    kind: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+) -> list[dict]:
+    """#112: what each recent LLM call actually looked at."""
+    return request.app.state.st.db.list_llm_traces(kind=kind, limit=limit)
 
 
 @router.get("/suggestions", response_model=AssistantSuggestionsOut)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import TYPE_CHECKING, Any
 
 from ..events import EventBus
@@ -99,13 +100,25 @@ def build_assistant_context(
     *,
     repo: str | None = None,
     filter_type: str | None = None,
+    queries: list[str] | None = None,
 ) -> tuple[str, list[dict], dict]:
     """Retrieve relevant notes, active tasks, and recent daily logs to build grounded assistant context.
+
+    `queries` is an optional out-param collecting every search string actually
+    issued (#112). Retrieval degrades through several fallbacks — the whole
+    phrase, then a keyword phrase, then one keyword at a time — so the query the
+    user typed is often *not* the query that found the answer. Recording them is
+    the difference between a trace and a guess.
 
     Returns:
         (context_text, sources, context_used_counts)
     """
     clean_query = (query or "").strip()
+    # ponytail: O(n) dedupe on a handful of strings; a set would break the
+    # ordering that makes the trace readable.
+    def note_query(q: str) -> None:
+        if queries is not None and q and q not in queries:
+            queries.append(q)
 
     # #45: when the question mentions a time window, scope retrieval to it.
     # Without an explicit scope the filters stay off — the assistant must
@@ -122,6 +135,7 @@ def build_assistant_context(
     notes: list[dict] = []
     if clean_query:
         try:
+            note_query(clean_query)
             raw_notes = hybrid_search(
                 db,
                 clean_query,
@@ -143,6 +157,7 @@ def build_assistant_context(
                 if keywords:
                     kw_phrase = " ".join(keywords)
                     if kw_phrase.lower() != clean_query.lower():
+                        note_query(kw_phrase)
                         notes = hybrid_search(
                             db,
                             kw_phrase,
@@ -155,6 +170,7 @@ def build_assistant_context(
                 if not notes and keywords:
                     for kw in keywords:
                         if len(kw) >= 4:
+                            note_query(kw)
                             notes = hybrid_search(
                                 db,
                                 kw,
@@ -219,12 +235,14 @@ def build_assistant_context(
             logs = []
 
     # 4. Build structured sources list
+    # #26: sensitive notes stay locally searchable but must never be sent to the
+    # chat model — the assistant's provider can be a remote one. Filter *here*,
+    # once: this used to run only while building `sources`, so the context
+    # sections below still rendered the note body from the raw list.
+    notes = [n for n in notes if not n.get("sensitive") and not n.get("trashed_at")]
+
     sources: list[dict] = []
     for n in notes:
-        # #26: sensitive notes stay locally searchable but must never be sent
-        # to the chat model — the assistant's provider can be a remote one.
-        if n.get("sensitive") or n.get("trashed_at"):
-            continue
         snippet = n.get("snippet") or n.get("summary") or ""
         sources.append({
             "id": str(n["id"]),
@@ -620,6 +638,7 @@ async def ask_assistant(
     if bus is None:
         bus = EventBus()
 
+    started = time.monotonic()
     user_query = ""
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -634,9 +653,24 @@ async def ask_assistant(
             "pending_action": None,
         }
 
+    # #112: collect the retrieval trace, then store it — the user has to be able
+    # to answer "what did you look at?" *after* the answer arrives.
+    queries: list[str] = []
     context_text, sources, context_used = build_assistant_context(
-        user_query, db, cfg, repo=repo, filter_type=filter_type
+        user_query, db, cfg, repo=repo, filter_type=filter_type, queries=queries
     )
+
+    def record(tool_calls: list[dict] | None = None) -> None:
+        try:
+            db.record_llm_trace(
+                kind="chat",
+                queries=queries or [user_query],
+                context=context_text,
+                tool_calls=tool_calls,
+                ms=int((time.monotonic() - started) * 1000),
+            )
+        except Exception as exc:  # a failed audit write must not fail the answer
+            log.warning("Could not record llm trace: %s", exc)
 
     # Fast intent matching for direct app actions
     fast_intent = match_fast_intent(user_query)
@@ -660,6 +694,7 @@ async def ask_assistant(
                     "kind": "log",
                     "snippet": summary,
                 })
+        record(tool_calls=[{"tool": tool, "params": params}])
         return {
             "message": {"role": "assistant", "content": content},
             "sources": sources,
@@ -721,11 +756,14 @@ async def ask_assistant(
             content, sources, pending = await _parse_and_execute_action_blocks(
                 content, db, cfg, bus, sources, confirm=confirm
             )
+            record()
         except (LLMUnavailable, Exception) as exc:
             log.warning("Assistant LLM request failed, falling back to extractive answer: %s", exc)
             content = _extractive_heuristic_answer(user_query, context_text, sources)
+            record()
     else:
         content = _extractive_heuristic_answer(user_query, context_text, sources)
+        record()
 
     return {
         "message": {"role": "assistant", "content": content},
