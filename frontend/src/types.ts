@@ -524,6 +524,10 @@ export interface Settings {
   llm_fallback_models: string;
   /** #257: comma-separated tags the enricher is held to. */
   llm_preferred_tags: string;
+  /** #416: days without a mention before a contact is stale; 0 disables it. */
+  entities_stale_days: number;
+  /** #451: house style applied to every rewrite and title suggestion. */
+  writing_style_guide: string;
   llm_timeout_secs: number;
   /** Whether an API key is stored. The key itself is never returned by the API. */
   llm_api_key_set?: boolean;

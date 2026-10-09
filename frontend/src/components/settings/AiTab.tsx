@@ -362,6 +362,33 @@ export default function AiTab({
                 </div>
               )}
 
+              {/* #451 house style — one place, applied to every rewrite. */}
+              {s.llm_provider !== "none" && (
+                <div className="mt-4 border-t border-ink-800/80 pt-4">
+                  <label className={labelCls} htmlFor="writing-style-guide">
+                    Style Guide
+                  </label>
+                  <textarea
+                    id="writing-style-guide"
+                    rows={3}
+                    value={s.writing_style_guide ?? ""}
+                    onChange={(e) => patch({ writing_style_guide: e.target.value })}
+                    onBlur={() =>
+                      void save(
+                        { writing_style_guide: s.writing_style_guide },
+                        "style guide updated",
+                      )
+                    }
+                    className={`${inputCls} resize-y`}
+                    placeholder="No semicolons. British spelling. Never start with 'So'."
+                  />
+                  <p className="mt-1 text-[10px] text-ink-500">
+                    Your own rules, in your own words. Applied to every rewrite and title
+                    suggestion. Empty leaves the model to its own judgement.
+                  </p>
+                </div>
+              )}
+
               {s.llm_provider === "none" && (
                 <div className="mt-5 border-t border-ink-800/80 pt-4">
                   <p className="text-xs text-ink-400">

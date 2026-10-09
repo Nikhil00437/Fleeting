@@ -38,6 +38,12 @@ def _settings_payload(request: Request) -> dict:
         "llm_model": cfg.llm.model,
         "llm_timeout_secs": cfg.llm.timeout_secs,
         "llm_api_key_set": bool(cfg.llm.api_key),
+        # #257/#416/#451: same idea as the llm_* block — the section's own
+        # fields, flattened so the settings UI reads one shape.
+        "llm_fallback_models": cfg.llm.fallback_models,
+        "llm_preferred_tags": cfg.llm.preferred_tags,
+        "entities_stale_days": cfg.entities.stale_days,
+        "writing_style_guide": cfg.writing.style_guide,
         "transcribe_model": cfg.transcribe.model,
         "transcribe_language": cfg.transcribe.language,
         "transcribe_vocabulary": cfg.transcribe.vocabulary,
@@ -115,6 +121,14 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.llm.model = body.llm_model.strip()
     if body.llm_timeout_secs is not None:
         cfg.llm.timeout_secs = body.llm_timeout_secs
+    if body.llm_fallback_models is not None:
+        cfg.llm.fallback_models = body.llm_fallback_models.strip()
+    if body.llm_preferred_tags is not None:
+        cfg.llm.preferred_tags = body.llm_preferred_tags.strip()
+    if body.entities_stale_days is not None:
+        cfg.entities.stale_days = body.entities_stale_days
+    if body.writing_style_guide is not None:
+        cfg.writing.style_guide = body.writing_style_guide
     if body.llm_api_key is not None:
         # Never echoed back by GET, so an absent value must mean "unchanged"
         # rather than "wipe it".

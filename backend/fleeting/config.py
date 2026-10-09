@@ -156,6 +156,14 @@ class TasksConfig:
 
 
 @dataclass
+class WritingConfig:
+    # #451: a house style applied to every rewrite and title suggestion. Free
+    # text because it is the user's own words, and a rule the app cannot
+    # enumerate ("no semicolons", "British spelling") is the common case.
+    style_guide: str = ""
+
+
+@dataclass
 class EntitiesConfig:
     # #416: days without a mention before a contact is "stale". 0 disables the
     # list entirely — the idea says opt-in, and an unwanted one is noise.
@@ -174,6 +182,7 @@ class Config:
     notes: NotesConfig = field(default_factory=NotesConfig)
     tasks: TasksConfig = field(default_factory=TasksConfig)
     entities: EntitiesConfig = field(default_factory=EntitiesConfig)
+    writing: WritingConfig = field(default_factory=WritingConfig)
 
 
 # Sections that map to dataclass fields, used for (de)serialization.
@@ -188,6 +197,7 @@ _SECTIONS: dict[str, type] = {
     "notes": NotesConfig,
     "tasks": TasksConfig,
     "entities": EntitiesConfig,
+    "writing": WritingConfig,
 }
 
 

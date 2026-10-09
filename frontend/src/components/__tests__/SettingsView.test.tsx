@@ -28,6 +28,8 @@ const mockBaseSettings: Settings = {
   llm_model: "gpt-4o-mini",
   llm_fallback_models: "",
   llm_preferred_tags: "",
+  entities_stale_days: 0,
+  writing_style_guide: "",
   llm_timeout_secs: 30,
   transcribe_model: "base",
   transcribe_language: "en",

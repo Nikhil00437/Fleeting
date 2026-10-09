@@ -18,6 +18,8 @@ const base: Settings = {
   llm_model: "qwen3:8b",
   llm_fallback_models: "",
   llm_preferred_tags: "",
+  entities_stale_days: 0,
+  writing_style_guide: "",
   llm_timeout_secs: 120,
   transcribe_model: "base",
   transcribe_language: "auto",
@@ -114,5 +116,34 @@ describe("AiTab preferred tags (#257)", () => {
   it("is hidden with no provider configured", () => {
     renderTab({ llm_provider: "none" });
     expect(screen.queryByLabelText(/preferred tags/i)).toBeNull();
+  });
+});
+
+describe("AiTab style guide (#451)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("labels the style guide field", () => {
+    renderTab();
+    const field = screen.getByLabelText(/style guide/i) as HTMLTextAreaElement;
+    expect(field.id).toBe("writing-style-guide");
+  });
+
+  it("shows the configured guide", () => {
+    renderTab({ writing_style_guide: "No semicolons." });
+    expect((screen.getByLabelText(/style guide/i) as HTMLTextAreaElement).value).toBe(
+      "No semicolons.",
+    );
+  });
+
+  it("says it applies everywhere rather than to one command", () => {
+    const { container } = renderTab();
+    expect(container.textContent).toMatch(/every rewrite and title/i);
+  });
+
+  it("is hidden with no provider configured", () => {
+    renderTab({ llm_provider: "none" });
+    expect(screen.queryByLabelText(/style guide/i)).toBeNull();
   });
 });
