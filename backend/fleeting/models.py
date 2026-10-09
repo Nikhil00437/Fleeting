@@ -458,6 +458,8 @@ class SettingsIn(BaseModel):
     llm_model: str | None = None
     # #266: comma-separated fallback models, tried in order.
     llm_fallback_models: str | None = None
+    # #257: comma-separated tags the user already uses.
+    llm_preferred_tags: str | None = None
     llm_timeout_secs: int | None = Field(default=None, ge=5, le=600)
     # Absent or null keeps the stored key; an empty string clears it. The stored
     # value is never returned by GET, so the UI cannot accidentally echo it back.

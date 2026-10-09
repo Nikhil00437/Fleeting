@@ -63,6 +63,9 @@ class LLMConfig:
     # answers with something unparseable. Empty means no chain — the capture
     # falls back to heuristics on the first failure, as it always did.
     fallback_models: str = ""
+    # #257: comma-separated tags the user already uses. The enricher is told
+    # about them and its output is snapped onto them.
+    preferred_tags: str = ""
     timeout_secs: int = 120
     # Bearer token for OpenAI-compatible endpoints. Stored in plaintext in
     # ~/.config/fleeting/config.toml, so keep that file readable only by you.

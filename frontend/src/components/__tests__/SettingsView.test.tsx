@@ -27,6 +27,7 @@ const mockBaseSettings: Settings = {
   llm_base_url: "https://api.openai.com/v1",
   llm_model: "gpt-4o-mini",
   llm_fallback_models: "",
+  llm_preferred_tags: "",
   llm_timeout_secs: 30,
   transcribe_model: "base",
   transcribe_language: "en",

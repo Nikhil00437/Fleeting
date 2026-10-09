@@ -17,6 +17,7 @@ const base: Settings = {
   llm_base_url: "http://127.0.0.1:11434",
   llm_model: "qwen3:8b",
   llm_fallback_models: "",
+  llm_preferred_tags: "",
   llm_timeout_secs: 120,
   transcribe_model: "base",
   transcribe_language: "auto",
@@ -85,5 +86,33 @@ describe("AiTab fallback models (#266)", () => {
   it("hides the field when no provider is configured", () => {
     renderTab({ llm_provider: "none" });
     expect(screen.queryByLabelText(/fallback models/i)).toBeNull();
+  });
+});
+
+describe("AiTab preferred tags (#257)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("labels the vocabulary field", () => {
+    renderTab();
+    const input = screen.getByLabelText(/preferred tags/i) as HTMLInputElement;
+    expect(input.id).toBe("llm-preferred-tags");
+  });
+
+  it("shows the configured vocabulary", () => {
+    renderTab({ llm_preferred_tags: "homelab, reading" });
+    const input = screen.getByLabelText(/preferred tags/i) as HTMLInputElement;
+    expect(input.value).toBe("homelab, reading");
+  });
+
+  it("says the vocabulary is enforced, not just suggested", () => {
+    const { container } = renderTab();
+    expect(container.textContent).toMatch(/snapped onto/i);
+  });
+
+  it("is hidden with no provider configured", () => {
+    renderTab({ llm_provider: "none" });
+    expect(screen.queryByLabelText(/preferred tags/i)).toBeNull();
   });
 });

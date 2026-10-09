@@ -17,6 +17,7 @@ from ..models import NoteOut, NoteUpdateIn, RegenerateIn, SnoozeIn
 from ..services import markdown
 from ..services.embeddings import embed_note
 from ..services.fewshot import build_few_shot
+from ..services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -417,6 +418,7 @@ async def regenerate_note(note_id: str, body: RegenerateIn, request: Request) ->
             note["raw_text"],
             llm_cfg,
             few_shot=build_few_shot(st.db),
+            tag_vocab=tag_prompt(preferred_tags(st.cfg)),
         )
     except llm_svc.LLMUnavailable as exc:
         raise HTTPException(502, f"model unreachable: {exc}") from exc
@@ -426,7 +428,9 @@ async def regenerate_note(note_id: str, body: RegenerateIn, request: Request) ->
         {
             "title": enriched["title"],
             "summary": enriched["summary"],
-            "tags": enriched["tags"],
+            # #257 enforced here too, so a manual re-enrich lands in the same
+            # vocabulary as an automatic one.
+            "tags": apply_preferred_tags(enriched["tags"], preferred_tags(st.cfg)),
             "review_state": "enriched",
             "enrich_confidence": enriched.get("confidence"),
         },

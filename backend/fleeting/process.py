@@ -21,6 +21,7 @@ from .events import EventBus
 from .services import llm, markdown
 from .services.embeddings import embed_note
 from .services.fewshot import build_few_shot
+from .services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
 from .services.transcribe import Transcriber, TranscriptionError
 from .services.youtube import YouTubeError, ingest as yt_ingest
 
@@ -195,12 +196,20 @@ class Processor:
                         self.cfg.llm,
                         prompt=template_prompt,
                         few_shot=build_few_shot(self.db),
+                        tag_vocab=tag_prompt(preferred_tags(self.cfg)),
                     )
                     source["enrichment"] = "local-llm"
                 except llm.LLMUnavailable as exc:
                     log.info("LLM unavailable (%s) — heuristic fallback for %s", exc, note_id)
                     enriched = llm.heuristic_enrich(note["raw_text"])
                     source["enrichment"] = "heuristic"
+
+            # #257: enforced, not just suggested. A sensitive note is skipped
+            # here too — its tags came from keywords, and silently rewriting
+            # them would misdescribe where they came from.
+            vocab = preferred_tags(self.cfg)
+            if vocab and source.get("enrichment") != "heuristic-sensitive":
+                enriched = {**enriched, "tags": apply_preferred_tags(enriched["tags"], vocab)}
 
             # 3) persist structured fields
             changes = {

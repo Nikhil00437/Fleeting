@@ -334,6 +334,34 @@ export default function AiTab({
                 </div>
               )}
 
+              {/* #257 tag vocabulary — the tags enrichment is held to. */}
+              {s.llm_provider !== "none" && (
+                <div className="mt-4 border-t border-ink-800/80 pt-4">
+                  <label className={labelCls} htmlFor="llm-preferred-tags">
+                    Preferred Tags
+                  </label>
+                  <input
+                    id="llm-preferred-tags"
+                    value={s.llm_preferred_tags ?? ""}
+                    onChange={(e) => patch({ llm_preferred_tags: e.target.value })}
+                    onBlur={() =>
+                      void save(
+                        { llm_preferred_tags: s.llm_preferred_tags },
+                        "preferred tags updated",
+                      )
+                    }
+                    className={`${inputCls} font-mono`}
+                    placeholder="homelab, work, reading"
+                    spellCheck={false}
+                  />
+                  <p className="mt-1 text-[10px] text-ink-500">
+                    Comma-separated. The enricher is told about these and its output is snapped onto
+                    them, so a model that answers &quot;homelab-router&quot; when you use
+                    &quot;homelab&quot; gets corrected. Unrelated tags are left alone.
+                  </p>
+                </div>
+              )}
+
               {s.llm_provider === "none" && (
                 <div className="mt-5 border-t border-ink-800/80 pt-4">
                   <p className="text-xs text-ink-400">

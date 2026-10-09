@@ -324,6 +324,7 @@ async def enrich_chain(
     cfg: LLMConfig,
     prompt: str | None = None,
     few_shot: str = "",
+    tag_vocab: str = "",
 ) -> dict:
     """#266: `enrich` across `model_chain`, then the caller's heuristic pass.
 
@@ -346,9 +347,11 @@ async def enrich_chain(
     today_iso = datetime.now(timezone.utc).date().isoformat()
     base_prompt = ENRICH_SYSTEM_TEMPLATE.format(today_iso=today_iso)
     # #256: the user's own corrected enrichments, which outrank anything the
-    # template can say about their taste.
+    # template can say about their taste. #257: their tag vocabulary.
     if few_shot:
         base_prompt += f"\n\n{few_shot}"
+    if tag_vocab:
+        base_prompt += f"\n\n{tag_vocab}"
     if prompt:
         base_prompt += f"\n\nCapture-template instruction: {prompt}"
 

@@ -27,6 +27,7 @@ const settings: Settings = {
   llm_base_url: "http://127.0.0.1:11434",
   llm_model: "qwen3:8b",
   llm_fallback_models: "",
+  llm_preferred_tags: "",
   llm_timeout_secs: 120,
   transcribe_model: "base",
   transcribe_language: "auto",
