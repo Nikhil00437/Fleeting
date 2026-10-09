@@ -823,6 +823,31 @@ export interface AssistantChatOut {
   pending_action?: PendingAction | null;
 }
 
+/** #112: one recorded LLM call. */
+export interface LlmTrace {
+  id: string;
+  kind: string;
+  queries: string[];
+  context: string;
+  tool_calls: { tool: string; params?: Record<string, unknown> }[];
+  tokens: number | null;
+  ms: number;
+  at: string;
+}
+
+/** #453: the exact context a question would send, without calling the model. */
+export interface ContextPreview {
+  query: string;
+  context: string;
+  sources: SourceRef[];
+  context_used: {
+    notes_count: number;
+    tasks_count: number;
+    logs_count: number;
+  };
+  queries: string[];
+}
+
 export interface AssistantSuggestionsOut {
   suggestions: string[];
 }

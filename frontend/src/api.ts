@@ -32,6 +32,8 @@ import type {
   ChatHistoryItem,
   ChatMessage,
   AssistantSuggestionsOut,
+  ContextPreview,
+  LlmTrace,
   ProcessApp,
   ProcessInfo,
   ProcessDetails,
@@ -811,6 +813,14 @@ export const api = {
 
   assistantSuggestions: () =>
     req<AssistantSuggestionsOut>("/assistant/suggestions"),
+
+  /** #112: what each recent LLM call looked at and ran. */
+  assistantTraces: (kind?: string) =>
+    req<LlmTrace[]>(`/assistant/traces${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
+
+  /** #453: the exact context a question would send, without calling the model. */
+  assistantContextPreview: (q: string) =>
+    req<ContextPreview>(`/assistant/context-preview?q=${encodeURIComponent(q)}`),
 
   processApps: () => req<ProcessApp[]>("/processes/apps"),
 

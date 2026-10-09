@@ -7,9 +7,12 @@ import {
   SparkIcon,
   TrashIcon,
 } from "./Icons";
+import { AssistantTraceRow, ContextPreview } from "./AssistantTrace";
 import type {
   ChatHistoryItem,
   ChatMessage,
+  ContextPreview as ContextPreviewData,
+  LlmTrace,
   PendingAction,
   RepoInfo,
   SourceRef,
@@ -309,6 +312,40 @@ export default function AssistantView({
   const [chatId, setChatId] = useState(() => `chat-${Date.now()}`);
   const [history, setHistory] = useState<ChatHistoryItem[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
+  // #112/#453. Traces refresh after each answer; the preview is a read of the
+  // current draft, so it is cleared when the draft changes underneath it.
+  const [traces, setTraces] = useState<LlmTrace[]>([]);
+  const [expandedTrace, setExpandedTrace] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ContextPreviewData | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  const loadTraces = useCallback(() => {
+    api
+      .assistantTraces()
+      .then(setTraces)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadTraces();
+  }, [loadTraces, messages.length]);
+
+  useEffect(() => {
+    setPreview(null);
+  }, [input]);
+
+  const handlePreview = useCallback(async () => {
+    const q = input.trim();
+    if (!q) return;
+    setPreviewing(true);
+    try {
+      setPreview(await api.assistantContextPreview(q));
+    } catch (exc) {
+      onToast(exc instanceof Error ? exc.message : "could not build preview", "err");
+    } finally {
+      setPreviewing(false);
+    }
+  }, [input, onToast]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -786,12 +823,34 @@ export default function AssistantView({
 
       {/* Docked Query Input Bar */}
       <div className="app-toolbar shrink-0 border-t p-4">
+        <div className="max-w-3xl mx-auto space-y-2">
+          {/* #453 preview + #112 trace history, above the composer so both stay
+              reachable without scrolling back through the thread. */}
+          {preview && (
+            <ContextPreview preview={preview} onClose={() => setPreview(null)} />
+          )}
+
+          {traces.length > 0 && (
+            <div className="space-y-1.5">
+              {traces.map((t) => (
+                <AssistantTraceRow
+                  key={t.id}
+                  trace={t}
+                  expanded={expandedTrace === t.id}
+                  onToggle={() =>
+                    setExpandedTrace(expandedTrace === t.id ? null : t.id)
+                  }
+                />
+              ))}
+            </div>
+          )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
             handleSendPrompt(input);
           }}
-          className="max-w-3xl mx-auto flex items-center gap-2"
+          className="flex items-center gap-2"
         >
           <div className="relative flex-1">
             <input
@@ -805,6 +864,18 @@ export default function AssistantView({
               data-testid="assistant-input"
             />
           </div>
+
+          {/* #453: preview before asking, not after regretting it. */}
+          <button
+            type="button"
+            onClick={handlePreview}
+            disabled={!input.trim() || loading || previewing}
+            title="Show exactly what the model would be sent"
+            className="flex h-10 items-center justify-center rounded-xl border border-ink-700 bg-ink-900 px-3 text-xs font-semibold text-ink-300 transition-colors hover:bg-ink-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            data-testid="preview-context-btn"
+          >
+            {previewing ? "…" : "Preview"}
+          </button>
 
           <button
             type="submit"
@@ -830,6 +901,7 @@ export default function AssistantView({
             </button>
           )}
         </form>
+        </div>
       </div>
     </div>
   );
