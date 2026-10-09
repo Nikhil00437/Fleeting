@@ -311,17 +311,36 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
 
     {/* #250 task conversion funnel */}
     <div className="xl:col-span-2">
-      <TaskFunnelCard refreshKey={refreshKey} />
+      <TaskFunnelCard
+        refreshKey={refreshKey}
+        onSelectStage={(stage) => onToast(`Viewing tasks in stage: ${stage}`)}
+        onSelectPriority={(prio) => onToast(`Viewing priority: ${prio}`)}
+      />
     </div>
 
     {/* #423 backlog burndown chart */}
     <div className="xl:col-span-2">
-      <BurndownChartCard refreshKey={refreshKey} />
+      <BurndownChartCard
+        refreshKey={refreshKey}
+        onSelectDay={(selectedDay) => {
+          setDay(selectedDay);
+          onToast(`Switched report date to ${selectedDay}`);
+        }}
+      />
     </div>
 
     {/* #247 24-hour radial day clock */}
     <div className="xl:col-span-2">
-      <RadialDayClock refreshKey={refreshKey} initialDay={day} onSelectDay={setDay} />
+      <RadialDayClock
+        refreshKey={refreshKey}
+        initialDay={day}
+        onSelectDay={setDay}
+        onSelectApp={(app) => onToast(`Selected application: ${app}`)}
+        onSelectProject={(proj) => {
+          setSelectedProject(proj);
+          setShowProjects(true);
+        }}
+      />
     </div>
 
     {/* #251 project time treemap */}
@@ -337,17 +356,36 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
 
     {/* #248 weekly small-multiples */}
     <div className="xl:col-span-2">
-      <WeeklySmallMultiplesCard refreshKey={refreshKey} onSelectDay={setDay} />
+      <WeeklySmallMultiplesCard
+        refreshKey={refreshKey}
+        onSelectDay={(selectedDay) => {
+          setDay(selectedDay);
+          onToast(`Switched report date to ${selectedDay}`);
+        }}
+      />
     </div>
 
     {/* #249 tag co-occurrence matrix and topic stream */}
     <div className="xl:col-span-2">
-      <TagAnalyticsCard refreshKey={refreshKey} />
+      <TagAnalyticsCard
+        refreshKey={refreshKey}
+        onSelectTag={(tag, coTag) => {
+          if (coTag) {
+            onToast(`Filter notes with #${tag} and #${coTag}`);
+          } else {
+            onToast(`Filter notes with #${tag}`);
+          }
+        }}
+      />
     </div>
 
     {/* #246 app-to-app switching Sankey / flow chart */}
     <div className="xl:col-span-2">
-      <AppSwitchingFlowCard refreshKey={refreshKey} initialDay={day} />
+      <AppSwitchingFlowCard
+        refreshKey={refreshKey}
+        initialDay={day}
+        onSelectApp={(app) => onToast(`Selected application: ${app}`)}
+      />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}

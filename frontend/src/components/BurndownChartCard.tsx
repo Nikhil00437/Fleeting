@@ -6,9 +6,10 @@ import type { BurndownData, BurndownSeriesPoint } from "../types";
 
 interface Props {
   refreshKey: number;
+  onSelectDay?: (day: string) => void;
 }
 
-export default function BurndownChartCard({ refreshKey }: Props) {
+export default function BurndownChartCard({ refreshKey, onSelectDay }: Props) {
   const [windowDays, setWindowDays] = useState<14 | 30 | 60>(30);
   const [data, setData] = useState<BurndownData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -261,6 +262,7 @@ export default function BurndownChartCard({ refreshKey }: Props) {
                     width={barWidth * 4}
                     height={chartHeight}
                     fill="transparent"
+                    onClick={() => onSelectDay?.(p.day)}
                     onMouseEnter={() => setHoveredPoint(p)}
                     onMouseLeave={() => setHoveredPoint(null)}
                   />

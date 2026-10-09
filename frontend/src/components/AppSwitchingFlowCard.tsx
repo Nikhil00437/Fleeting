@@ -389,9 +389,12 @@ export default function AppSwitchingFlowCard({
                     strokeWidth={isHovered ? 1.5 : 0}
                     opacity={isDimmed ? 0.12 : isHovered || isConnected ? 0.9 : 0.6}
                     className="cursor-pointer transition-opacity duration-200"
+                    onClick={() => onSelectApp?.(r.link.source)}
                     onMouseEnter={() => setHoveredLink(r.link)}
                     onMouseLeave={() => setHoveredLink(null)}
-                  />
+                  >
+                    <title>{`Switch from ${r.link.source} to ${r.link.target} (${r.link.value} times)`}</title>
+                  </path>
                 );
               })}
 

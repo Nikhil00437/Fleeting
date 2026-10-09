@@ -63,6 +63,8 @@ interface Props {
   refreshKey: number;
   initialDay?: string;
   onSelectDay?: (day: string) => void;
+  onSelectApp?: (app: string) => void;
+  onSelectProject?: (project: string) => void;
 }
 
 function shiftDay(dayStr: string, deltaDays: number): string {
@@ -82,7 +84,13 @@ function getTodayStr(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export default function RadialDayClock({ refreshKey, initialDay, onSelectDay }: Props) {
+export default function RadialDayClock({
+  refreshKey,
+  initialDay,
+  onSelectDay,
+  onSelectApp,
+  onSelectProject,
+}: Props) {
   const todayStr = useMemo(() => getTodayStr(), []);
   const [day, setDay] = useState(initialDay || todayStr);
   const [data, setData] = useState<RadialClockData | null>(null);
@@ -385,6 +393,13 @@ export default function RadialDayClock({ refreshKey, initialDay, onSelectDay }: 
                     stroke={isHovered ? "#ffffff" : "rgba(0,0,0,0.4)"}
                     strokeWidth={isHovered ? 1.5 : 0.5}
                     className="cursor-pointer transition-all duration-150"
+                    onClick={() => {
+                      if (colorMode === "app" && seg.app_class) {
+                        onSelectApp?.(seg.app_class);
+                      } else if (colorMode === "project" && seg.project) {
+                        onSelectProject?.(seg.project);
+                      }
+                    }}
                     onMouseEnter={() => setHoveredSegment(seg)}
                     onMouseLeave={() => setHoveredSegment(null)}
                   />
@@ -529,7 +544,18 @@ export default function RadialDayClock({ refreshKey, initialDay, onSelectDay }: 
                 const color = colorMap.get(name) || "#94a3b8";
 
                 return (
-                  <div key={name} className="flex items-center justify-between text-xs">
+                  <div
+                    key={name}
+                    className="flex items-center justify-between text-xs cursor-pointer rounded-md p-1 -mx-1 transition-colors hover:bg-white/[0.04]"
+                    onClick={() => {
+                      if (colorMode === "app") {
+                        onSelectApp?.(name);
+                      } else {
+                        onSelectProject?.(name);
+                      }
+                    }}
+                    title={`Filter by ${colorMode === "app" ? "app" : "project"}: ${name}`}
+                  >
                     <div className="flex items-center gap-2 overflow-hidden pr-2">
                       <span
                         className="h-2.5 w-2.5 shrink-0 rounded-full"

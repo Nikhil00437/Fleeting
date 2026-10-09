@@ -18,9 +18,10 @@ const TAG_COLORS = [
 
 interface Props {
   refreshKey: number;
+  onSelectTag?: (tag: string, coTag?: string) => void;
 }
 
-export default function TagAnalyticsCard({ refreshKey }: Props) {
+export default function TagAnalyticsCard({ refreshKey, onSelectTag }: Props) {
   const [mode, setMode] = useState<"matrix" | "stream">("matrix");
   const [topN, setTopN] = useState<6 | 8 | 12>(8);
   const [weeks, setWeeks] = useState<4 | 8 | 12>(8);
@@ -266,7 +267,9 @@ export default function TagAnalyticsCard({ refreshKey }: Props) {
                   {data.top_tags.map((t, cIdx) => (
                     <th
                       key={t.tag}
-                      className={`p-1.5 text-center font-mono text-[10px] font-semibold transition-colors ${
+                      onClick={() => onSelectTag?.(t.tag)}
+                      title={`Filter notes with #${t.tag}`}
+                      className={`p-1.5 text-center font-mono text-[10px] font-semibold transition-colors cursor-pointer hover:underline ${
                         hoveredCell?.col === cIdx ? "text-emerald-300" : "text-ink-300"
                       }`}
                     >
@@ -279,7 +282,9 @@ export default function TagAnalyticsCard({ refreshKey }: Props) {
                 {data.top_tags.map((rowTag, rIdx) => (
                   <tr key={rowTag.tag} className="border-t border-white/[0.02]">
                     <td
-                      className={`py-1.5 pr-2 font-mono text-[10px] font-semibold whitespace-nowrap transition-colors ${
+                      onClick={() => onSelectTag?.(rowTag.tag)}
+                      title={`Filter notes with #${rowTag.tag}`}
+                      className={`py-1.5 pr-2 font-mono text-[10px] font-semibold whitespace-nowrap transition-colors cursor-pointer hover:underline ${
                         hoveredCell?.row === rIdx ? "text-emerald-300" : "text-ink-300"
                       }`}
                     >
@@ -310,6 +315,16 @@ export default function TagAnalyticsCard({ refreshKey }: Props) {
                       return (
                         <td
                           key={colTag.tag}
+                          onClick={() =>
+                            isDiag
+                              ? onSelectTag?.(rowTag.tag)
+                              : onSelectTag?.(rowTag.tag, colTag.tag)
+                          }
+                          title={
+                            isDiag
+                              ? `Filter notes with #${rowTag.tag}`
+                              : `Filter notes with both #${rowTag.tag} and #${colTag.tag} (${count})`
+                          }
                           onMouseEnter={() => setHoveredCell({ row: rIdx, col: cIdx })}
                           onMouseLeave={() => setHoveredCell(null)}
                           className={`p-1 text-center font-mono text-[11px] transition-all cursor-pointer ${
@@ -420,6 +435,7 @@ export default function TagAnalyticsCard({ refreshKey }: Props) {
                       stroke={isHovered ? "#ffffff" : "rgba(0,0,0,0.3)"}
                       strokeWidth={isHovered ? 1.5 : 0.5}
                       className="cursor-pointer transition-all duration-150"
+                      onClick={() => onSelectTag?.(ribbon.tag)}
                       onMouseEnter={() => setHoveredStreamTag(ribbon.tag)}
                       onMouseLeave={() => setHoveredStreamTag(null)}
                     />

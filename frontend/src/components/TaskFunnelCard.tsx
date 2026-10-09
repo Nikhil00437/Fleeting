@@ -5,9 +5,11 @@ import type { TaskFunnelData, TaskFunnelStage } from "../types";
 
 interface Props {
   refreshKey: number;
+  onSelectStage?: (stage: TaskFunnelStage["stage"]) => void;
+  onSelectPriority?: (priority: string) => void;
 }
 
-export default function TaskFunnelCard({ refreshKey }: Props) {
+export default function TaskFunnelCard({ refreshKey, onSelectStage, onSelectPriority }: Props) {
   const [windowDays, setWindowDays] = useState<number | null>(30);
   const [data, setData] = useState<TaskFunnelData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,11 +131,18 @@ export default function TaskFunnelCard({ refreshKey }: Props) {
             {data.stages.map((stage, idx) => {
               const widthPct = Math.max(12, stage.pct_of_captured);
               return (
-                <div key={stage.stage} className="group">
+                <div
+                  key={stage.stage}
+                  className="group cursor-pointer rounded-lg p-1.5 transition-colors hover:bg-white/[0.03]"
+                  onClick={() => onSelectStage?.(stage.stage)}
+                  title={`View tasks in stage: ${stage.name}`}
+                >
                   <div className="flex items-center justify-between text-xs pb-1">
                     <div className="flex items-center gap-2">
                       {stageIcon(stage.stage)}
-                      <span className="font-medium text-ink-200">{stage.name}</span>
+                      <span className="font-medium text-ink-200 group-hover:text-ink-100 transition-colors">
+                        {stage.name}
+                      </span>
                     </div>
                     <div className="flex items-center gap-3 font-mono">
                       <span className="text-ink-100 font-semibold">{stage.count}</span>
@@ -189,7 +198,9 @@ export default function TaskFunnelCard({ refreshKey }: Props) {
                   return (
                     <div
                       key={prio}
-                      className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-2.5 text-center"
+                      onClick={() => onSelectPriority?.(prio)}
+                      title={`View ${prio} tasks`}
+                      className="cursor-pointer rounded-xl border border-white/[0.04] bg-white/[0.02] p-2.5 text-center transition-all hover:border-white/[0.12] hover:bg-white/[0.05]"
                     >
                       <div className="flex items-center justify-center gap-1.5 pb-1">
                         <span
