@@ -405,6 +405,15 @@ MIGRATIONS: list[str] = [
       at TEXT NOT NULL
     );
     """,
+    # v26 — 0.9 #105 saved prompts. A named question, not a script: the whole
+    # feature is storing it and sending it.
+    """CREATE TABLE IF NOT EXISTS saved_prompts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      at TEXT NOT NULL
+    );
+    """,
     # v25 — 0.9 #414/#417. The user states the alias; nothing infers it.
     # `kind` keeps people and orgs from colliding if #258 generalises this.
     """CREATE TABLE IF NOT EXISTS entity_aliases (

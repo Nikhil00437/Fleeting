@@ -153,6 +153,17 @@ async def undo(request: Request, body: UndoIn) -> dict:
     return await undo_action(body.undo, st.db, st.cfg, getattr(st, "bus", None) or EventBus())
 
 
+@router.get("/note-suggestions")
+def note_suggestions(request: Request, note_id: str = Query(..., min_length=1)) -> list[str]:
+    """#108 questions worth asking about one note.
+
+    Empty for a sensitive (#26) or trashed note — see note_suggestions.
+    """
+    from ..services.assistant import note_suggestions as build
+
+    return build(request.app.state.st.db, note_id)
+
+
 @router.get("/slash-commands")
 def slash_commands() -> list[dict]:
     """#102 so the composer can show hints without hardcoding them."""

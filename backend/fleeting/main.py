@@ -432,6 +432,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app.include_router(assistant.router)
     app.include_router(entities.router)
     app.include_router(writing.router)
+    app.include_router(writing.prompts_router)
     app.include_router(processes.router)
     from .routers import templates
 

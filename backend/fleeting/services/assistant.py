@@ -329,6 +329,47 @@ def build_assistant_context(
     return context_text, sources, context_used
 
 
+def note_suggestions(db: Database, note_id: str) -> list[str]:
+    """#108: questions worth asking about *this* note, from the drawer.
+
+    Derived entirely from the note, which is why a sensitive (#26) or
+    trashed note returns nothing at all: a suggestion is the note's own text
+    rephrased as a question, so offering one would hand its contents to a
+    model the note was explicitly kept away from.
+    """
+    note = db.get_note(note_id)
+    if not note or note.get("sensitive") or note.get("trashed_at"):
+        return []
+
+    out: list[str] = []
+    title = (note.get("title") or "").strip()
+
+    for item in (note.get("action_items") or [])[:2]:
+        text = str(item.get("text") or "").strip()
+        if text:
+            out.append(f"How should I approach: {text}?")
+
+    from .entities import extract_people
+
+    for person in extract_people(note.get("raw_text") or "")[:2]:
+        out.append(f"What did I decide with {person}?")
+
+    tags = [str(t).lstrip("#") for t in (note.get("tags") or []) if str(t).strip()]
+    if tags:
+        out.append(f"What else have I written about #{tags[0]}?")
+
+    if not out and title:
+        out.append(f"Summarise \"{title}\" in one paragraph")
+
+    # Always something to click: an empty strip teaches the user nothing.
+    out.append(f"What should I do next about \"{title or 'this note'}\"?")
+    seen: list[str] = []
+    for s in out:
+        if s not in seen:
+            seen.append(s)
+    return seen[:4]
+
+
 def _extractive_heuristic_answer(query: str, context_text: str, sources: list[dict]) -> str:
     """Fast offline fallback when no LLM is available.
 

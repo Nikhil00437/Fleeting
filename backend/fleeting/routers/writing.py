@@ -1,19 +1,56 @@
-"""Writing assists: #446 rewrite, #447 titles, #451 style guide.
-
-Deliberately small — three endpoints over one service. Everything else in the
-writing cluster (#445 draft-from-notes, #448 assembler, #449 email) takes a
-*set* of notes rather than one blob, so it belongs with the collection tools
-rather than here.
+"""Writing assists: #445-#449 composition, #446 rewrite, #447 titles,
+#451 style guide, #105 saved prompts.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from ..services import writing
+from ..services.prompts import create_prompt, delete_prompt, list_prompts, update_prompt
 
 router = APIRouter(prefix="/api/writing", tags=["writing"])
+
+# #105 lives under its own prefix but ships with this router: a saved prompt
+# is a writing prompt, and splitting it would only add a file.
+prompts_router = APIRouter(prefix="/api/prompts", tags=["prompts"])
+
+
+class PromptIn(BaseModel):
+    name: str
+    body: str
+
+
+@prompts_router.get("")
+def all_prompts(request: Request, q: str = "") -> list[dict]:
+    """#105. Newest first, searchable by name or by body."""
+    return list_prompts(request.app.state.st.db, q=q)
+
+
+@prompts_router.post("")
+def add_prompt(request: Request, body: PromptIn) -> dict:
+    try:
+        return create_prompt(request.app.state.st.db, body.name, body.body)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@prompts_router.patch("/{prompt_id}")
+def edit_prompt(prompt_id: str, request: Request, body: PromptIn) -> dict:
+    try:
+        row = update_prompt(request.app.state.st.db, prompt_id, name=body.name, body=body.body)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if row is None:
+        raise HTTPException(404, "prompt not found")
+    return row
+
+
+@prompts_router.delete("/{prompt_id}")
+def remove_prompt(prompt_id: str, request: Request) -> None:
+    if not delete_prompt(request.app.state.st.db, prompt_id):
+        raise HTTPException(404, "prompt not found")
 
 
 class RewriteIn(BaseModel):
