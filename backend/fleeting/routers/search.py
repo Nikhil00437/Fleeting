@@ -191,6 +191,18 @@ def capture_frequency(request: Request, days: int = 30) -> dict:
     return get_capture_frequency_stats(st.db, days=days)
 
 
+@router.get("/stats/tag-graph")
+def tag_graph(
+    request: Request,
+    top_n: int = Query(8, ge=2, le=20),
+    weeks: int = Query(8, ge=2, le=26),
+) -> dict:
+    """#249 tag co-occurrence matrix and topic-over-time stream chart."""
+    from ..services.tag_graph import get_tag_cooccurrence_and_stream
+
+    return get_tag_cooccurrence_and_stream(request.app.state.st.db, top_n=top_n, weeks=weeks)
+
+
 
 @router.get("/search/unified")
 async def unified(

@@ -400,6 +400,27 @@ export interface WeeklySmallMultiplesData {
   days: WeeklySmallMultipleDay[];
 }
 
+export interface TagGraphPair {
+  tag_a: string;
+  tag_b: string;
+  count: number;
+}
+
+export interface TagStreamSeries {
+  tag: string;
+  total_in_window: number;
+  counts: number[];
+}
+
+export interface TagGraphData {
+  top_tags: { tag: string; count: number }[];
+  matrix: number[][];
+  pairs: TagGraphPair[];
+  weeks: string[];
+  stream: TagStreamSeries[];
+  total_tagged_notes: number;
+}
+
 export interface ProjectDashboardCommit {
   repo: string;
   subject: string;

@@ -56,6 +56,7 @@ import type {
   RadialClockData,
   ProjectTreemapData,
   WeeklySmallMultiplesData,
+  TagGraphData,
 } from "./types";
 
 const BASE = "/api";
@@ -446,6 +447,15 @@ export const api = {
   /** #163 capture frequency stats: notes per day, top tags over time */
   captureFrequency: (days = 30) =>
     req<CaptureFrequencyStats>(`/stats/capture-frequency?days=${days}`),
+
+  /** #249 tag co-occurrence matrix and topic-over-time stream chart */
+  tagGraph: (params?: { top_n?: number; weeks?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.top_n) sp.set("top_n", String(params.top_n));
+    if (params?.weeks) sp.set("weeks", String(params.weeks));
+    const q = sp.toString();
+    return req<TagGraphData>(`/stats/tag-graph${q ? `?${q}` : ""}`);
+  },
 
   settings: () => req<Settings>("/settings"),
 

@@ -13,6 +13,7 @@ import BurndownChartCard from "./BurndownChartCard";
 import RadialDayClock from "./RadialDayClock";
 import ProjectTreemapCard from "./ProjectTreemapCard";
 import WeeklySmallMultiplesCard from "./WeeklySmallMultiplesCard";
+import TagAnalyticsCard from "./TagAnalyticsCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -336,6 +337,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #248 weekly small-multiples */}
     <div className="xl:col-span-2">
       <WeeklySmallMultiplesCard refreshKey={refreshKey} onSelectDay={setDay} />
+    </div>
+
+    {/* #249 tag co-occurrence matrix and topic stream */}
+    <div className="xl:col-span-2">
+      <TagAnalyticsCard refreshKey={refreshKey} />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}
