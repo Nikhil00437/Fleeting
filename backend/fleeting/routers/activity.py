@@ -393,6 +393,23 @@ def activity_radial_clock(request: Request, day: str | None = None) -> dict:
     return get_radial_clock(request.app.state.st.db, request.app.state.st.cfg, target_day)
 
 
+@router.get("/treemap")
+def activity_treemap(
+    request: Request,
+    days: int = Query(7, ge=1, le=365),
+    day: str | None = None,
+) -> dict:
+    """#251 project time treemap."""
+    from ..services.treemap import get_project_treemap
+
+    return get_project_treemap(
+        request.app.state.st.db,
+        request.app.state.st.cfg,
+        days=days,
+        day=_valid_day(day) if day else None,
+    )
+
+
 
 @router.post("/ask")
 async def ask_about_window(request: Request, body: WindowAskIn) -> dict:

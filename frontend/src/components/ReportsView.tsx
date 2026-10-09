@@ -11,6 +11,7 @@ import FocusScoreCard from "./FocusScoreCard";
 import TaskFunnelCard from "./TaskFunnelCard";
 import BurndownChartCard from "./BurndownChartCard";
 import RadialDayClock from "./RadialDayClock";
+import ProjectTreemapCard from "./ProjectTreemapCard";
 import StandupModal from "./StandupModal";
 import PeriodicReviewModal from "./PeriodicReviewModal";
 import ReportPlaygroundModal from "./ReportPlaygroundModal";
@@ -90,6 +91,7 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
   const [showPlayground, setShowPlayground] = useState(false);
   const [showWhatShipped, setShowWhatShipped] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareDay, setCompareDay] = useState(() => shiftDay(todayLocal(), -1));
 
@@ -317,6 +319,17 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
     {/* #247 24-hour radial day clock */}
     <div className="xl:col-span-2">
       <RadialDayClock refreshKey={refreshKey} initialDay={day} onSelectDay={setDay} />
+    </div>
+
+    {/* #251 project time treemap */}
+    <div className="xl:col-span-2">
+      <ProjectTreemapCard
+        refreshKey={refreshKey}
+        onSelectProject={(proj) => {
+          setSelectedProject(proj);
+          setShowProjects(true);
+        }}
+      />
     </div>
 
     {/* Daily AI Report or Side-by-Side Comparison (#71) */}
@@ -812,7 +825,11 @@ export default function ReportsView({ onToast, refreshKey }: Props) {
 
       {showProjects && (
         <ProjectDashboardModal
-          onClose={() => setShowProjects(false)}
+          initialProject={selectedProject}
+          onClose={() => {
+            setShowProjects(false);
+            setSelectedProject(null);
+          }}
         />
       )}
     </div>

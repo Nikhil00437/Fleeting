@@ -356,6 +356,28 @@ export interface RadialClockData {
   projects: { project: string; seconds: number; pct: number }[];
 }
 
+export interface ProjectTreemapApp {
+  name: string;
+  seconds: number;
+  pct_of_project: number;
+  pct_of_total: number;
+}
+
+export interface ProjectTreemapItem {
+  name: string;
+  seconds: number;
+  pct: number;
+  apps: ProjectTreemapApp[];
+}
+
+export interface ProjectTreemapData {
+  window_days: number;
+  day: string | null;
+  total_seconds: number;
+  project_count: number;
+  projects: ProjectTreemapItem[];
+}
+
 export interface ProjectDashboardCommit {
   repo: string;
   subject: string;

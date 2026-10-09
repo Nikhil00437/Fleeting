@@ -54,6 +54,7 @@ import type {
   TaskFunnelData,
   BurndownData,
   RadialClockData,
+  ProjectTreemapData,
 } from "./types";
 
 const BASE = "/api";
@@ -548,6 +549,15 @@ export const api = {
   /** #247 24-hour radial day clock */
   radialClock: (day?: string) =>
     req<RadialClockData>(`/activity/radial-clock${day ? `?day=${day}` : ""}`),
+
+  /** #251 project time treemap */
+  projectTreemap: (params?: { days?: number; day?: string }) => {
+    const sp = new URLSearchParams();
+    if (params?.days) sp.set("days", String(params.days));
+    if (params?.day) sp.set("day", params.day);
+    const q = sp.toString();
+    return req<ProjectTreemapData>(`/activity/treemap${q ? `?${q}` : ""}`);
+  },
 
   /** #342 session rows or a day×project timesheet, as CSV. */
   activityExportUrl: (format: "csv" | "timesheet", params: { day?: string; day_from?: string; day_to?: string }) => {
