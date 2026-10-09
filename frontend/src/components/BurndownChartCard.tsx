@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ActivityIcon } from "./Icons";
+import ChartExportButton from "./ChartExportButton";
 import type { BurndownData, BurndownSeriesPoint } from "../types";
 
 interface Props {
@@ -12,6 +13,7 @@ export default function BurndownChartCard({ refreshKey }: Props) {
   const [data, setData] = useState<BurndownData | null>(null);
   const [loading, setLoading] = useState(true);
   const [hoveredPoint, setHoveredPoint] = useState<BurndownSeriesPoint | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,21 +102,28 @@ export default function BurndownChartCard({ refreshKey }: Props) {
           </div>
         </div>
 
-        {/* Window controls */}
-        <div className="flex items-center gap-1 rounded-xl bg-black/20 p-1">
-          {([14, 30, 60] as const).map((days) => (
-            <button
-              key={days}
-              onClick={() => setWindowDays(days)}
-              className={`rounded-lg px-2.5 py-1 font-mono text-xs transition-colors ${
-                windowDays === days
-                  ? "bg-amber-500/20 font-medium text-amber-300"
-                  : "text-ink-400 hover:text-ink-200"
-              }`}
-            >
-              {days}d
-            </button>
-          ))}
+        {/* Controls */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-xl bg-black/20 p-1">
+            {([14, 30, 60] as const).map((days) => (
+              <button
+                key={days}
+                onClick={() => setWindowDays(days)}
+                className={`rounded-lg px-2.5 py-1 font-mono text-xs transition-colors ${
+                  windowDays === days
+                    ? "bg-amber-500/20 font-medium text-amber-300"
+                    : "text-ink-400 hover:text-ink-200"
+                }`}
+              >
+                {days}d
+              </button>
+            ))}
+          </div>
+
+          <ChartExportButton
+            title={`burndown_${windowDays}d`}
+            getSvg={() => svgRef.current}
+          />
         </div>
       </div>
 
@@ -161,6 +170,7 @@ export default function BurndownChartCard({ refreshKey }: Props) {
       <div className="mt-5 space-y-2">
         <div className="relative overflow-hidden rounded-xl border border-white/[0.04] bg-black/30 p-2">
           <svg
+            ref={svgRef}
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full overflow-visible"
             aria-hidden="true"

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { FolderIcon, GridIcon } from "./Icons";
+import ChartExportButton from "./ChartExportButton";
 import type { ProjectTreemapData } from "../types";
 
 function fmtSecs(seconds: number): string {
@@ -160,6 +161,7 @@ export default function ProjectTreemapCard({ refreshKey, onSelectProject }: Prop
     seconds: number;
     pct: number;
   } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,21 +247,28 @@ export default function ProjectTreemapCard({ refreshKey, onSelectProject }: Prop
           </div>
         </div>
 
-        {/* Window Selector */}
-        <div className="flex items-center gap-1 rounded-xl bg-black/20 p-1">
-          {([1, 7, 30] as const).map((days) => (
-            <button
-              key={days}
-              onClick={() => setWindowDays(days)}
-              className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
-                windowDays === days
-                  ? "bg-violet-500/20 font-medium text-violet-300"
-                  : "text-ink-400 hover:text-ink-200"
-              }`}
-            >
-              {days === 1 ? "Today" : `${days}d`}
-            </button>
-          ))}
+        {/* Controls */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-xl bg-black/20 p-1">
+            {([1, 7, 30] as const).map((days) => (
+              <button
+                key={days}
+                onClick={() => setWindowDays(days)}
+                className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
+                  windowDays === days
+                    ? "bg-violet-500/20 font-medium text-violet-300"
+                    : "text-ink-400 hover:text-ink-200"
+                }`}
+              >
+                {days === 1 ? "Today" : `${days}d`}
+              </button>
+            ))}
+          </div>
+
+          <ChartExportButton
+            title={`project_treemap_${windowDays}d`}
+            getSvg={() => svgRef.current}
+          />
         </div>
       </div>
 
@@ -272,6 +281,7 @@ export default function ProjectTreemapCard({ refreshKey, onSelectProject }: Prop
           {/* Main SVG Treemap Canvas */}
           <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-black/40 p-1.5">
             <svg
+              ref={svgRef}
               viewBox="0 0 680 340"
               className="w-full h-auto overflow-hidden select-none"
               aria-hidden="true"

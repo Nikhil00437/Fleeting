@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { ChevronLeftIcon, ChevronRightIcon, ClockIcon } from "./Icons";
+import ChartExportButton from "./ChartExportButton";
 import type { RadialClockData, RadialClockSegment } from "../types";
 
 function fmtSecs(seconds: number): string {
@@ -89,6 +90,7 @@ export default function RadialDayClock({ refreshKey, initialDay, onSelectDay }: 
   const [colorMode, setColorMode] = useState<"app" | "project">("app");
   const [hoveredSegment, setHoveredSegment] = useState<RadialClockSegment | null>(null);
   const [hoveredHour, setHoveredHour] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     if (initialDay && initialDay !== day) {
@@ -251,6 +253,12 @@ export default function RadialDayClock({ refreshKey, initialDay, onSelectDay }: 
               </button>
             )}
           </div>
+
+          {/* Chart Export Action (#253) */}
+          <ChartExportButton
+            title={`radial_day_clock_${day}`}
+            getSvg={() => svgRef.current}
+          />
         </div>
       </div>
 
@@ -260,6 +268,7 @@ export default function RadialDayClock({ refreshKey, initialDay, onSelectDay }: 
         <div className="flex justify-center lg:col-span-7">
           <div className="relative w-full max-w-[360px] aspect-square">
             <svg
+              ref={svgRef}
               viewBox="0 0 360 360"
               className="w-full h-full overflow-visible select-none"
               aria-hidden="true"
