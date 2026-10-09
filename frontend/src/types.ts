@@ -524,6 +524,10 @@ export interface Settings {
   llm_fallback_models: string;
   /** #257: comma-separated tags the enricher is held to. */
   llm_preferred_tags: string;
+  /** #92: per-role model overrides; empty means "use llm_model". */
+  llm_enrich_model: string;
+  llm_report_model: string;
+  llm_assistant_model: string;
   /** #416: days without a mention before a contact is stale; 0 disables it. */
   entities_stale_days: number;
   /** #451: house style applied to every rewrite and title suggestion. */

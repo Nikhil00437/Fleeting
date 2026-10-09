@@ -467,6 +467,10 @@ class SettingsIn(BaseModel):
     # #257/#266/#416 companion fields, same block as the llm_* ones above.
     llm_fallback_models: str | None = None
     llm_preferred_tags: str | None = None
+    # #92: role model overrides. Empty means "use llm_model".
+    llm_enrich_model: str | None = None
+    llm_report_model: str | None = None
+    llm_assistant_model: str | None = None
     entities_stale_days: int | None = Field(default=None, ge=0, le=3650)
     llm_timeout_secs: int | None = Field(default=None, ge=5, le=600)
     # Absent or null keeps the stored key; an empty string clears it. The stored

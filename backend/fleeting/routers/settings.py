@@ -42,6 +42,10 @@ def _settings_payload(request: Request) -> dict:
         # fields, flattened so the settings UI reads one shape.
         "llm_fallback_models": cfg.llm.fallback_models,
         "llm_preferred_tags": cfg.llm.preferred_tags,
+        # #92: role overrides, empty meaning "use the model above".
+        "llm_enrich_model": cfg.llm.enrich_model,
+        "llm_report_model": cfg.llm.report_model,
+        "llm_assistant_model": cfg.llm.assistant_model,
         "entities_stale_days": cfg.entities.stale_days,
         "writing_style_guide": cfg.writing.style_guide,
         "transcribe_model": cfg.transcribe.model,
@@ -125,6 +129,10 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.llm.fallback_models = body.llm_fallback_models.strip()
     if body.llm_preferred_tags is not None:
         cfg.llm.preferred_tags = body.llm_preferred_tags.strip()
+    for field in ("enrich_model", "report_model", "assistant_model"):
+        value = getattr(body, f"llm_{field}", None)
+        if value is not None:
+            setattr(cfg.llm, field, value.strip())
     if body.entities_stale_days is not None:
         cfg.entities.stale_days = body.entities_stale_days
     if body.writing_style_guide is not None:

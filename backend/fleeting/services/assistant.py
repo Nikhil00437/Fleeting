@@ -17,6 +17,7 @@ from .actions import AVAILABLE_ACTIONS, DESTRUCTIVE_ACTIONS, execute_action
 from .llm import (
     LLMUnavailable,
     auth_headers,
+    model_for,
     normalize_base_url,
     request_chat,
     stream_chat,
@@ -739,7 +740,7 @@ async def ask_assistant(
         ]
         if cfg.llm.provider == "lmstudio":
             payload = {
-                "model": cfg.llm.model,
+                "model": model_for(cfg.llm, "assistant"),
                 "messages": full_messages,
                 "temperature": 0.3,
                 "max_tokens": 1024,
@@ -747,7 +748,7 @@ async def ask_assistant(
             url = f"{base}/v1/chat/completions"
         else:  # ollama
             payload = {
-                "model": cfg.llm.model,
+                "model": model_for(cfg.llm, "assistant"),
                 "messages": full_messages,
                 "stream": False,
                 "think": False,
@@ -845,10 +846,10 @@ async def ask_assistant_stream(
         *dialogue,
     ]
     if cfg.llm.provider == "lmstudio":
-        payload = {"model": cfg.llm.model, "messages": full_messages, "temperature": 0.3, "max_tokens": 1024, "stream": True}
+        payload = {"model": model_for(cfg.llm, "assistant"), "messages": full_messages, "temperature": 0.3, "max_tokens": 1024, "stream": True}
         url = f"{base}/v1/chat/completions"
     else:  # ollama
-        payload = {"model": cfg.llm.model, "messages": full_messages, "stream": True, "think": False, "options": {"temperature": 0.3}}
+        payload = {"model": model_for(cfg.llm, "assistant"), "messages": full_messages, "stream": True, "think": False, "options": {"temperature": 0.3}}
         url = f"{base}/api/chat"
 
     try:

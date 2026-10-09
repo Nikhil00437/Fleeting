@@ -63,6 +63,12 @@ class LLMConfig:
     # answers with something unparseable. Empty means no chain — the capture
     # falls back to heuristics on the first failure, as it always did.
     fallback_models: str = ""
+    # #92: per-role model overrides. Capture wants a small fast model, reports
+    # and the assistant want the big one. Empty means "use `model`", so an
+    # untouched config behaves exactly as it did.
+    enrich_model: str = ""
+    report_model: str = ""
+    assistant_model: str = ""
     # #257: comma-separated tags the user already uses. The enricher is told
     # about them and its output is snapped onto them.
     preferred_tags: str = ""

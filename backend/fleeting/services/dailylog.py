@@ -314,9 +314,11 @@ async def generate_with_llm(
     )
 
     base = cfg.llm.base_url.rstrip("/")
+    # #92: reports get their own model — usually the larger one.
+    model = llm_svc.model_for(cfg.llm, "report")
     if cfg.llm.provider == "lmstudio":
         payload = {
-            "model": cfg.llm.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": transcript},
@@ -327,7 +329,7 @@ async def generate_with_llm(
         url = f"{base}/v1/chat/completions"
     else:
         payload = {
-            "model": cfg.llm.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": transcript},
@@ -349,7 +351,7 @@ async def generate_with_llm(
     if not md or len(md) < 40:
         raise llm_svc.LLMUnavailable("model returned an empty daily log")
     md = re.sub(r"^```(?:markdown)?\s*|\s*```$", "", md, flags=re.MULTILINE).strip()
-    return md, cfg.llm.model or "local"
+    return md, model or "local"
 
 
 def fallback_digest(

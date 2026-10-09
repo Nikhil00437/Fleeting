@@ -18,6 +18,9 @@ const base: Settings = {
   llm_model: "qwen3:8b",
   llm_fallback_models: "",
   llm_preferred_tags: "",
+  llm_enrich_model: "",
+  llm_report_model: "",
+  llm_assistant_model: "",
   entities_stale_days: 0,
   writing_style_guide: "",
   llm_timeout_secs: 120,
@@ -145,5 +148,36 @@ describe("AiTab style guide (#451)", () => {
   it("is hidden with no provider configured", () => {
     renderTab({ llm_provider: "none" });
     expect(screen.queryByLabelText(/style guide/i)).toBeNull();
+  });
+});
+
+describe("AiTab per-task models (#92)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("offers an override for each of the three jobs", () => {
+    renderTab();
+    expect(screen.getByLabelText("Capture")).toBeTruthy();
+    expect(screen.getByLabelText("Reports")).toBeTruthy();
+    expect(screen.getByLabelText("Assistant")).toBeTruthy();
+  });
+
+  it("shows the configured overrides", () => {
+    renderTab({ llm_enrich_model: "qwen2.5:3b", llm_model: "qwen3:8b" });
+    expect((screen.getByLabelText("Capture") as HTMLInputElement).value).toBe("qwen2.5:3b");
+  });
+
+  it("shows an empty override as the model above", () => {
+    // Blank means "use the model above", so the placeholder says so.
+    renderTab({ llm_model: "qwen3:8b" });
+    const input = screen.getByLabelText("Reports") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(input.placeholder).toBe("qwen3:8b");
+  });
+
+  it("is hidden with no provider configured", () => {
+    renderTab({ llm_provider: "none" });
+    expect(screen.queryByLabelText("Reports")).toBeNull();
   });
 });

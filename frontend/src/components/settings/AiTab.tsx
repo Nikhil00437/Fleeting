@@ -362,6 +362,45 @@ export default function AiTab({
                 </div>
               )}
 
+              {/* #92 per-role models. Three small overrides rather than a
+                  second model picker per role — the discovered model chips
+                  above already know what is installed. */}
+              {s.llm_provider !== "none" && (
+                <div className="mt-4 border-t border-ink-800/80 pt-4">
+                  <p className="text-xs font-semibold text-ink-200">Model per task</p>
+                  <p className="mt-0.5 text-[10px] text-ink-500">
+                    Leave blank to use the model above. Capture is usually happier with a small
+                    fast model than reports are.
+                  </p>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {(
+                      [
+                        ["llm_enrich_model", "Capture"],
+                        ["llm_report_model", "Reports"],
+                        ["llm_assistant_model", "Assistant"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <div key={key}>
+                        <label className={labelCls} htmlFor={key}>
+                          {label}
+                        </label>
+                        <input
+                          id={key}
+                          value={s[key] ?? ""}
+                          onChange={(e) => patch({ [key]: e.target.value })}
+                          onBlur={() =>
+                            void save({ [key]: s[key] }, `${label} model updated`)
+                          }
+                          className={`${inputCls} font-mono`}
+                          placeholder={s.llm_model || "same as above"}
+                          spellCheck={false}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* #451 house style — one place, applied to every rewrite. */}
               {s.llm_provider !== "none" && (
                 <div className="mt-4 border-t border-ink-800/80 pt-4">

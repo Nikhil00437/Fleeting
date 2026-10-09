@@ -309,9 +309,30 @@ async def enrich(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
     return _sanitize(parsed)
 
 
-def model_chain(cfg: LLMConfig) -> list[str]:
-    """#266: the models to try, in order, deduped. Empty when nothing is set."""
-    models = [cfg.model.strip()] + [m.strip() for m in (cfg.fallback_models or "").split(",")]
+def model_for(cfg: LLMConfig, role: str) -> str:
+    """#92: the model for one job — "enrich", "report" or "assistant".
+
+    An unset, blank or unknown role falls back to `cfg.model`. Settings fields
+    are cleared to "" rather than deleted, so a blank override must not mean
+    "no model".
+    """
+    override = {
+        "enrich": cfg.enrich_model,
+        "report": cfg.report_model,
+        "assistant": cfg.assistant_model,
+    }.get(role, "")
+    return (override or "").strip() or cfg.model
+
+
+def model_chain(cfg: LLMConfig, role: str = "enrich") -> list[str]:
+    """#266: the models to try, in order, deduped. Empty when nothing is set.
+
+    The chain starts at the role's model — picking a small one for capture
+    must not also cost capture its fallback.
+    """
+    models = [model_for(cfg, role).strip()] + [
+        m.strip() for m in (cfg.fallback_models or "").split(",")
+    ]
     seen: list[str] = []
     for m in models:
         if m and m not in seen:
@@ -337,7 +358,7 @@ async def enrich_chain(
     if cfg.provider == "none" or not text.strip():
         raise LLMUnavailable("llm disabled or empty text")
 
-    models = model_chain(cfg)
+    models = model_chain(cfg, "enrich")
     if not models:
         raise LLMUnavailable("no model configured")
 
