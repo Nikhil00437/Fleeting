@@ -263,9 +263,21 @@ def build_effective_prompt(
     questions_for_tomorrow: bool = False,
     custom_sections: list[dict] | None = None,
     prompt_override: str | None = None,
+    db: Database | None = None,
 ) -> str:
-    """Build the full LLM system prompt combining defaults and user overrides."""
-    system_prompt = DAILY_LOG_SYSTEM.replace("{date}", day)
+    """Build the full LLM system prompt combining defaults and user overrides.
+
+    `db` is optional so every existing caller is unchanged; with it, the base
+    prompt is the user's edited template (#93) rather than the shipped one.
+    The per-run `prompt_override` (#348) still composes on top — a saved
+    template and a one-off instruction are different things.
+    """
+    base = DAILY_LOG_SYSTEM
+    if db is not None:
+        from .prompt_templates import template_for
+
+        base = template_for(db, "daily_report", date=day)
+    system_prompt = base.replace("{date}", day)
     if prompt_override and prompt_override.strip():
         system_prompt += f"\n\nAdditional user instructions:\n{prompt_override.strip()}"
     if tone != "balanced":
@@ -880,6 +892,7 @@ async def preview_daily_log_playground(
         questions_for_tomorrow=questions_for_tomorrow,
         custom_sections=custom_sections,
         prompt_override=prompt_override,
+        db=db,  # #93: the user's edited template, when they have one
     )
 
     try:

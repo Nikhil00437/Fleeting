@@ -61,7 +61,7 @@ def test_heuristic_enrichment_claims_no_confidence() -> None:
 async def test_processing_stores_the_reported_confidence(client, monkeypatch) -> None:
     from fleeting.services import llm as llm_svc
 
-    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab=""):
+    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab="", template=""):
         return {
             "title": "Router notes",
             "summary": "s",

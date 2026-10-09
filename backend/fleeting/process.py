@@ -22,6 +22,7 @@ from .services import llm, markdown
 from .services.claims import unverified, verify_claims
 from .services.embeddings import embed_note
 from .services.fewshot import build_few_shot
+from .services.prompt_templates import template_for
 from .services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
 from .services.transcribe import Transcriber, TranscriptionError
 from .services.youtube import YouTubeError, ingest as yt_ingest
@@ -198,6 +199,11 @@ class Processor:
                         prompt=template_prompt,
                         few_shot=build_few_shot(self.db),
                         tag_vocab=tag_prompt(preferred_tags(self.cfg)),
+                        # #93: the user's edited enrichment prompt.
+                        template=template_for(
+                            self.db, "enrich",
+                            today_iso=datetime.now(timezone.utc).date().isoformat(),
+                        ),
                     )
                     source["enrichment"] = "local-llm"
                 except llm.LLMUnavailable as exc:

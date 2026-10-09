@@ -146,7 +146,7 @@ async def test_a_capture_uses_the_corrected_examples(db: Database, client, monke
     _corrected(db, "the gl-inet router needs a firmware reflash", "Flash the GL.iNet router", ["homelab"])
     seen: list[dict] = []
 
-    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab=""):
+    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab="", template=""):
         seen.append({"text": text, "few_shot": few_shot})
         return {"title": "t", "summary": "s", "tags": [], "action_items": [], "confidence": None}
 

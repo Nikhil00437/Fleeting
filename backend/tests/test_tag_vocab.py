@@ -80,7 +80,7 @@ def test_preferred_tags_read_the_config(db: Database) -> None:
 async def test_a_capture_is_tagged_from_the_vocabulary(client, monkeypatch) -> None:
     from fleeting.services import llm as llm_svc
 
-    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab=""):
+    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab="", template=""):
         # The model ignored the instruction; enforcement has to catch it.
         return {
             "title": "Router",

@@ -9,8 +9,22 @@ from pydantic import BaseModel, Field
 
 from ..services import writing
 from ..services.prompts import create_prompt, delete_prompt, list_prompts, update_prompt
+from ..services.prompt_templates import (
+    TARGETS,
+    get_template,
+    reset_template,
+    set_template,
+)
 
 router = APIRouter(prefix="/api/writing", tags=["writing"])
+
+# #93 editable templates. A separate prefix because these are the *system*
+# prompts behind every capture and every report, not assistant prompts.
+templates_router = APIRouter(prefix="/api/prompt-templates", tags=["prompts"])
+
+
+class TemplateIn(BaseModel):
+    body: str
 
 # #105 lives under its own prefix but ships with this router: a saved prompt
 # is a writing prompt, and splitting it would only add a file.
@@ -20,6 +34,56 @@ prompts_router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 class PromptIn(BaseModel):
     name: str
     body: str
+
+
+@templates_router.get("")
+def all_templates(request: Request) -> list[dict]:
+    """#93 which prompts are editable, and whether each is still the default."""
+    db = request.app.state.st.db
+    out = []
+    for target in TARGETS:
+        text, meta = get_template(db, target)
+        out.append({
+            "target": target,
+            "body": text,
+            "is_default": meta["is_default"],
+            "default_text": meta["default_text"],
+        })
+    return out
+
+
+@templates_router.get("/{target}")
+def one_template(target: str, request: Request) -> dict:
+    db = request.app.state.st.db
+    text, meta = get_template(db, target)  # raises ValueError for a bad target
+    return {
+        "target": target,
+        "body": text,
+        "is_default": meta["is_default"],
+        "default_text": meta["default_text"],
+    }
+
+
+@templates_router.put("/{target}")
+def edit_template(target: str, request: Request, body: TemplateIn) -> dict:
+    st = request.app.state.st
+    try:
+        set_template(st.db, target, body.body)
+    except ValueError as exc:
+        raise HTTPException(422 if target in TARGETS else 404, str(exc)) from exc
+    text, meta = get_template(st.db, target)
+    return {"target": target, "body": text, "is_default": meta["is_default"]}
+
+
+@templates_router.delete("/{target}")
+def restore_template(target: str, request: Request) -> dict:
+    st = request.app.state.st
+    try:
+        reset_template(st.db, target)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    text, meta = get_template(st.db, target)
+    return {"target": target, "body": text, "is_default": True}
 
 
 @prompts_router.get("")

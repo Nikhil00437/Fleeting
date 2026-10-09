@@ -134,7 +134,7 @@ def test_a_reprocess_clears_stale_claims(db: Database) -> None:
 async def test_an_unsupported_claim_sends_the_note_back_to_review(client, monkeypatch) -> None:
     from fleeting.services import llm as llm_svc
 
-    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab=""):
+    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab="", template=""):
         return {
             "title": "Router",
             "summary": "We replaced the router in March for the outage.",
@@ -158,7 +158,7 @@ async def test_an_unsupported_claim_sends_the_note_back_to_review(client, monkey
 async def test_a_fully_grounded_summary_stays_enriched(client, monkeypatch) -> None:
     from fleeting.services import llm as llm_svc
 
-    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab=""):
+    async def fake_chain(text, cfg, prompt=None, few_shot="", tag_vocab="", template=""):
         return {
             "title": "Router",
             "summary": "The router runs OpenWrt.",
