@@ -406,6 +406,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         capture,
         cleanup,
         collections,
+        entities,
         notes,
         processes,
         rules,
@@ -428,6 +429,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app.include_router(activity.router)
     app.include_router(activity.daily_router)
     app.include_router(assistant.router)
+    app.include_router(entities.router)
     app.include_router(processes.router)
     from .routers import templates
 
