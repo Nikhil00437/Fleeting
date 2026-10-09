@@ -8,10 +8,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from ..events import sse_format
+from ..events import EventBus, sse_format
 
 from ..models import AssistantChatIn, AssistantChatOut, AssistantSuggestionsOut
 from ..services import chatlog
+from ..services.actions import undo_action
 from ..services.assistant import (
     ask_assistant,
     ask_assistant_stream,
@@ -71,6 +72,10 @@ class ChatHistoryIn(BaseModel):
 
 class ChatPinIn(BaseModel):
     pinned: bool
+
+
+class UndoIn(BaseModel):
+    undo: str
 
 
 @router.get("/history")
@@ -138,6 +143,13 @@ def llm_traces(
 ) -> list[dict]:
     """#112: what each recent LLM call actually looked at."""
     return request.app.state.st.db.list_llm_traces(kind=kind, limit=limit)
+
+
+@router.post("/undo")
+async def undo(request: Request, body: UndoIn) -> dict:
+    """#103: reverse one previously-executed assistant action by its token."""
+    st = request.app.state.st
+    return await undo_action(body.undo, st.db, st.cfg, getattr(st, "bus", None) or EventBus())
 
 
 @router.get("/suggestions", response_model=AssistantSuggestionsOut)

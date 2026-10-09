@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from .. import config as _config
 from ..config import Config, ensure_dirs
-from ..db import Database
+from ..db import Database, new_id
 from ..events import EventBus
 from . import dailylog, markdown
 
@@ -411,6 +411,161 @@ def _describe_destructive(tool: str, params: dict, db: Database) -> str:
     return tool
 
 
+def _snapshot_undo(tool: str, params: dict, db: Database) -> tuple[str, dict] | None:
+    """#103: capture the prior state of whatever `tool` is about to change.
+
+    Returns (kind, before) or None when the action is not reversible. The kinds
+    are deliberately the *table rows* rather than a tool name — restoring a row
+    is the same operation whatever asked for the delete.
+    """
+    params = params or {}
+    if tool == "delete_note":
+        note_id = str(params.get("note_id") or params.get("id") or "")
+        note = db.get_note(note_id)
+        if not note:
+            return None
+        tasks = [dict(r) for r in db.execute(
+            "SELECT * FROM tasks WHERE note_id = ?", (note_id,)
+        ).fetchall()]
+        return ("note_deleted", {"note": note, "tasks": tasks})
+
+    if tool == "delete_tasks":
+        ids = params.get("ids") or []
+        if isinstance(ids, str):
+            ids = [ids]
+        if params.get("all"):
+            rows = db.list_tasks(status=params.get("status") or "all",
+                                 repo=params.get("repo"), list="all", limit=100_000)
+        else:
+            rows = [t for t in (db.get_task(str(i)) for i in ids) if t]
+        return ("tasks_deleted", {"tasks": rows}) if rows else None
+
+    if tool == "create_task":
+        return ("tasks_created", {})
+
+    if tool == "create_note":
+        return ("note_created", {})
+
+    if tool == "toggle_task":
+        task_id = str(params.get("task_id") or params.get("id") or "")
+        task = db.get_task(task_id)
+        return ("task_fields", {"id": task_id, "done": int(task["done"])}) if task else None
+
+    if tool == "update_task":
+        task_id = str(params.get("task_id") or params.get("id") or "")
+        task = db.get_task(task_id)
+        if not task:
+            return None
+        fields = ("text", "priority", "due_date", "repo", "completed_at", "note_id")
+        return ("task_fields", {
+            "id": task_id,
+            **{f: task.get(f) for f in fields if f in params and params[f] is not None},
+        })
+
+    if tool == "pin_note":
+        note_id = str(params.get("note_id") or params.get("id") or "")
+        note = db.get_note(note_id)
+        return ("note_fields", {"id": note_id, "pinned": int(note["pinned"])}) if note else None
+
+    if tool == "pause_activity":
+        return ("kv", {"key": "activity_paused", "value": db.kv_get("activity_paused", "0")})
+
+    # generate_daily_digest is deliberately absent: the previous digest is gone
+    # once regenerated, and re-deriving it would be a guess. It has its own
+    # path — an edited report is preserved by #72's edited_body.
+    return None
+
+
+def _restore_undo(rec: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
+    """Put back what `_snapshot_undo` took. Raises on failure; caller catches."""
+    kind = rec["kind"]
+    before = rec["before"]
+
+    if kind == "note_deleted":
+        note = before["note"]
+        # Re-insert with the original id and timestamps so citations, vault
+        # filenames and `created_at` ordering all survive the round trip.
+        # insert_note re-derives tasks from action_items, so tasks listed in
+        # the note come back on their own; the rest are restored explicitly.
+        db.insert_note({**note, "status": "done"})
+        derived = {
+            t["text"] for t in db.execute(
+                "SELECT text FROM tasks WHERE note_id = ?", (note["id"],)
+            ).fetchall()
+        }
+        for t in before["tasks"]:
+            if t["text"] not in derived:
+                db.insert_task({**t, "id": t["id"]})
+        restored = db.get_note(note["id"])
+        if restored:
+            try:
+                markdown.sync_note(cfg.paths, restored)
+            except Exception:
+                log.warning("undo could not restore vault file for %s", note["id"], exc_info=True)
+        bus.publish("note.created", restored or note)
+
+    elif kind == "tasks_deleted":
+        for t in before["tasks"]:
+            db.insert_task({**t, "id": t["id"]})
+            bus.publish("task.created", t)
+
+    elif kind == "tasks_created":
+        # Undoing a creation means removing what was added; the snapshot only
+        # records that this happened, so the ids come from the action result.
+        for tid in before.get("created_ids") or []:
+            task = db.get_task(tid)
+            if not task:
+                continue
+            db.delete_task(tid)
+            bus.publish("task.deleted", {"id": tid, "note_id": task["note_id"]})
+
+    elif kind == "note_created":
+        for nid in before.get("created_ids") or []:
+            if db.get_note(nid):
+                db.delete_note(nid)
+                bus.publish("note.deleted", {"id": nid})
+
+    elif kind in ("task_fields", "note_fields"):
+        changes = {k: v for k, v in before.items() if k != "id"}
+        if kind == "task_fields":
+            # completed_at tracks done; restoring `done` alone leaves a done task
+            # with no completion timestamp.
+            if "done" in changes and "completed_at" not in changes:
+                changes["completed_at"] = None if not changes["done"] else db.now_iso_local()
+            task = db.update_task(before["id"], changes)
+            if task:
+                bus.publish("task.updated", task)
+        else:
+            note = db.update_note(before["id"], changes)
+            if note:
+                bus.publish("note.updated", note)
+
+    elif kind == "kv":
+        db.kv_set(before["key"], before["value"])
+        bus.publish("activity.live", {"paused": before["value"] == "1", "session": None})
+
+    else:
+        return {"ok": False, "error": f"cannot undo '{kind}'"}
+
+    return {"ok": True}
+
+
+async def undo_action(token: str, db: Database, cfg: Config, bus: EventBus) -> dict:
+    """#103: reverse one previously-executed assistant action.
+
+    The token is consumed even when the restore fails, so a broken undo cannot
+    be replayed into a worse state by clicking again.
+    """
+    rec = db.consume_undo(token)
+    if not rec:
+        return {"ok": False, "error": "Undo not found — it may have already been used."}
+    try:
+        return _restore_undo(rec, db, cfg, bus)
+    except Exception as exc:
+        log.exception("Undo %s failed", token)
+        return {"ok": False, "error": str(exc)}
+
+
 async def execute_action(
     tool: str,
     params: dict,
@@ -424,6 +579,9 @@ async def execute_action(
     the caller's event loop. Running it in a worker thread and blocking on the
     result froze SSE delivery and every other request for the length of the LLM
     call, which llm.timeout_secs allows up to 120s.
+
+    On success an undoable action also returns `undo`: a single-use token the
+    caller can hand back to `undo_action` (#103).
     """
     fn = ACTIONS.get(tool)
     if not fn:
@@ -441,11 +599,28 @@ async def execute_action(
             },
         }
 
+    snapshot = _snapshot_undo(tool, params, db)
     try:
         result = fn(params, db, cfg, bus)
         if inspect.isawaitable(result):
             result = await result
-        return result
     except Exception as exc:
         log.exception("Action %s execution failed: %s", tool, exc)
         return {"ok": False, "error": str(exc)}
+
+    if snapshot and isinstance(result, dict) and result.get("ok"):
+        token = new_id()
+        kind, before = snapshot
+        # For creations the snapshot is empty; the ids to remove come from what
+        # the action actually made.
+        if kind in ("tasks_created", "note_created"):
+            row = result.get("task") or result.get("note")
+            if not (row and row.get("id")):
+                return result  # nothing identifiable to undo
+            before = {"created_ids": [row["id"]]}
+        try:
+            db.record_undo(token, kind, before)
+            result["undo"] = token
+        except Exception as exc:
+            log.warning("could not record undo for %s: %s", tool, exc)
+    return result

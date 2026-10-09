@@ -517,6 +517,8 @@ class AssistantChatOut(BaseModel):
     sources: list[SourceRef]
     context_used: dict[str, int]
     pending_action: dict | None = None
+    # #103 single-use token for taking this turn's action back.
+    undo: str | None = None
 
 
 class AssistantSuggestionsOut(BaseModel):

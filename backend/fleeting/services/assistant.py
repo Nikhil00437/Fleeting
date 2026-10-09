@@ -539,8 +539,13 @@ async def _parse_and_execute_action_blocks(
     sources: list[dict],
     *,
     confirm: bool = False,
+    undos: list[str] | None = None,
 ) -> tuple[str, list[dict], dict | None]:
-    """Find and execute ```action blocks in LLM output, stripping them from the response."""
+    """Find and execute ```action blocks in LLM output, stripping them from the response.
+
+    `undos` collects the #103 undo token of each action that ran, so a turn that
+    did three things offers three ways back.
+    """
     blocks = ACTION_BLOCK_RE.findall(content)
     if not blocks:
         return content, sources, None
@@ -555,6 +560,8 @@ async def _parse_and_execute_action_blocks(
             params = payload.get("parameters") or payload.get("params") or payload.get("args") or {}
             if tool:
                 res = await execute_action(tool, _with_confirm(tool, params, confirm), db, cfg, bus)
+                if res.get("undo") and undos is not None:
+                    undos.append(res["undo"])
                 if res.get("needs_confirmation"):
                     pending = res["needs_confirmation"]
                     action_messages.append(
@@ -678,6 +685,7 @@ async def ask_assistant(
         tool, params = fast_intent
         action_res = await execute_action(tool, _with_confirm(tool, params, confirm), db, cfg, bus)
         pending = action_res.get("needs_confirmation")
+        undo_token = action_res.get("undo")
         if pending:
             content = f"{pending['summary']} — waiting for your confirmation."
         else:
@@ -700,9 +708,11 @@ async def ask_assistant(
             "sources": sources,
             "context_used": context_used,
             "pending_action": pending,
+            "undo": undo_token,
         }
 
     pending: dict | None = None
+    undos: list[str] = []
     if cfg.llm.provider != "none":
         system_prompt = _system_prompt()
         base = normalize_base_url(cfg.llm.base_url)
@@ -754,7 +764,7 @@ async def ask_assistant(
                 headers=auth_headers(cfg.llm),
             )
             content, sources, pending = await _parse_and_execute_action_blocks(
-                content, db, cfg, bus, sources, confirm=confirm
+                content, db, cfg, bus, sources, confirm=confirm, undos=undos
             )
             record()
         except (LLMUnavailable, Exception) as exc:
@@ -770,6 +780,7 @@ async def ask_assistant(
         "sources": sources,
         "context_used": context_used,
         "pending_action": pending,
+        "undo": undos[0] if undos else None,
     }
 
 

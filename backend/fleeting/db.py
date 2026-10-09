@@ -405,6 +405,15 @@ MIGRATIONS: list[str] = [
       at TEXT NOT NULL
     );
     """,
+    # v24 — 0.9 #103 undo. `before` holds the prior row(s) verbatim, so undo
+    # replays a restore instead of hand-writing an inverse for each tool.
+    """CREATE TABLE IF NOT EXISTS action_undo (
+      token TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      before TEXT NOT NULL,
+      at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -1468,6 +1477,41 @@ class Database:
         rows = self.execute(
             f"SELECT q, hits, searched, last_at FROM query_log ORDER BY {order} LIMIT :limit",
             {"limit": max(1, min(int(limit), 100))},
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---- action undo (#103) ------------------------------------------
+    # An undo record is the *before* state of whatever the action changed, so
+    # undo is a re-apply rather than a guess at the inverse. One row per action,
+    # dropped once used — an undo token that works twice is a bug, not a feature.
+
+    def record_undo(self, token: str, kind: str, before: dict) -> None:
+        self.execute(
+            "INSERT INTO action_undo (token, kind, before, at) VALUES (?, ?, ?, ?)",
+            (token, kind, json.dumps(before, ensure_ascii=False, default=str), now_iso()),
+        )
+        self.commit()
+
+    def get_undo(self, token: str) -> dict | None:
+        row = self.execute(
+            "SELECT token, kind, before FROM action_undo WHERE token = ?", (token,)
+        ).fetchone()
+        if not row:
+            return None
+        return {"token": row["token"], "kind": row["kind"], "before": json.loads(row["before"])}
+
+    def consume_undo(self, token: str) -> dict | None:
+        """Fetch and delete in one step, so two concurrent undos cannot both win."""
+        rec = self.get_undo(token)
+        if rec:
+            self.execute("DELETE FROM action_undo WHERE token = ?", (token,))
+            self.commit()
+        return rec
+
+    def list_undos(self, limit: int = 20) -> list[dict]:
+        rows = self.execute(
+            "SELECT token, kind, at FROM action_undo ORDER BY at DESC LIMIT ?",
+            (max(1, min(int(limit), 100)),),
         ).fetchall()
         return [dict(r) for r in rows]
 
