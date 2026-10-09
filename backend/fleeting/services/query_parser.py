@@ -17,11 +17,17 @@ Grammar (operators case-insensitive, tokens whitespace-separated):
     has:audio        notes with audio attached
     near:N           the two preceding terms/phrases must occur within N
                      tokens of each other (FTS5 NEAR)
+    person:NAME      a note must actually *mention* this person (#418).
+                     Matches whole names through the people extractor, so
+                     ``person:The`` and ``person:Priyanne`` find nothing.
 
 Unknown ``foo:bar`` tokens degrade to plain terms and invalid dates are
 dropped: a typo'd operator must never silently empty a query. Dates are
 UTC-day semantics on purpose — keyword and semantic legs must agree on what
 "before" means, and both compare ``created_at`` strings.
+
+``person:NAME`` takes the rest of the token *and* the following tokens up to
+the next operator, so ``person:Arjun Mehta`` works without quotes.
 """
 
 from __future__ import annotations
@@ -58,6 +64,18 @@ def _clean_phrase(phrase: str) -> str:
     return phrase.replace('"', " ").strip()
 
 
+def _clean_person(raw: str) -> str:
+    """A person's name: words, spaces and apostrophes, nothing else.
+
+    Not `_clean_word` — that strips to alnum/dash/underscore and would turn
+    "Arjun Mehta" into one run of letters with the space gone.
+    """
+    return " ".join(
+        "".join(ch for ch in part if ch.isalnum() or ch in "'’-")
+        for part in raw.replace('"', " ").split()
+    ).strip(" -")
+
+
 @dataclass
 class ParsedQuery:
     terms: list[str] = field(default_factory=list)
@@ -66,6 +84,10 @@ class ParsedQuery:
     excluded_phrases: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     types: list[str] = field(default_factory=list)
+    # #418: names that must be *mentioned*, as opposed to words that merely
+    # appear. Kept separate from `terms` because matching goes through the
+    # people extractor, which rejects stoplisted capitals and prefix noise.
+    people: list[str] = field(default_factory=list)
     before: str | None = None
     after: str | None = None
     starred: bool = False
@@ -92,6 +114,7 @@ class ParsedQuery:
             or self.excluded_phrases
             or self.tags
             or self.types
+            or self.people
             or self.before
             or self.after
             or self.starred
@@ -153,6 +176,28 @@ def parse_query(raw: str) -> ParsedQuery:
             value = _clean_word(token[5:]).lower()
             if value:
                 p.types.append(value)
+            continue
+
+        # #418. A name is not a word, so it is not cleaned like one — it is
+        # kept verbatim (minus the operator) and matched against the extractor.
+        # The rest of the token run is absorbed so `person:Arjun Mehta` works
+        # unquoted; a following operator ends it.
+        if lowered.startswith("person:") and len(token) > 7:
+            name = _clean_person(token[7:])
+            while name and i < len(pending):
+                nxt_quoted, nxt_plain = pending[i]
+                if nxt_quoted:
+                    break
+                head = nxt_plain.strip()
+                if not head or head.lower().startswith(
+                    ("tag:", "type:", "person:", "before:", "after:",
+                     "is:", "has:", "near:")
+                ) or head.startswith("-"):
+                    break
+                name = _clean_person(f"{name} {head}")
+                i += 1
+            if name:
+                p.people.append(name)
             continue
 
         if lowered.startswith("before:") or lowered.startswith("after:"):
@@ -254,6 +299,10 @@ def build_fts_match(p: ParsedQuery) -> str | None:
     """
     units: list[str] = [f'"{t}"*' for t in p.terms]
     units += [f'"{ph}"' for ph in p.phrases]
+    # #418: the name goes in the MATCH so it participates in ranking, but the
+    # authoritative "is this person actually mentioned" test is the extractor
+    # in note_matches_parsed — FTS would happily match "Priyanne".
+    units += [f'"{person}"' for person in p.people]
     if p.near:
         a, b, n = p.near
         units.append(f'NEAR("{a}" "{b}", {n})')
@@ -340,6 +389,14 @@ def note_matches_parsed(note: dict, p: ParsedQuery) -> bool:
     if p.tags:
         note_tags = {str(t).strip().lower().lstrip("#") for t in (note.get("tags") or [])}
         if not all(tag in note_tags for tag in p.tags):
+            return False
+
+    if p.people:
+        from .entities import extract_people
+
+        mentioned = extract_people(str(note.get("raw_text") or ""))
+        wanted = {name.lower() for name in p.people}
+        if not wanted & {m.lower() for m in mentioned}:
             return False
 
     created = str(note.get("created_at") or "")
