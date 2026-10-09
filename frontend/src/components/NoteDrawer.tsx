@@ -21,6 +21,7 @@ import {
   XIcon,
 } from "./Icons";
 import { StatusBadge } from "./NoteCard";
+import { ConfidenceBadge } from "./ConfidenceBadge";
 import { pipelineSteps, totalSecs } from "./pipeline";
 import AudioPlayer from "./AudioPlayer";
 import { runNoteAction } from "./actionRunner";
@@ -178,6 +179,16 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
   async function patch(changes: Partial<Note>) {
     try {
       onUpdate(await api.updateNote(note.id, changes));
+    } catch (e) {
+      onToast(errorMessage(e), "err");
+    }
+  }
+
+  // #255: clicking the active thumb again clears the verdict, so a misclick is
+  // recoverable without a second button.
+  async function rateEnrichment(value: 1 | -1) {
+    try {
+      onUpdate(await api.rateEnrichment(note.id, note.enrich_feedback === value ? 0 : value));
     } catch (e) {
       onToast(errorMessage(e), "err");
     }
@@ -541,6 +552,32 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
               <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-ink-300">
                 <BotIcon className="h-3 w-3 text-iris-400" />
                 {meta.enrichment === "heuristic" ? "offline heuristics" : "local LLM"}
+              </span>
+            )}
+            {/* #96: absent when heuristics ran — there is nothing to be
+                uncertain about, so no number is shown rather than a fake one. */}
+            <ConfidenceBadge confidence={note.enrich_confidence} />
+            {/* #255: verdict on the enrichment, not on the note content. */}
+            {meta.enrichment && meta.enrichment !== "heuristic-sensitive" && (
+              <span className="inline-flex items-center gap-0.5" data-testid="enrich-feedback">
+                {([-1, 1] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => void rateEnrichment(v)}
+                    aria-label={v === 1 ? "Good enrichment" : "Bad enrichment"}
+                    aria-pressed={note.enrich_feedback === v}
+                    className={`rounded px-1 py-0.5 text-[11px] leading-none transition-colors cursor-pointer ${
+                      note.enrich_feedback === v
+                        ? v === 1
+                          ? "text-emerald-400"
+                          : "text-red-400"
+                        : "text-ink-600 hover:text-ink-300"
+                    }`}
+                  >
+                    {v === 1 ? "▲" : "▼"}
+                  </button>
+                ))}
               </span>
             )}
             {Array.isArray(meta.transcription?.speakers) && meta.transcription.speakers.length > 0 && (

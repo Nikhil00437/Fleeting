@@ -1,4 +1,4 @@
-/** #476 tl;dr + #477 word count / reading time.
+/** #476 tl;dr + #477 word count / reading time, #96 enrichment confidence.
  *
  * Pure module per repo convention: list-view derivations live outside the
  * component so the SSR-string tests can exercise them.
@@ -6,6 +6,16 @@
 
 const READ_WPM = 200;
 const TLDR_MAX = 140;
+
+/** Below this, the enrichment is worth a second look (#96). */
+export const LOW_CONFIDENCE = 0.7;
+
+/** "91% confident", or null when there is no score to report. */
+export function describeConfidence(confidence: number | null | undefined): string | null {
+  if (typeof confidence !== "number" || Number.isNaN(confidence)) return null;
+  const pct = Math.round(confidence * 100);
+  return pct < LOW_CONFIDENCE * 100 ? `${pct}% confident — worth checking` : `${pct}% confident`;
+}
 
 export function wordCount(text: string | null | undefined): number {
   const t = (text ?? "").trim();

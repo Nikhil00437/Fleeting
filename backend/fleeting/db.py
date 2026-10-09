@@ -439,6 +439,11 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("prompt_override", "TEXT"),
         ("evidence", "TEXT"),
     )),
+    # 0.9 enrichment quality: #96 self-reported confidence, #255 thumb verdict.
+    ("notes", (
+        ("enrich_confidence", "REAL"),
+        ("enrich_feedback", "INTEGER NOT NULL DEFAULT 0"),
+    )),
 )
 
 
@@ -475,7 +480,7 @@ NOTE_COLUMNS = frozenset({
     "audio_path", "status", "error", "pinned", "archived",
     "created_at", "updated_at", "processed_at", "capture_id", "source_title",
     "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
-    "snoozed_until",
+    "snoozed_until", "enrich_confidence", "enrich_feedback",
 })
 
 # query_log LRU cap (v18) — a local single-user inbox never needs more.
@@ -2698,6 +2703,10 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         "sensitive": bool(row["sensitive"]) if "sensitive" in row.keys() else False,
         "review_state": row["review_state"] if "review_state" in row.keys() else "enriched",
         "snoozed_until": row["snoozed_until"] if "snoozed_until" in row.keys() else None,
+        # #96/#255. Guarded by row.keys() like their neighbours: a row written
+        # before the columns existed must still deserialize.
+        "enrich_confidence": row["enrich_confidence"] if "enrich_confidence" in row.keys() else None,
+        "enrich_feedback": int(row["enrich_feedback"] or 0) if "enrich_feedback" in row.keys() else 0,
     }
     for key in extra:
         if key in row.keys():

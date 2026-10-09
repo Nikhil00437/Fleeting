@@ -54,6 +54,22 @@ ENRICH_SCHEMA = {
     "required": ["title", "summary", "tags", "action_items"],
 }
 
+# #96: what the enrichment schema adds beyond the four required keys. Kept
+# outside ENRICH_SCHEMA so the strict `required` list stays minimal — a model
+# that must emit confidence will emit a confident-looking 1.0 whether or not
+# the note is clear.
+ENRICH_OPTIONAL_SCHEMA = {
+    "confidence": {
+        "type": "number",
+        "description": (
+            "How confident you are that this title, summary, tag set and task "
+            "list are faithful to the note. 1.0 only when the note is "
+            "unambiguous; below 0.5 when you had to guess or the note is a "
+            "fragment."
+        ),
+    },
+}
+
 ENRICH_SYSTEM_TEMPLATE = (
     "Today's date is {today_iso}.\n"
     "You organize raw personal notes for a local note-taking app. "
@@ -70,7 +86,10 @@ ENRICH_SYSTEM_TEMPLATE = (
     '  - "repo": project or codebase name if referenced; null if not referenced\n'
     "Phrases like 'remember to …', 'need to …', 'have to …', 'todo: …' ARE action items — extract them. "
     "Empty array only if the note truly contains no task or intent to act. Do NOT invent tasks.\n"
-    "Use the same language as the note."
+    "Use the same language as the note.\n"
+    'Also report "confidence": a number from 0 to 1 for how faithful your title, '
+    "summary, tags and tasks are to the note. Use below 0.5 when you had to guess "
+    "or the note is an unclear fragment — a low number is useful, an inflated one is not."
 )
 
 ENRICH_SYSTEM = ENRICH_SYSTEM_TEMPLATE.format(
@@ -276,7 +295,7 @@ async def enrich(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
             ],
             "stream": False,
             "think": False,
-            "format": ENRICH_SCHEMA,
+            "format": {**ENRICH_SCHEMA, **ENRICH_OPTIONAL_SCHEMA},
             "options": {"temperature": 0.3},
         }
         url = f"{base}/api/chat"
@@ -347,7 +366,7 @@ async def enrich_chain(text: str, cfg: LLMConfig, prompt: str | None = None) -> 
                 ],
                 "stream": False,
                 "think": False,
-                "format": ENRICH_SCHEMA,
+                "format": {**ENRICH_SCHEMA, **ENRICH_OPTIONAL_SCHEMA},
                 "options": {"temperature": 0.3},
             }
             url = f"{base}/api/chat"
@@ -470,6 +489,25 @@ def _extract_repo(line: str) -> str | None:
     return None
 
 
+def _coerce_confidence(raw: object) -> float | None:
+    """#96: accept a reported confidence or nothing at all.
+
+    A number the app made up would look authoritative and mean nothing, so a
+    non-numeric answer becomes None rather than a default. `True`/`False` are
+    rejected explicitly — bool is an int subclass in Python, and `confidence:
+    true` is a model misunderstanding, not a 100% certainty.
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if value != value or value in (float("inf"), float("-inf")):  # NaN / inf
+        return None
+    return min(1.0, max(0.0, value))
+
+
 def _sanitize(parsed: dict) -> dict:
     title = str(parsed.get("title") or "").strip().strip('"').strip()
     summary = str(parsed.get("summary") or "").strip()
@@ -538,6 +576,7 @@ def _sanitize(parsed: dict) -> dict:
     return {
         "title": title[:80],
         "summary": summary[:1200],
+        "confidence": _coerce_confidence(parsed.get("confidence")),
         "tags": tags,
         "action_items": action_items[:10],
     }
@@ -550,7 +589,13 @@ def heuristic_enrich(text: str, today: date | None = None) -> dict:
     """Structure a note without any model — decent titles, tags, TODO mining."""
     text = text.strip()
     if not text:
-        return {"title": "Empty capture", "summary": "", "tags": [], "action_items": []}
+        return {
+            "title": "Empty capture",
+            "summary": "",
+            "tags": [],
+            "action_items": [],
+            "confidence": None,
+        }
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     title = lines[0]
@@ -621,7 +666,15 @@ def heuristic_enrich(text: str, today: date | None = None) -> dict:
             deduped.append(a)
     action_items = deduped[:10]
 
-    return {"title": title, "summary": summary, "tags": tags[:5], "action_items": action_items}
+    # #96: deterministic extraction is not *uncertain*, it simply is not a
+    # model. Reporting a confidence here would be a fabricated number.
+    return {
+        "title": title,
+        "summary": summary,
+        "tags": tags[:5],
+        "action_items": action_items,
+        "confidence": None,
+    }
 
 
 async def stream_chat(

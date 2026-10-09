@@ -108,9 +108,15 @@ export const api = {
   updateNote: (id: string, changes: Partial<Note>) =>
     req<Note>(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
 
+  /** #255: -1 bad, 1 good, 0 clear. Separate from updateNote so the value stays bounded. */
+  rateEnrichment: (id: string, feedback: -1 | 0 | 1) =>
+    req<Note>(`/notes/${id}/enrich-feedback`, {
+      method: "PATCH",
+      body: JSON.stringify({ feedback }),
+    }),
+
   /** #274: DELETE trashes — reversible until purge or the retention window. */
   deleteNote: (id: string) => req<{ ok: boolean }>(`/notes/${id}`, { method: "DELETE" }),
-
   restoreNote: (id: string) => req<Note>(`/notes/${id}/restore`, { method: "POST" }),
 
   collections: () => req<Collection[]>("/collections"),

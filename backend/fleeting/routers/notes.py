@@ -8,9 +8,11 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from ..config import save_config
 from ..db import now_iso
+from ..events import EventBus
 from ..models import NoteOut, NoteUpdateIn, RegenerateIn, SnoozeIn
 from ..services import markdown
 from ..services.embeddings import embed_note
@@ -18,6 +20,10 @@ from ..services.embeddings import embed_note
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
 log = logging.getLogger("fleeting.notes")
+
+
+def _bus(request: Request) -> EventBus:
+    return getattr(request.app.state.st, "bus", None) or EventBus()
 
 
 def _out(note: dict) -> NoteOut:
@@ -328,6 +334,27 @@ def list_note_versions(note_id: str, request: Request) -> list[dict]:
     if not st.db.get_note(note_id):
         raise HTTPException(404, "note not found")
     return st.db.note_versions(note_id)
+
+
+class EnrichFeedbackIn(BaseModel):
+    """#255: -1 for a bad enrichment, 1 for a good one, 0 to clear."""
+    feedback: int = Field(ge=-1, le=1)
+
+
+@router.patch("/{note_id}/enrich-feedback")
+def set_enrich_feedback(note_id: str, request: Request, body: EnrichFeedbackIn) -> NoteOut:
+    """Record a verdict on this note's enrichment.
+
+    Its own endpoint rather than the generic PATCH so the value is bounded —
+    `enrich_feedback` is a three-state column, and a typo'd `feedback: 7`
+    should not become a row nobody can query.
+    """
+    st = request.app.state.st
+    note = st.db.update_note(note_id, {"enrich_feedback": body.feedback})
+    if not note:
+        raise HTTPException(404, "note not found")
+    _bus(request).publish("note.updated", note)
+    return NoteOut(**note)
 
 
 @router.post("/{note_id}/versions/{version_id}/revert")

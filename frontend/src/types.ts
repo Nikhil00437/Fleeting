@@ -33,6 +33,10 @@ export interface Note {
   sensitive?: boolean;
   review_state?: "raw" | "enriched" | "reviewed" | "final";
   snoozed_until?: string | null;
+  /** #96: the enrichment model's own confidence, absent when heuristics ran. */
+  enrich_confidence?: number | null;
+  /** #255: -1 bad, 1 good, 0 no verdict yet. */
+  enrich_feedback?: number;
 }
 
 export interface Stats {

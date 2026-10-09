@@ -206,6 +206,9 @@ class Processor:
                 "status": "done",
                 "error": None,
                 "processed_at": now_iso(),
+                # #96: the model's own verdict on the enrichment, or None. A
+                # reprocess must clear a stale score, so this is always written.
+                "enrich_confidence": enriched.get("confidence"),
             }
             # #474/#424: heuristic enrichment is the low-confidence path — drop
             # the note into the review queue instead of claiming it is done.
