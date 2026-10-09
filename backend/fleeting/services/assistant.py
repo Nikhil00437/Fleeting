@@ -13,7 +13,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from ..events import EventBus
-from .actions import AVAILABLE_ACTIONS, DESTRUCTIVE_ACTIONS, execute_action
+from .actions import ACTIONS, AVAILABLE_ACTIONS, DESTRUCTIVE_ACTIONS, execute_action
 from .llm import (
     LLMUnavailable,
     auth_headers,
@@ -409,6 +409,53 @@ def _extract_task_id(text: str) -> str | None:
     return None
 
 
+# #102. `tool` is None for commands that answer with text rather than acting,
+# so they still go through the ordinary grounded answer path — a slash command
+# is a fast intent that arrived with a slash in front of it, not a second
+# execution path.
+SLASH_COMMANDS: list[dict] = [
+    {"name": "task", "hint": "/task buy milk", "tool": "create_task"},
+    {"name": "find", "hint": "/find router firmware", "tool": None},
+    {"name": "log", "hint": "/log what I decided about the router", "tool": None},
+    {"name": "summarize", "hint": "/summarize today", "tool": "generate_daily_digest"},
+]
+
+_SLASH_BY_NAME = {c["name"]: c for c in SLASH_COMMANDS}
+
+
+def parse_slash(text: str) -> tuple[str, dict] | None:
+    """#102: `/task buy milk` -> ("create_task", {"text": "buy milk"}).
+
+    Returns a (tool, params) pair in the same shape `match_fast_intent` uses,
+    so a slash command and its spelled-out equivalent execute identically —
+    including the confirmation gate, which lives on the tool.
+    """
+    if not text or not isinstance(text, str):
+        return None
+    stripped = text.strip()
+    if not stripped.startswith("/") or stripped.startswith("//"):
+        return None
+    head, _, rest = stripped[1:].partition(" ")
+    command = _SLASH_BY_NAME.get(head.strip().lower())
+    if command is None:
+        return None
+
+    argument = rest.strip()
+    if len(argument) >= 2 and argument[0] == argument[-1] == '"':
+        argument = argument[1:-1].strip()
+    if not argument:
+        return None
+
+    name = command["name"]
+    if name == "task":
+        return ("create_task", {"text": argument})
+    if name == "summarize":
+        # /summarize today is the rolling 24h report; anything else defaults
+        # to the same thing rather than guessing at a date.
+        return (command["tool"], {"rolling": True})
+    return (name, {"query": argument})
+
+
 def match_fast_intent(query: str) -> tuple[str, dict] | None:
     """Detect obvious single-turn user intents that can be executed directly as app actions."""
     if not query or not isinstance(query, str):
@@ -661,13 +708,27 @@ async def ask_assistant(
             "pending_action": None,
         }
 
+    # #102: a slash command is a fast intent with a slash in front. Resolved
+    # before the context is built so `/find router` retrieves on "router", and
+    # resolved into `match_fast_intent`'s shape so it lands on the one
+    # execution path — inheriting the confirmation gate and the undo token.
+    slash = parse_slash(user_query)
+    fast_intent = match_fast_intent(user_query)
+    if fast_intent is None and slash is not None:
+        tool, params = slash
+        if tool in ACTIONS:
+            fast_intent = slash
+        else:
+            # /find and /log answer rather than act: the command word is
+            # dropped so the grounded answer path sees the actual question.
+            user_query = params["query"]
+
     # #112: collect the retrieval trace, then store it — the user has to be able
     # to answer "what did you look at?" *after* the answer arrives.
     queries: list[str] = []
     context_text, sources, context_used = build_assistant_context(
         user_query, db, cfg, repo=repo, filter_type=filter_type, queries=queries
     )
-
     def record(tool_calls: list[dict] | None = None) -> None:
         try:
             db.record_llm_trace(
@@ -681,7 +742,6 @@ async def ask_assistant(
             log.warning("Could not record llm trace: %s", exc)
 
     # Fast intent matching for direct app actions
-    fast_intent = match_fast_intent(user_query)
     if fast_intent is not None:
         tool, params = fast_intent
         action_res = await execute_action(tool, _with_confirm(tool, params, confirm), db, cfg, bus)

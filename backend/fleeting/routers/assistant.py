@@ -14,6 +14,7 @@ from ..models import AssistantChatIn, AssistantChatOut, AssistantSuggestionsOut
 from ..services import chatlog
 from ..services.actions import undo_action
 from ..services.assistant import (
+    SLASH_COMMANDS,
     ask_assistant,
     ask_assistant_stream,
     build_assistant_context,
@@ -150,6 +151,12 @@ async def undo(request: Request, body: UndoIn) -> dict:
     """#103: reverse one previously-executed assistant action by its token."""
     st = request.app.state.st
     return await undo_action(body.undo, st.db, st.cfg, getattr(st, "bus", None) or EventBus())
+
+
+@router.get("/slash-commands")
+def slash_commands() -> list[dict]:
+    """#102 so the composer can show hints without hardcoding them."""
+    return SLASH_COMMANDS
 
 
 @router.get("/suggestions", response_model=AssistantSuggestionsOut)
