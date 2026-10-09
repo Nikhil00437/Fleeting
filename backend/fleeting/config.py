@@ -59,6 +59,10 @@ class LLMConfig:
     provider: str = "ollama"  # "ollama" | "lmstudio" | "custom" | "none"
     base_url: str = "http://127.0.0.1:11434"
     model: str = ""
+    # #266: comma-separated models tried in order when `model` is unreachable or
+    # answers with something unparseable. Empty means no chain — the capture
+    # falls back to heuristics on the first failure, as it always did.
+    fallback_models: str = ""
     timeout_secs: int = 120
     # Bearer token for OpenAI-compatible endpoints. Stored in plaintext in
     # ~/.config/fleeting/config.toml, so keep that file readable only by you.

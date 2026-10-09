@@ -159,6 +159,14 @@ async def check_llm(cfg: LLMConfig) -> dict:
         return {"ok": False, "detail": f"{type(exc).__name__}: {exc}", "models": [], "hidden": 0}
 
 
+async def _post_chat(url: str, payload: dict, timeout: float, headers: dict | None) -> str:
+    """One HTTP round trip. Raises httpx errors for the chain to interpret."""
+    async with httpx.AsyncClient(timeout=timeout, headers=headers or None) as client:
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+        return _extract_content(resp.json())
+
+
 async def request_chat(
     url: str,
     payload: dict,
@@ -169,13 +177,9 @@ async def request_chat(
 ) -> str:
     """POST a chat request to an Ollama/OpenAI-compatible server, return content."""
     try:
-        async with httpx.AsyncClient(timeout=timeout_secs, headers=headers or None) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        content = await _post_chat(url, payload, timeout_secs, headers)
     except Exception as exc:
         raise LLMUnavailable(f"request failed: {type(exc).__name__}: {exc}") from exc
-    content = _extract_content(data)
     if not content.strip():
         raise LLMUnavailable("model returned an empty response")
     return content
@@ -284,6 +288,81 @@ async def enrich(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
     if parsed is None:
         raise LLMUnavailable("model returned unparseable JSON")
     return _sanitize(parsed)
+
+
+def model_chain(cfg: LLMConfig) -> list[str]:
+    """#266: the models to try, in order, deduped. Empty when nothing is set."""
+    models = [cfg.model.strip()] + [m.strip() for m in (cfg.fallback_models or "").split(",")]
+    seen: list[str] = []
+    for m in models:
+        if m and m not in seen:
+            seen.append(m)
+    return seen
+
+
+async def enrich_chain(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
+    """#266: `enrich` across `model_chain`, then the caller's heuristic pass.
+
+    Each step gets timeout_secs divided across the chain. Without that, a chain
+    of three would let the first hanging model consume the entire budget and the
+    other two would never actually get a turn — the fallback would be decorative.
+    A step that returns unparseable JSON counts as a failed step, since a model
+    that ignored the schema will not do better on the retry.
+    """
+    if cfg.provider == "none" or not text.strip():
+        raise LLMUnavailable("llm disabled or empty text")
+
+    models = model_chain(cfg)
+    if not models:
+        raise LLMUnavailable("no model configured")
+
+    base = normalize_base_url(cfg.base_url)
+    per_step = max(5.0, cfg.timeout_secs / len(models))
+    headers = auth_headers(cfg)
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    base_prompt = ENRICH_SYSTEM_TEMPLATE.format(today_iso=today_iso)
+    if prompt:
+        base_prompt += f"\n\nCapture-template instruction: {prompt}"
+
+    last_error = "no attempt made"
+    for model in models:
+        if cfg.provider in ("lmstudio", "custom"):
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": base_prompt},
+                    {"role": "user", "content": text[:MAX_ENRICH_CHARS]},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 1024,
+                "response_format": {"type": "json_object"},
+            }
+            url = f"{base}/v1/chat/completions"
+        else:
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": base_prompt},
+                    {"role": "user", "content": text[:MAX_ENRICH_CHARS]},
+                ],
+                "stream": False,
+                "think": False,
+                "format": ENRICH_SCHEMA,
+                "options": {"temperature": 0.3},
+            }
+            url = f"{base}/api/chat"
+
+        try:
+            content = await _post_chat(url, payload, per_step, headers)
+            parsed = _parse_json_loose(content)
+            if parsed is None:
+                last_error = f"{model}: unparseable JSON"
+                continue
+            return _sanitize(parsed)
+        except Exception as exc:
+            last_error = f"{model}: {type(exc).__name__}: {exc}"
+
+    raise LLMUnavailable(f"all models failed ({last_error})")
 
 
 def _extract_content(data: dict) -> str:

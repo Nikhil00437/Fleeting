@@ -514,6 +514,8 @@ export interface Settings {
   llm_provider: string;
   llm_base_url: string;
   llm_model: string;
+  /** #266: comma-separated models tried in order when the primary is unreachable. */
+  llm_fallback_models: string;
   llm_timeout_secs: number;
   /** Whether an API key is stored. The key itself is never returned by the API. */
   llm_api_key_set?: boolean;

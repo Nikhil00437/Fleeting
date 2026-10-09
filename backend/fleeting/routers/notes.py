@@ -385,7 +385,7 @@ async def regenerate_note(note_id: str, body: RegenerateIn, request: Request) ->
     from ..services import llm as llm_svc
 
     try:
-        enriched = await llm_svc.enrich(note["raw_text"], llm_cfg)
+        enriched = await llm_svc.enrich_chain(note["raw_text"], llm_cfg)
     except llm_svc.LLMUnavailable as exc:
         raise HTTPException(502, f"model unreachable: {exc}") from exc
 

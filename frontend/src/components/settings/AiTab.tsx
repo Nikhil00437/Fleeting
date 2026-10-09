@@ -306,6 +306,34 @@ export default function AiTab({
                 </div>
               )}
 
+              {/* #266 fallback chain — only meaningful with a live provider */}
+              {s.llm_provider !== "none" && (
+                <div className="mt-4 border-t border-ink-800/80 pt-4">
+                  <label className={labelCls} htmlFor="llm-fallback-models">
+                    Fallback Models
+                  </label>
+                  <input
+                    id="llm-fallback-models"
+                    value={s.llm_fallback_models ?? ""}
+                    onChange={(e) => patch({ llm_fallback_models: e.target.value })}
+                    onBlur={() =>
+                      void save(
+                        { llm_fallback_models: s.llm_fallback_models },
+                        "fallback models updated",
+                      )
+                    }
+                    className={`${inputCls} font-mono`}
+                    placeholder="qwen2.5:3b, llama3.2:1b"
+                    spellCheck={false}
+                  />
+                  <p className="mt-1 text-[10px] text-ink-500">
+                    Comma-separated, tried in order when the primary model is unreachable or
+                    answers with unusable output. Each step gets an equal share of the timeout.
+                    Leave empty to fall back to heuristics on the first failure.
+                  </p>
+                </div>
+              )}
+
               {s.llm_provider === "none" && (
                 <div className="mt-5 border-t border-ink-800/80 pt-4">
                   <p className="text-xs text-ink-400">

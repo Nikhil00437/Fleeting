@@ -185,7 +185,12 @@ class Processor:
             else:
                 try:
                     template_prompt = (note.get("source") or {}).get("template", {}).get("prompt")
-                    enriched = await llm.enrich(note["raw_text"], self.cfg.llm, prompt=template_prompt)
+                    # #266: walks llm.fallback_models before giving up on the
+                    # model, so one unreachable model does not silently drop
+                    # every capture to heuristics.
+                    enriched = await llm.enrich_chain(
+                        note["raw_text"], self.cfg.llm, prompt=template_prompt
+                    )
                     source["enrichment"] = "local-llm"
                 except llm.LLMUnavailable as exc:
                     log.info("LLM unavailable (%s) — heuristic fallback for %s", exc, note_id)
