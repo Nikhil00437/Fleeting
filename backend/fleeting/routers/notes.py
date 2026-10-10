@@ -96,6 +96,52 @@ def list_notes(
     return [_out(n) for n in notes]
 
 
+@router.get("/tone")
+def list_notes_by_tone(
+    request: Request,
+    sentiment: str | None = None,
+    urgency: str | None = None,
+) -> dict:
+    """#259 every active note scored for urgency and sentiment, urgency first.
+
+    A separate route rather than fields on `NoteOut`: the flags are computed,
+    so putting them in the general list would change every consumer's payload
+    and pay the cost on every listing. Sorting lives here instead, where
+    somebody asked for it.
+
+    `urgency` and `sentiment` are filters, so the sort is over what is left.
+    """
+    st = request.app.state.st
+    from datetime import datetime
+
+    from ..services.tone import tone_of
+
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    rows = st.db.execute(
+        "SELECT * FROM notes WHERE trashed_at IS NULL AND archived = 0"
+    ).fetchall()
+
+    items = []
+    for row in rows:
+        note = dict(row)
+        tone = tone_of(note, st.db, today=today)
+        if urgency and tone["urgency"] != urgency:
+            continue
+        if sentiment and tone["sentiment"] != sentiment:
+            continue
+        items.append({
+            "id": note["id"],
+            "title": note.get("title") or "(untitled)",
+            "status": note.get("status"),
+            "created_at": note.get("created_at"),
+            **tone,
+        })
+
+    order = {"none": 0, "low": 1, "high": 2}
+    items.sort(key=lambda i: (-order.get(i["urgency"], 0), i["created_at"] or ""))
+    return {"day": today, "count": len(items), "items": items}
+
+
 # Literal paths must register before /{note_id}, or FastAPI hands "snoozed"
 # to the id route and 404s.
 @router.get("/snoozed")
