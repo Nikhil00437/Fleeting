@@ -543,6 +543,8 @@ export interface Settings {
   llm_fallback_models: string;
   /** #257: comma-separated tags the enricher is held to. */
   llm_preferred_tags: string;
+  /** Embedding model, usually not the chat model. Empty = use llm_model. */
+  llm_embedding_model: string;
   /** #92: per-role model overrides; empty means "use llm_model". */
   llm_enrich_model: string;
   llm_report_model: string;

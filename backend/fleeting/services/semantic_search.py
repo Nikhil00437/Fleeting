@@ -191,7 +191,7 @@ def hybrid_search(
                 repo=repo,
             )
 
-        query_vec = embed_text(embed_text_input, cfg)
+        query_vec = embed_text(embed_text_input, cfg, kind="query")
         all_emb = db.get_all_embeddings()
         scored: list[tuple[str, float]] = []
         for row in all_emb:
@@ -255,7 +255,7 @@ def hybrid_search(
         embed_text_input = p.free_text()
         sem_scored: list[tuple[str, float]] = []
         if embed_text_input:
-            query_vec = embed_text(embed_text_input, cfg)
+            query_vec = embed_text(embed_text_input, cfg, kind="query")
             all_emb = db.get_all_embeddings()
             for row in all_emb:
                 nid = str(row["note_id"])

@@ -43,6 +43,9 @@ def _settings_payload(request: Request) -> dict:
         # fields, flattened so the settings UI reads one shape.
         "llm_fallback_models": cfg.llm.fallback_models,
         "llm_preferred_tags": cfg.llm.preferred_tags,
+        # Separate from llm_model on purpose: asking a chat model for
+        # embeddings returns nothing usable and silently degrades the index.
+        "llm_embedding_model": cfg.llm.embedding_model,
         # #92: role overrides, empty meaning "use the model above".
         "llm_enrich_model": cfg.llm.enrich_model,
         "llm_report_model": cfg.llm.report_model,
@@ -130,6 +133,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.llm.fallback_models = body.llm_fallback_models.strip()
     if body.llm_preferred_tags is not None:
         cfg.llm.preferred_tags = body.llm_preferred_tags.strip()
+    if body.llm_embedding_model is not None:
+        cfg.llm.embedding_model = body.llm_embedding_model.strip()
     for field in ("enrich_model", "report_model", "assistant_model"):
         value = getattr(body, f"llm_{field}", None)
         if value is not None:

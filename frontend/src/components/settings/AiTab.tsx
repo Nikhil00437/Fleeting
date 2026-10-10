@@ -402,6 +402,35 @@ export default function AiTab({
                 </div>
               )}
 
+              {/* The embedding model is separate from the chat model on purpose:
+                  pointing embeddings at a chat model returns nothing usable and
+                  silently drops the corpus back to lexical search. */}
+              {s.llm_provider !== "none" && (
+                <div className="mt-4 border-t border-ink-800/80 pt-4">
+                  <label className={labelCls} htmlFor="llm-embedding-model">
+                    Embedding Model
+                  </label>
+                  <input
+                    id="llm-embedding-model"
+                    value={s.llm_embedding_model ?? ""}
+                    onChange={(e) => patch({ llm_embedding_model: e.target.value })}
+                    onBlur={() =>
+                      void save(
+                        { llm_embedding_model: s.llm_embedding_model },
+                        "embedding model updated",
+                      )
+                    }
+                    className={`${inputCls} font-mono`}
+                    placeholder={s.llm_model || "same as the model above"}
+                    spellCheck={false}
+                  />
+                  <p className="mt-1 text-[10px] text-ink-500">
+                    Blank uses the model above. Changing this re-embeds every note once — vectors
+                    from different models can never be compared.
+                  </p>
+                </div>
+              )}
+
               {/* #451 house style — one place, applied to every rewrite. */}
               {s.llm_provider !== "none" && (
                 <div className="mt-4 border-t border-ink-800/80 pt-4">

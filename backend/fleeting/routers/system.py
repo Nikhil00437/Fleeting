@@ -20,16 +20,16 @@ log = logging.getLogger("fleeting.system")
 def _embedding_status(st) -> tuple[str, int]:
     """Which embedding model is in use, and how many notes still need migrating.
 
-    Mirrors the branch in `embed_text_with_model`: anything but a working
-    remote provider means the offline hash vectorizer, which is a lexical
-    signal rather than a semantic one.
+    Delegates the name to `resolve_embedding_model` — this used to mirror the
+    branch inside `embed_text_with_model`, and the two disagreed, which made
+    every row count as stale and re-triggered the boot-time backfill forever.
     """
+    from ..services.embedding_model import resolve_embedding_model
+
     llm = st.cfg.llm
     if llm.provider == "none":
         return "local-hash-384", 0
-    model = llm.model or (
-        "nomic-embed-text" if llm.provider == "ollama" else "text-embedding-3-small"
-    )
+    model = resolve_embedding_model(llm)
     try:
         stale = st.db.count_stale_embeddings(model)
     except Exception:

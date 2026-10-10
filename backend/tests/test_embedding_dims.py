@@ -89,7 +89,7 @@ def test_query_dimension_selects_the_matching_model(db, monkeypatch) -> None:
     norm = math.sqrt(sum(x * x for x in padded)) or 1.0
     padded = [x / norm for x in padded]
     # semantic_search imported embed_text by name, so patch it there.
-    monkeypatch.setattr("fleeting.services.semantic_search.embed_text", lambda t, c=None: padded)
+    monkeypatch.setattr("fleeting.services.semantic_search.embed_text", lambda t, c=None, **kw: padded)
 
     assert new in _found(db, cfg, "kubernetes ingress")
 
@@ -132,7 +132,7 @@ def test_backfill_reembeds_mismatched_notes(db, monkeypatch) -> None:
 
     calls: list[str] = []
 
-    def fake_embed(text: str, cfg=None):
+    def fake_embed(text: str, cfg=None, **kw):
         calls.append(text)
         return [0.5] * 768, "nomic-embed-text"
 
@@ -153,7 +153,7 @@ def test_backfill_skips_current_model(db, monkeypatch) -> None:
     _store(db, "already fine", "nomic-embed-text", 768)
 
     monkeypatch.setattr(
-        femb, "embed_text_with_model", lambda t, c=None: ([0.1] * 768, "nomic-embed-text")
+        femb, "embed_text_with_model", lambda t, c=None, **kw: ([0.1] * 768, "nomic-embed-text")
     )
     import fleeting.services.embeddings as mod
 

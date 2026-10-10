@@ -72,6 +72,10 @@ class LLMConfig:
     # #257: comma-separated tags the user already uses. The enricher is told
     # about them and its output is snapped onto them.
     preferred_tags: str = ""
+    # The model used for embeddings, which is very often *not* the chat model:
+    # asking a chat model for vectors returns nothing usable. Empty means
+    # "use `model`", which preserves every existing config unchanged.
+    embedding_model: str = ""
     timeout_secs: int = 120
     # Bearer token for OpenAI-compatible endpoints. Stored in plaintext in
     # ~/.config/fleeting/config.toml, so keep that file readable only by you.

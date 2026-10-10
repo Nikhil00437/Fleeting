@@ -467,6 +467,8 @@ class SettingsIn(BaseModel):
     # #257/#266/#416 companion fields, same block as the llm_* ones above.
     llm_fallback_models: str | None = None
     llm_preferred_tags: str | None = None
+    # Embedding model, usually not the chat model. Empty means "use llm_model".
+    llm_embedding_model: str | None = None
     # #92: role model overrides. Empty means "use llm_model".
     llm_enrich_model: str | None = None
     llm_report_model: str | None = None

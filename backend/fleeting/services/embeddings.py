@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Callable
 
 import httpx
 
+from .embedding_model import resolve_embedding_model
+from .embedding_prompt import embedding_payload
 from .llm import auth_headers
 
 if TYPE_CHECKING:
@@ -100,23 +102,38 @@ class LocalHashVectorizer:
 
 
 def embed_text_with_model(
-    text: str, cfg: Config | None = None
+    text: str,
+    cfg: Config | None = None,
+    *,
+    kind: str = "document",
+    title: str = "",
 ) -> tuple[list[float], str]:
-    """Generate an embedding vector and model name for text, falling back to LocalHashVectorizer."""
+    """Generate an embedding vector and model name for text, falling back to LocalHashVectorizer.
+
+    `kind` is "document" when persisting a note or "query" at search time.
+    Models trained with task instructions (EmbeddingGemma 2) need the two kept
+    apart — the same words embedded as a document and as a query belong in
+    different places in the vector space, and mixing them makes every search
+    quietly return noise. `title` fills the document prefix's title slot.
+
+    Prefixes exist only in the request payload. Nothing here is ever written
+    back to the note.
+    """
     if not text or not text.strip():
         return LocalHashVectorizer().embed(""), "local-hash-384"
 
     if cfg is not None and getattr(cfg, "llm", None) and cfg.llm.provider != "none":
         provider = cfg.llm.provider.lower()
         base_url = cfg.llm.base_url.rstrip("/")
+        model = resolve_embedding_model(cfg.llm)
+        payload_text = embedding_payload(text, model, kind=kind, title=title)
         timeout = min(float(cfg.llm.timeout_secs), 5.0)
         try:
             with httpx.Client(timeout=timeout, headers=auth_headers(cfg.llm)) as client:
                 if provider == "ollama":
-                    model = cfg.llm.model or "nomic-embed-text"
                     resp = client.post(
                         f"{base_url}/api/embeddings",
-                        json={"model": model, "prompt": text},
+                        json={"model": model, "prompt": payload_text},
                     )
                     resp.raise_for_status()
                     data = resp.json()
@@ -126,11 +143,13 @@ def embed_text_with_model(
                         if norm > 0.0:
                             vec = [x / norm for x in vec]
                         return [float(x) for x in vec], model
-                elif provider in ("lmstudio", "openai"):
-                    model = cfg.llm.model or "text-embedding-3-small"
+                elif provider in ("lmstudio", "custom", "openai"):
+                    # `custom` was missing here: it is a legal provider and the
+                    # one a llama-server on a custom port would use, so it fell
+                    # straight through to the offline vectorizer.
                     resp = client.post(
                         f"{base_url}/v1/embeddings",
-                        json={"model": model, "input": text},
+                        json={"model": model, "input": payload_text},
                     )
                     resp.raise_for_status()
                     data = resp.json()
@@ -156,9 +175,11 @@ def embed_text_with_model(
     return LocalHashVectorizer().embed(text), "local-hash-384"
 
 
-def embed_text(text: str, cfg: Config | None = None) -> list[float]:
+def embed_text(
+    text: str, cfg: Config | None = None, *, kind: str = "document", title: str = ""
+) -> list[float]:
     """Generate a vector for text using configured provider or local fallback."""
-    vec, _model = embed_text_with_model(text, cfg)
+    vec, _model = embed_text_with_model(text, cfg, kind=kind, title=title)
     return vec
 
 
@@ -223,7 +244,13 @@ def embed_note(
     if not combined:
         return None
 
-    vec, model_name = embed_text_with_model(combined, cfg)
+    # A note is a document, and the prefix has a title slot worth filling.
+    # The title also stays in `combined` because `embedding_text_for` is shared
+    # with models that have no slot — pulling it out of the body would silently
+    # lose it for every other provider.
+    vec, model_name = embed_text_with_model(
+        combined, cfg, kind="document", title=str(note.get("title") or "")
+    )
     packed = pack_vector(vec)
     db.upsert_note_embedding(note["id"], packed, len(vec), model_name)
     # #94: remember which vectorizer actually ran. The offline hash vectorizer

@@ -52,7 +52,11 @@ def find_similar(
         text = embedding_text_for(note)
         if not text:
             return []
-        query_vec = embed_text(text, cfg)
+        # Same kind and title as embed_note, or this vector is built from a
+        # different shape than the stored corpus it is compared against.
+        query_vec = embed_text(
+            text, cfg, kind="document", title=str(note.get("title") or "")
+        )
 
     clamped_limit = min(max(1, int(limit)), 50)
     results: list[dict] = []

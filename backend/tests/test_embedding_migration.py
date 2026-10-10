@@ -85,7 +85,7 @@ def test_backfill_migrates_the_whole_stale_corpus(db: Database, monkeypatch) -> 
 
     seen: list[str] = []
 
-    def fake(text: str, cfg=None):
+    def fake(text: str, cfg=None, **kw):
         seen.append(text)
         return [0.25] * 768, "nomic-embed-text"
 
@@ -108,7 +108,7 @@ def test_backfill_is_a_noop_when_nothing_is_stale(db: Database, monkeypatch) -> 
     cfg.llm.provider = "ollama"
     cfg.llm.model = "nomic-embed-text"
 
-    def boom(text: str, cfg=None):  # pragma: no cover - must not be called
+    def boom(text: str, cfg=None, **kw):  # pragma: no cover - must not be called
         raise AssertionError("re-embedded a note that was already current")
 
     monkeypatch.setattr(femb, "embed_text_with_model", boom)
@@ -127,7 +127,7 @@ def test_backfill_skips_archived_notes(db: Database, monkeypatch) -> None:
     cfg.llm.provider = "ollama"
     cfg.llm.model = "nomic-embed-text"
     monkeypatch.setattr(
-        femb, "embed_text_with_model", lambda t, c=None: ([0.5] * 768, "nomic-embed-text")
+        femb, "embed_text_with_model", lambda t, c=None, **kw: ([0.5] * 768, "nomic-embed-text")
     )
     assert femb.backfill_embeddings(db, cfg, provider="nomic-embed-text", dimensions=768) == 0
 
@@ -145,7 +145,7 @@ def test_backfill_survives_one_bad_note(db: Database, monkeypatch) -> None:
 
     calls = {"n": 0}
 
-    def flaky(text: str, cfg=None):
+    def flaky(text: str, cfg=None, **kw):
         calls["n"] += 1
         if calls["n"] == 2:
             raise RuntimeError("ollama hiccup")
@@ -178,7 +178,7 @@ def test_backfill_reports_progress_per_note(db: Database, monkeypatch) -> None:
     cfg.llm.provider = "ollama"
     cfg.llm.model = "nomic-embed-text"
     monkeypatch.setattr(
-        femb, "embed_text_with_model", lambda t, c=None: ([0.5] * 768, "nomic-embed-text")
+        femb, "embed_text_with_model", lambda t, c=None, **kw: ([0.5] * 768, "nomic-embed-text")
     )
 
     events = []

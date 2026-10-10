@@ -57,7 +57,7 @@ def fake_embed(monkeypatch):
     """Stand in for the HTTP embedding call."""
     calls: list[str] = []
 
-    def fake(text: str, cfg=None):
+    def fake(text: str, cfg=None, **kw):
         calls.append(text)
         return [0.3] * 768, "nomic-embed-text"
 

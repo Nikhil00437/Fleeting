@@ -17,6 +17,7 @@ const base: Settings = {
   llm_model: "",
   llm_fallback_models: "",
   llm_preferred_tags: "",
+  llm_embedding_model: "",
   llm_enrich_model: "",
   llm_report_model: "",
   llm_assistant_model: "",

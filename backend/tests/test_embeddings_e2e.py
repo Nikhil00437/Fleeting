@@ -62,7 +62,7 @@ def test_mixed_dimensionality_hides_old_notes_then_the_migration_recovers_them(
     st.cfg.llm.provider = "ollama"
     st.cfg.llm.model = "nomic-embed-text"
     monkeypatch.setattr(
-        femb, "embed_text_with_model", lambda t, c=None: ([0.4] * 768, "nomic-embed-text")
+        femb, "embed_text_with_model", lambda t, c=None, **kw: ([0.4] * 768, "nomic-embed-text")
     )
     fresh = st.db.insert_note({"raw_text": QUERY, "type": "text", "title": QUERY})
     fresh_id = fresh["id"] if isinstance(fresh, dict) else fresh
@@ -118,7 +118,7 @@ def test_health_reports_the_degradation_and_then_clears(offline, monkeypatch) ->
     assert stale == len(ids)
 
     monkeypatch.setattr(
-        femb, "embed_text_with_model", lambda t, c=None: ([0.4] * 768, "nomic-embed-text")
+        femb, "embed_text_with_model", lambda t, c=None, **kw: ([0.4] * 768, "nomic-embed-text")
     )
     from fleeting.routers.settings import backfill_embeddings_stream
 
@@ -159,7 +159,7 @@ def test_backfill_is_idempotent(offline, monkeypatch) -> None:
     st.cfg.llm.provider = "ollama"
     st.cfg.llm.model = "nomic-embed-text"
     monkeypatch.setattr(
-        femb, "embed_text_with_model", lambda t, c=None: ([0.4] * 768, "nomic-embed-text")
+        femb, "embed_text_with_model", lambda t, c=None, **kw: ([0.4] * 768, "nomic-embed-text")
     )
 
     first = backfill_embeddings_stream(st.db, st.cfg, st.bus)

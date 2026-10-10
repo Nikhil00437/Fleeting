@@ -18,6 +18,7 @@ const base: Settings = {
   llm_model: "qwen3:8b",
   llm_fallback_models: "",
   llm_preferred_tags: "",
+  llm_embedding_model: "",
   llm_enrich_model: "",
   llm_report_model: "",
   llm_assistant_model: "",
@@ -179,5 +180,36 @@ describe("AiTab per-task models (#92)", () => {
   it("is hidden with no provider configured", () => {
     renderTab({ llm_provider: "none" });
     expect(screen.queryByLabelText("Reports")).toBeNull();
+  });
+});
+
+describe("AiTab embedding model", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("has its own field, separate from the chat model", () => {
+    renderTab({ llm_model: "ornith-1.5:9b" });
+    const input = screen.getByLabelText(/embedding model/i) as HTMLInputElement;
+    expect(input.id).toBe("llm-embedding-model");
+    expect(input.value).toBe("");
+  });
+
+  it("says blank falls back to the model above", () => {
+    renderTab({ llm_model: "ornith-1.5:9b" });
+    const input = screen.getByLabelText(/embedding model/i) as HTMLInputElement;
+    expect(input.placeholder).toBe("ornith-1.5:9b");
+  });
+
+  it("warns that changing it re-embeds every note", () => {
+    const { container } = renderTab();
+    expect(container.textContent).toMatch(/re-embeds every note/i);
+  });
+
+  it("shows the configured embedding model", () => {
+    renderTab({ llm_embedding_model: "embeddinggemma-2:270m" });
+    expect((screen.getByLabelText(/embedding model/i) as HTMLInputElement).value).toBe(
+      "embeddinggemma-2:270m",
+    );
   });
 });
