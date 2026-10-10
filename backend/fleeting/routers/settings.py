@@ -46,6 +46,10 @@ def _settings_payload(request: Request) -> dict:
         # Separate from llm_model on purpose: asking a chat model for
         # embeddings returns nothing usable and silently degrades the index.
         "llm_embedding_model": cfg.llm.embedding_model,
+        # Empty means "same server as chat". Set when the embedder runs
+        # somewhere else, e.g. LM Studio while Ollama serves chat.
+        "llm_embedding_base_url": cfg.llm.embedding_base_url,
+        "llm_embedding_provider": cfg.llm.embedding_provider,
         # #92: role overrides, empty meaning "use the model above".
         "llm_enrich_model": cfg.llm.enrich_model,
         "llm_report_model": cfg.llm.report_model,
@@ -135,6 +139,10 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.llm.preferred_tags = body.llm_preferred_tags.strip()
     if body.llm_embedding_model is not None:
         cfg.llm.embedding_model = body.llm_embedding_model.strip()
+    if body.llm_embedding_base_url is not None:
+        cfg.llm.embedding_base_url = body.llm_embedding_base_url.strip()
+    if body.llm_embedding_provider is not None:
+        cfg.llm.embedding_provider = body.llm_embedding_provider.strip()
     for field in ("enrich_model", "report_model", "assistant_model"):
         value = getattr(body, f"llm_{field}", None)
         if value is not None:

@@ -428,6 +428,51 @@ export default function AiTab({
                     Blank uses the model above. Changing this re-embeds every note once — vectors
                     from different models can never be compared.
                   </p>
+                  <label className={`${labelCls} mt-3`} htmlFor="llm-embedding-base-url">
+                    Embedding Server
+                  </label>
+                  <input
+                    id="llm-embedding-base-url"
+                    value={s.llm_embedding_base_url ?? ""}
+                    onChange={(e) => patch({ llm_embedding_base_url: e.target.value })}
+                    onBlur={() =>
+                      void save(
+                        { llm_embedding_base_url: s.llm_embedding_base_url },
+                        "embedding server updated",
+                      )
+                    }
+                    className={`${inputCls} font-mono`}
+                    placeholder={s.llm_base_url || "same server as chat"}
+                    spellCheck={false}
+                  />
+                  <p className="mt-1 text-[10px] text-ink-500">
+                    Only if the embedder runs somewhere else — an LM Studio or llama-server on its
+                    own port, while chat stays on {s.llm_base_url || "the server above"}. Blank uses
+                    the same server as chat.
+                  </p>
+                  <label className={`${labelCls} mt-3`} htmlFor="llm-embedding-provider">
+                    Embedding Server Type
+                  </label>
+                  <select
+                    id="llm-embedding-provider"
+                    value={s.llm_embedding_provider || "lmstudio"}
+                    onChange={(e) => patch({ llm_embedding_provider: e.target.value })}
+                    onBlur={() =>
+                      void save(
+                        { llm_embedding_provider: s.llm_embedding_provider },
+                        "embedding server type updated",
+                      )
+                    }
+                    className={inputCls}
+                  >
+                    <option value="lmstudio">LM Studio / OpenAI-compatible</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="custom">Custom (llama-server)</option>
+                  </select>
+                  <p className="mt-1 text-[10px] text-ink-500">
+                    Ollama and LM Studio use different request paths, and a mismatch fails quietly
+                    rather than loudly. "LM Studio" covers llama-server too.
+                  </p>
                 </div>
               )}
 

@@ -44,3 +44,30 @@ def resolve_embedding_model(cfg: LLMConfig) -> str:
             return candidate
     provider = (getattr(cfg, "provider", "") or "").lower()
     return PROVIDER_DEFAULT_EMBEDDING.get(provider, "nomic-embed-text")
+
+
+def resolve_embedding_endpoint(cfg: LLMConfig) -> tuple[str, str]:
+    """The (provider, base_url) an embedding request actually goes to.
+
+    Chat and embedding are separate resources: a 9B chat model and a 300M
+    embedder rarely share a process, and one of them is often a desktop app
+    that gets closed. Both may therefore be overridden, and *both* are needed —
+    the provider selects the request dialect as well as the host, and the two
+    can disagree. LM Studio answers Ollama's `/api/embeddings` with HTTP 200
+    and an `{"error": ...}` body, so a wrong dialect is not a crash but a
+    silent fall back to hash vectors.
+
+    Empty settings mean "whatever chat uses", which is every config that
+    predates these fields.
+    """
+    provider = (getattr(cfg, "embedding_provider", "") or "").strip().lower()
+    base = (getattr(cfg, "embedding_base_url", "") or "").strip()
+    if not provider and not base:
+        return (getattr(cfg, "provider", "") or "").lower(), getattr(cfg, "base_url", "")
+    if not provider:
+        # A URL was given without a dialect. Only Ollama speaks /api/embed*.
+        # Anything else on a non-Ollama port is an OpenAI-compatible server.
+        host = base.rstrip("/")
+        inferred = "ollama" if host.endswith(":11434") else "custom"
+        return inferred, base
+    return provider, base or getattr(cfg, "base_url", "")

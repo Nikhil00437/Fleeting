@@ -199,3 +199,193 @@ async def test_ollama_documents_gain_their_prefix(monkeypatch) -> None:
 
     embeddings.embed_text("the body", cfg, kind="document", title="Router notes")
     assert sent[0]["prompt"].startswith("title: Router notes | text:")
+
+# ---- where the embedding request goes -------------------------------------
+#
+# Chat and embedding are different resources: a 9B chat model and a 300M
+# embedder are usually on different servers, and one of them is often a
+# desktop app that gets closed. Forcing them to share an endpoint means
+# closing LM Studio takes chat down too, so embeddings may name their own.
+
+
+def _cfg(provider: str = "custom") -> LLMConfig:
+    cfg = LLMConfig(provider=provider, model="chat-model", embedding_model="embed-model")
+    cfg.base_url = "http://127.0.0.1:11434"
+    return cfg
+
+
+def test_embeddings_go_to_the_shared_url_by_default(monkeypatch) -> None:
+    from fleeting.services.embeddings import embed_text_with_model
+
+    seen: list[str] = []
+    _capture_posts(monkeypatch, seen)
+    embed_text_with_model("hello", _as_app(_cfg_with()))
+    assert seen[0].startswith("http://127.0.0.1:11434/v1/embeddings")
+
+
+def test_a_dedicated_embedding_url_overrides_the_shared_one(monkeypatch) -> None:
+    from fleeting.services.embeddings import embed_text_with_model
+
+    seen: list[str] = []
+    _capture_posts(monkeypatch, seen)
+    embed_text_with_model("hello", _as_app(_cfg_with(embedding_base_url="http://127.0.0.1:1234")))
+    assert seen[0].startswith("http://127.0.0.1:1234/v1/embeddings")
+
+
+def test_the_batched_path_honours_the_same_override(monkeypatch) -> None:
+    from fleeting.config import Config
+    from fleeting.services.embedding_batch import embed_batch
+
+    seen: list[str] = []
+    _capture_posts(monkeypatch, seen)
+    embed_batch(["a"], _as_app(_cfg_with(embedding_base_url="http://127.0.0.1:1234")))
+    assert seen[0].startswith("http://127.0.0.1:1234/v1/embeddings")
+
+
+def test_an_embedding_request_is_not_capped_at_the_chat_timeout(monkeypatch) -> None:
+    """The 5s cap that keeps chat responsive breaks a cold model load.
+
+    LM Studio pays the entire load on the first request after an idle unload.
+    An intermittent timeout is worse than a slow one: it silently falls back
+    to hash vectors, so the index looks healthy and searches are lexical.
+    """
+    from fleeting.services.embeddings import embed_text_with_model
+
+    cfg = _cfg_with()
+    cfg.timeout_secs = 60
+    seen: list[float] = []
+    _capture_posts(monkeypatch, [], timeouts=seen)
+    embed_text_with_model("hello", _as_app(cfg))
+    assert seen[0] >= 30.0, f"embedding timeout was clamped to {seen[0]}s"
+
+
+# ---- helpers --------------------------------------------------------------
+
+
+def _cfg_with(**kw) -> "object":
+    """An LLMConfig shaped like a real one, with overrides applied."""
+    cfg = _cfg()
+    for k, v in kw.items():
+        setattr(cfg, k, v)
+    return cfg
+
+
+def _as_app(llm: LLMConfig):
+    from fleeting.config import Config
+
+    cfg = Config()
+    cfg.llm = llm
+    return cfg
+
+
+def _capture_posts(
+    monkeypatch, urls: list[str], timeouts: list[float] | None = None
+) -> None:
+    """Record the endpoint (and optionally the timeout) each request uses."""
+    real_init = httpx.Client.__init__
+
+    def init(self, *a, **kw):
+        if timeouts is not None and "timeout" in kw:
+            timeouts.append(float(kw["timeout"]))
+        return real_init(self, *a, **kw)
+
+    def post(self, url, json=None, **kw):
+        urls.append(str(url))
+        n = len(json.get("input", [])) if isinstance(json.get("input"), list) else 1
+        return httpx.Response(
+            200,
+            json={"data": [{"embedding": [1.0] * 4} for _ in range(n)]},
+            request=httpx.Request("POST", str(url)),
+        )
+
+    monkeypatch.setattr(httpx.Client, "__init__", init)
+    monkeypatch.setattr(httpx.Client, "post", post)
+
+
+# ---- the embedding server's dialect ---------------------------------------
+#
+# LM Studio answers Ollama's /api/embeddings with HTTP 200 and an
+# {"error": ...} body, so a wrong dialect is not a crash -- it is a silent
+# fall back to hash vectors. The dialect has to be selectable independently of
+# the provider that serves chat, or pointing embeddings at a second server
+# cannot work at all.
+
+
+def test_a_second_server_may_speak_the_openai_dialect(monkeypatch) -> None:
+    from fleeting.services.embeddings import embed_text_with_model
+
+    seen: list[str] = []
+    _capture_posts(monkeypatch, seen)
+    embed_text_with_model(
+        "hello",
+        _as_app(
+            _cfg_with(
+                provider="ollama",
+                embedding_provider="custom",
+                embedding_base_url="http://127.0.0.1:1234",
+            )
+        ),
+    )
+    assert seen[0] == "http://127.0.0.1:1234/v1/embeddings"
+
+
+def test_without_an_embedding_provider_the_shared_one_still_applies(monkeypatch) -> None:
+    from fleeting.services.embeddings import embed_text_with_model
+
+    seen: list[str] = []
+    _capture_posts(monkeypatch, seen)
+    embed_text_with_model("hello", _as_app(_cfg_with(provider="ollama")))
+    assert seen[0].endswith("/api/embeddings")
+
+
+def test_the_batched_path_uses_the_same_dialect(monkeypatch) -> None:
+    from fleeting.services.embedding_batch import embed_batch
+
+    seen: list[str] = []
+    _capture_posts(monkeypatch, seen)
+    embed_batch(
+        ["a"],
+        _as_app(
+            _cfg_with(
+                provider="ollama",
+                embedding_provider="custom",
+                embedding_base_url="http://127.0.0.1:1234",
+            )
+        ),
+    )
+    assert seen[0] == "http://127.0.0.1:1234/v1/embeddings"
+
+
+def test_a_two_hundred_with_an_error_body_is_not_a_success(
+    monkeypatch, caplog
+) -> None:
+    """LM Studio returns HTTP 200 plus {"error": ...}.
+
+    Without this the vector silently becomes local-hash-384 and the index
+    looks healthy while every search is lexical-only.
+    """
+    from fleeting.services.embeddings import embed_text_with_model
+
+    real_init = httpx.Client.__init__
+
+    def init(self, *a, **kw):
+        return real_init(self, *a, **kw)
+
+    def post(self, url, json=None, **kw):
+        return httpx.Response(
+            200,
+            json={"error": "unknown model"},
+            request=httpx.Request("POST", str(url)),
+        )
+
+    monkeypatch.setattr(httpx.Client, "__init__", init)
+    monkeypatch.setattr(httpx.Client, "post", post)
+
+    vec, model = embed_text_with_model("hello", _as_app(_cfg_with()))
+    assert model == "local-hash-384"
+    assert len(vec) == 384
+    # The degradation must be visible: this is the whole reason the health
+    # panel exists, and an unlogged fallback means the user never learns.
+    assert any("falling back" in r.message for r in caplog.records), [
+        r.message for r in caplog.records
+    ]

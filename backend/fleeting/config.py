@@ -76,6 +76,16 @@ class LLMConfig:
     # asking a chat model for vectors returns nothing usable. Empty means
     # "use `model`", which preserves every existing config unchanged.
     embedding_model: str = ""
+    # Embeddings may live on a different server than chat: a 9B chat model and
+    # a 300M embedder are usually not the same process, and one of them is
+    # often a desktop app the user closes. Empty means "use base_url", so
+    # every existing config is unchanged.
+    embedding_base_url: str = ""
+    # ...and on a different dialect. The provider picks the request shape as
+    # well as the host, and the two are separate decisions: LM Studio serves
+    # OpenAI's /v1/embeddings while Ollama serves /api/embeddings. Empty means
+    # "use provider".
+    embedding_provider: str = ""
     timeout_secs: int = 120
     # Bearer token for OpenAI-compatible endpoints. Stored in plaintext in
     # ~/.config/fleeting/config.toml, so keep that file readable only by you.

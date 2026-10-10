@@ -545,6 +545,8 @@ export interface Settings {
   llm_preferred_tags: string;
   /** Embedding model, usually not the chat model. Empty = use llm_model. */
   llm_embedding_model: string;
+  llm_embedding_base_url: string;
+  llm_embedding_provider: string;
   /** #92: per-role model overrides; empty means "use llm_model". */
   llm_enrich_model: string;
   llm_report_model: string;

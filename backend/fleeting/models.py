@@ -469,6 +469,11 @@ class SettingsIn(BaseModel):
     llm_preferred_tags: str | None = None
     # Embedding model, usually not the chat model. Empty means "use llm_model".
     llm_embedding_model: str | None = None
+    # Optional: where the embedder lives, when it is not on llm_base_url.
+    llm_embedding_base_url: str | None = None
+    llm_embedding_provider: str | None = Field(
+        default=None, pattern="^(ollama|lmstudio|custom|openai|)$"
+    )
     # #92: role model overrides. Empty means "use llm_model".
     llm_enrich_model: str | None = None
     llm_report_model: str | None = None

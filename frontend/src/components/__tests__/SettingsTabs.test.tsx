@@ -29,6 +29,8 @@ const settings: Settings = {
   llm_fallback_models: "",
   llm_preferred_tags: "",
   llm_embedding_model: "",
+  llm_embedding_base_url: "",
+  llm_embedding_provider: "",
   llm_enrich_model: "",
   llm_report_model: "",
   llm_assistant_model: "",

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Callable
 
 import httpx
 
-from .embedding_model import resolve_embedding_model
+from .embedding_model import resolve_embedding_endpoint, resolve_embedding_model
 from .embedding_prompt import embedding_payload
 from .llm import auth_headers
 
@@ -123,11 +123,18 @@ def embed_text_with_model(
         return LocalHashVectorizer().embed(""), "local-hash-384"
 
     if cfg is not None and getattr(cfg, "llm", None) and cfg.llm.provider != "none":
-        provider = cfg.llm.provider.lower()
-        base_url = cfg.llm.base_url.rstrip("/")
+        provider, url = resolve_embedding_endpoint(cfg.llm)
+        base_url = url.rstrip("/")
         model = resolve_embedding_model(cfg.llm)
         payload_text = embedding_payload(text, model, kind=kind, title=title)
-        timeout = min(float(cfg.llm.timeout_secs), 5.0)
+        # Embeddings run on the processor thread or during a backfill, never on
+        # the UI's critical path, so they get the full configured timeout. The
+        # clamp that keeps chat responsive (5s) fails a cold model load — a
+        # server that unloads when idle pays the whole load on the next
+        # request — and an intermittent timeout is worse than a slow one
+        # because it degrades silently to hash vectors.
+        timeout = float(cfg.llm.timeout_secs)
+        data: dict = {}
         try:
             with httpx.Client(timeout=timeout, headers=auth_headers(cfg.llm)) as client:
                 if provider == "ollama":
@@ -161,6 +168,19 @@ def embed_text_with_model(
                             if norm > 0.0:
                                 vec = [x / norm for x in vec]
                             return [float(x) for x in vec], model
+                # Both branches return the moment they hold a vector, so
+                # arriving here means HTTP 200 with no vector in the body and
+                # no exception raised. LM Studio answers Ollama's
+                # /api/embeddings exactly that way, which makes a wrong
+                # dialect a silent downgrade rather than a visible failure —
+                # the thing this whole path exists to prevent.
+                log.warning(
+                    "Embedding response from %s carried no vector (%s) — falling back to "
+                    "the offline local-hash-384 vector; semantic search will be "
+                    "lexical-only until the LLM is reachable",
+                    base_url,
+                    str(data.get("error") or list(data))[:120],
+                )
         except Exception as exc:
             # WARNING, not DEBUG: the app runs at INFO, so a silent downgrade
             # means the user never learns their semantic index is not real.
