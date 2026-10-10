@@ -13,8 +13,9 @@ from pydantic import BaseModel, Field
 from ..config import save_config
 from ..db import now_iso
 from ..events import EventBus
-from ..models import NoteOut, NoteUpdateIn, RegenerateIn, SnoozeIn
+from ..models import ClarifyIn, NoteOut, NoteUpdateIn, RegenerateIn, SnoozeIn
 from ..services import markdown
+from ..services import clarify
 from ..services.embeddings import embed_note
 from ..services.fewshot import build_few_shot
 from ..services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
@@ -205,6 +206,22 @@ def update_note(note_id: str, body: NoteUpdateIn, request: Request) -> NoteOut:
             # Never fail the user's edit over a best-effort index update.
             log.warning("re-embed failed for note %s", note_id, exc_info=True)
 
+    st.bus.publish("note.updated", note)
+    return _out(note)
+
+
+@router.post("/{note_id}/answer")
+async def answer_clarification(note_id: str, body: ClarifyIn, request: Request) -> NoteOut:
+    """#260 answer the question a vague capture was held back for.
+
+    The reply is appended to the capture rather than replacing it, so answering
+    cannot destroy the original words, and the hold is lifted. Enrichment on
+    the merged text is what turns it into a usable title and summary.
+    """
+    st = request.app.state.st
+    note = clarify.answer(st.db, note_id, body.reply)
+    if not note:
+        raise HTTPException(400, "nothing to answer with, or no such note")
     st.bus.publish("note.updated", note)
     return _out(note)
 

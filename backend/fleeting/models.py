@@ -560,3 +560,9 @@ class ReprocessIn(BaseModel):
     scope: str = "embeddings"
     confirm: bool = False
 
+
+
+class ClarifyIn(BaseModel):
+    """#260: the user's answer to the question a vague capture was held for."""
+
+    reply: str

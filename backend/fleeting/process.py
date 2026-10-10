@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import Config
 from .db import Database, now_iso
 from .events import EventBus
-from .services import llm, markdown
+from .services import clarify, llm, markdown
 from .services.claims import unverified, verify_claims
 from .services.embeddings import embed_note
 from .services.fewshot import build_few_shot
@@ -253,6 +253,14 @@ class Processor:
             else:
                 changes["review_state"] = "enriched"
             note = self.db.update_note(note_id, changes)
+
+            # #260: a capture too vague to act on later gets a question instead
+            # of being filed. After the fields are written above, so the note
+            # carries the question alongside what enrichment already decided.
+            try:
+                await clarify.step(self.db, self.cfg, _note_id=note_id)
+            except Exception:
+                log.warning("clarifying step failed for %s", note_id, exc_info=True)
 
             # Fetch existing tasks for this note to preserve state on reprocessing
             existing_rows = self.db.execute(
