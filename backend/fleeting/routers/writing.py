@@ -122,6 +122,13 @@ class RewriteIn(BaseModel):
     style: str
 
 
+class CleanupIn(BaseModel):
+    text: str
+    # #261: on by default, because it is the default the user wants from a
+    # cleanup. Off means "reword freely".
+    keep_wording: bool = True
+
+
 class TitlesIn(BaseModel):
     text: str
     current_title: str | None = None
@@ -184,6 +191,29 @@ async def rewrite(request: Request, body: RewriteIn) -> dict:
     except writing.LLMUnavailable as exc:
         raise HTTPException(502, f"model unavailable: {exc}") from exc
     return {"text": out, "style": body.style}
+
+
+@router.post("/cleanup")
+async def cleanup(request: Request, body: CleanupIn) -> dict:
+    """#261 punctuate dictated text and strip fillers, keeping the wording.
+
+    Nothing is persisted — the suggested text is returned with a report of what
+    the model invented, and the caller decides whether to apply it. A cleanup
+    the user did not accept must not have replaced their words.
+    """
+    st = request.app.state.st
+    try:
+        out = await writing.clean_transcript(
+            body.text,
+            st.cfg.llm,
+            keep_wording=body.keep_wording,
+            style_guide=_guide(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except writing.LLMUnavailable as exc:
+        raise HTTPException(502, f"model unavailable: {exc}") from exc
+    return out
 
 
 @router.post("/titles")

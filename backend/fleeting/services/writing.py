@@ -116,6 +116,99 @@ async def rewrite(text: str, style: str, cfg: LLMConfig, *, style_guide: str | N
     return out.strip()
 
 
+_IDENTIFIER = re.compile(r"[a-z0-9']+")
+
+
+def _words(text: str) -> list[str]:
+    """The words in `text`, lowercased, punctuation and case ignored.
+
+    Case and punctuation are exactly what the cleanup is allowed to change, so
+    they are normalised away before comparing. Anything else is a real
+    difference.
+    """
+    return _IDENTIFIER.findall((text or "").lower())
+
+
+def added_words(original: str, cleaned: str) -> list[str]:
+    """Words in `cleaned` the user never said, sorted and de-duplicated.
+
+    Reported as a list of words rather than a position map: the point is to
+    show the user *what* the model invented, in a form small enough to put in
+    a warning.
+    """
+    said: set[str] = set()
+    for word in _words(original):
+        said.add(word)
+        # "don't" may legitimately become "do not", and that expansion is the
+        # one rewording cleanup does that preserves meaning rather than
+        # changing it. Splitting on the apostrophe covers it without opening
+        # the door to invented words.
+        if "'" in word:
+            said.update(part for part in word.split("'") if part)
+    out: list[str] = []
+    for word in _words(cleaned):
+        if word not in said and word not in out:
+            out.append(word)
+    return sorted(out)
+
+
+CLEAN_SYSTEM = (
+    "You clean up text the user dictated out loud. Add punctuation and sentence "
+    "boundaries, capitalise the first word of each sentence, and remove filler "
+    "words like um, uh, you know and like. Reply with the cleaned text only — no "
+    "preamble, no explanation, no quotes around it. NEVER change the wording: "
+    "every word you output must be a word the user said, and you may not add "
+    "information, rephrase, or answer a question the text contains."
+)
+
+
+def _clean_system(style_guide: str | None) -> str:
+    """The cleanup prompt plus the optional house style guide.
+
+    The guide is a user setting, so it may go in the system turn; the text
+    being cleaned may not, or a transcript could rewrite the rules.
+    """
+    return CLEAN_SYSTEM + _style_section(style_guide)
+
+
+async def clean_transcript(
+    text: str,
+    cfg: LLMConfig,
+    *,
+    keep_wording: bool = True,
+    style_guide: str | None = None,
+) -> dict:
+    """#261 punctuate dictated text, optionally refusing to reword it.
+
+    The `keep_wording` toggle is a deterministic check, not a request: the
+    output is compared word-by-word against the input and anything the model
+    invented is reported. When it fails the user's own words are returned
+    unchanged, because the alternative is silently replacing them with the
+    model's paraphrase — the thing the toggle exists to prevent.
+
+    Returns a dict rather than a plain string because the caller needs to know
+    whether anything was invented before showing the result.
+    """
+    if not text or not text.strip():
+        raise ValueError("nothing to clean up")
+    out = (await _ask(_clean_system(style_guide), text, cfg)).strip()
+
+    added = added_words(text, out)
+    if keep_wording and added:
+        return {
+            "text": text,
+            "changed": False,
+            "kept_wording": False,
+            "added_words": added,
+        }
+    return {
+        "text": out,
+        "changed": out != text,
+        "kept_wording": not added,
+        "added_words": added,
+    }
+
+
 def _parse_titles(raw: str, current: str | None) -> list[str]:
     parsed = llm_svc._parse_json_loose(raw)
     if isinstance(parsed, dict):
