@@ -30,11 +30,17 @@ TASK_PROMPT_MODELS = frozenset({"embeddinggemma-2", "embeddinggemma"})
 def is_task_prompt_model(model: str) -> bool:
     """True when `model` is trained with the search/document task prefixes.
 
-    Matched on the model name *without its tag*, because Ollama users write
-    `embeddinggemma-2:270m` as often as `embeddinggemma-2`.
+    Matching normalises the decorations a serving layer puts on the name,
+    because the same model arrives spelled differently depending on who is
+    serving it: Ollama writes `embeddinggemma-2:270m`, LM Studio writes
+    `text-embedding-embeddinggemma-2.gguf`. Missing either would silently
+    disable the prefixes and every search would quietly return noise.
     """
-    base = (model or "").split(":")[0].strip().lower()
-    return base in TASK_PROMPT_MODELS
+    name = (model or "").strip().lower()
+    name = name.split(":")[0]          # ollama tag
+    name = name.removesuffix(".gguf")  # llama.cpp / LM Studio filename
+    name = name.removeprefix("text-embedding-")
+    return name.strip() in TASK_PROMPT_MODELS
 
 
 def embedding_payload(
@@ -54,7 +60,10 @@ def embedding_payload(
     if not is_task_prompt_model(model):
         return text
     clean = (title or "").strip() or "none"
-    return f"{DOCUMENT_PREFIX.format(title=clean)}\n{text}"
+    # The model's own Document prompt puts title and text on one line with a
+    # space; matching it exactly avoids a distribution shift at the front of
+    # every embedded note.
+    return f"{DOCUMENT_PREFIX.format(title=clean)} {text}"
 
 
 def resolve(cfg: LLMConfig) -> str:

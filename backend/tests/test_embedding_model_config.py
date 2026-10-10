@@ -68,6 +68,15 @@ def test_the_model_is_recognised_with_and_without_a_tag() -> None:
     assert is_task_prompt_model("embeddinggemma-2:270m")
 
 
+def test_the_lm_studio_filename_convention_is_recognised() -> None:
+    """LM Studio exposes the file as text-embedding-<model>.gguf.
+
+    Without this the prefixes silently do not apply and every search returns
+    noise — no error, no warning, just worse results.
+    """
+    assert is_task_prompt_model("text-embedding-embeddinggemma-2.gguf")
+
+
 def test_an_ordinary_model_needs_no_prefix() -> None:
     assert not is_task_prompt_model("nomic-embed-text")
 
