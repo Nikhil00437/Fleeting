@@ -158,7 +158,7 @@ def embed_text_with_model(
 
 def embed_text(text: str, cfg: Config | None = None) -> list[float]:
     """Generate a vector for text using configured provider or local fallback."""
-    vec, _ = embed_text_with_model(text, cfg)
+    vec, _model = embed_text_with_model(text, cfg)
     return vec
 
 
@@ -226,6 +226,10 @@ def embed_note(
     vec, model_name = embed_text_with_model(combined, cfg)
     packed = pack_vector(vec)
     db.upsert_note_embedding(note["id"], packed, len(vec), model_name)
+    # #94: remember which vectorizer actually ran. The offline hash vectorizer
+    # downgrades every semantic search to keyword matching, and nothing else
+    # tells the user their index is not what they think it is.
+    db.kv_set("embedding_model_used", model_name)
     return vec
 
 

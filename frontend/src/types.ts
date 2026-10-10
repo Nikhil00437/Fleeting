@@ -511,6 +511,25 @@ export interface WhisperProgress {
   detail: string;
 }
 
+/** #94 health panel payload. */
+export interface HealthPanel {
+  llm: {
+    calls: number;
+    avg_ms: number | null;
+    max_ms: number | null;
+    errors: number;
+    last_error: string | null;
+  };
+  embeddings: {
+    model: string | null;
+    degraded: boolean;
+    dimensions: number;
+    indexed: number;
+    detail: string;
+  };
+  queue: { depth: number; max: number; inflight: number; running: boolean };
+}
+
 export interface Settings {
   host: string;
   port: number;

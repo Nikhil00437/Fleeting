@@ -34,6 +34,7 @@ import type {
   AssistantSuggestionsOut,
   ContextPreview,
   LlmTrace,
+  HealthPanel,
   ProcessApp,
   ProcessInfo,
   ProcessDetails,
@@ -819,6 +820,15 @@ export const api = {
 
   assistantSuggestions: () =>
     req<AssistantSuggestionsOut>("/assistant/suggestions"),
+
+  /** #94: latency, queue depth and embedding status in one read. */
+  healthPanel: () => req<HealthPanel>("/health-panel"),
+
+  /** #94: re-probe the provider. Always resolves — a failure is the answer. */
+  healthPanelRetry: () =>
+    req<{ ok: boolean; detail?: string; models?: string[] }>("/health-panel/retry", {
+      method: "POST",
+    }),
 
   /** #112: what each recent LLM call looked at and ran. */
   assistantTraces: (kind?: string) =>

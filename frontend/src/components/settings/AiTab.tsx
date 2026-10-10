@@ -2,6 +2,7 @@ import { useState } from "react";
 import MicPicker from "./MicPicker";
 import { api } from "../../api";
 import { BotIcon, CpuIcon, MicIcon, SparkIcon } from "../Icons";
+import { HealthPanelCard } from "../HealthPanelCard";
 import { fmtMB, inputCls, labelCls, Toggle, type FormProps } from "./shared";
 import type { WhisperProgress } from "../../types";
 
@@ -437,6 +438,23 @@ export default function AiTab({
                   </p>
                 </div>
               )}
+            </section>
+
+            {/* #94 health: the page you open because something is wrong, so it
+                sits above the speech section rather than buried under it. */}
+            <section className="glass-studio rounded-2xl p-5">
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-iris-500/15 ring-1 ring-iris-400/30">
+                  <CpuIcon className="h-4.5 w-4.5 text-iris-300" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold tracking-tight text-ink-100">Health</h3>
+                  <p className="text-[10px] text-ink-400">
+                    Latency, capture queue, and whether semantic search is really semantic.
+                  </p>
+                </div>
+              </div>
+              <HealthPanelCard />
             </section>
 
             {/* Whisper Speech-to-Text Compartment */}

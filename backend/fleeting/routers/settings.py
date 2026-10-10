@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ..activity import session_idle_probe
 from ..config import CONFIG_PATH, LLMConfig, expand_path, save_config
 from ..models import LLMProbeIn, SettingsIn
+from ..services import health as health_svc
 from ..services import llm
 
 log = logging.getLogger("fleeting.settings")
@@ -222,6 +223,40 @@ async def test_llm(request: Request, body: LLMProbeIn | None = None) -> dict:
         if body.api_key is not None:
             probe.api_key = body.api_key.strip()
     return await llm.check_llm(probe)
+
+
+# #94 lives at the app root, not under /api/settings: it is a read of app
+# health, and burying it among settings hides the one page you want when
+# something is actually wrong.
+health_router = APIRouter(prefix="/api", tags=["health"])
+
+
+@health_router.get("/health-panel")
+def health_panel(request: Request) -> dict:
+    """#94 latency, queue depth and embedding status in one read.
+
+    Assembled from things that are already recorded rather than from a fresh
+    probe, so opening the panel costs nothing. `/health-panel/retry` is the
+    explicit "try again" when something is actually down.
+    """
+    st = request.app.state.st
+    return {
+        "llm": health_svc.llm_health(st.db),
+        "embeddings": health_svc.embedding_status(
+            st.db, st.db.kv_get("embedding_model_used")
+        ),
+        "queue": health_svc.queue_status(getattr(st, "processor", None)),
+    }
+
+
+@health_router.post("/health-panel/retry")
+async def health_panel_retry(request: Request) -> dict:
+    """#94 one-click retry: re-probe the provider and return the fresh answer.
+
+    Always 200. A failure here *is* the answer, not an error — raising would
+    turn the retry button into a second thing that appears broken.
+    """
+    return await test_llm(request, None)
 
 
 @router.post("/test-whisper")

@@ -770,7 +770,7 @@ async def ask_assistant(
     context_text, sources, context_used = build_assistant_context(
         user_query, db, cfg, repo=repo, filter_type=filter_type, queries=queries
     )
-    def record(tool_calls: list[dict] | None = None) -> None:
+    def record(tool_calls: list[dict] | None = None, error: str | None = None) -> None:
         try:
             db.record_llm_trace(
                 kind="chat",
@@ -778,6 +778,7 @@ async def ask_assistant(
                 context=context_text,
                 tool_calls=tool_calls,
                 ms=int((time.monotonic() - started) * 1000),
+                error=error,
             )
         except Exception as exc:  # a failed audit write must not fail the answer
             log.warning("Could not record llm trace: %s", exc)
@@ -872,7 +873,9 @@ async def ask_assistant(
         except (LLMUnavailable, Exception) as exc:
             log.warning("Assistant LLM request failed, falling back to extractive answer: %s", exc)
             content = _extractive_heuristic_answer(user_query, context_text, sources)
-            record()
+            # #94: the fallback is the interesting event — a degraded answer
+            # that looks identical to a real one is worth surfacing later.
+            record(error=f"{type(exc).__name__}: {exc}")
     else:
         content = _extractive_heuristic_answer(user_query, context_text, sources)
         record()

@@ -426,6 +426,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app.include_router(tasks.router)
     app.include_router(search.router)
     app.include_router(settings.router)
+    app.include_router(settings.health_router)
     app.include_router(system.router)
     app.include_router(activity.router)
     app.include_router(activity.daily_router)

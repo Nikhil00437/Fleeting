@@ -465,6 +465,11 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("enrich_feedback", "INTEGER NOT NULL DEFAULT 0"),
         ("claims", "TEXT"),
     )),
+    # #94: the failure that made a call fall back. Without it the health panel
+    # can report latency but not *why* the app stopped using the model.
+    ("llm_traces", (
+        ("error", "TEXT"),
+    )),
 )
 
 
@@ -1613,11 +1618,12 @@ class Database:
         tool_calls: list[dict] | None = None,
         tokens: int | None = None,
         ms: int = 0,
+        error: str | None = None,
     ) -> None:
         self.execute(
             """
-            INSERT INTO llm_traces (id, kind, queries, context, tool_calls, tokens, ms, at)
-            VALUES (:id, :kind, :queries, :context, :tool_calls, :tokens, :ms, :at)
+            INSERT INTO llm_traces (id, kind, queries, context, tool_calls, tokens, ms, error, at)
+            VALUES (:id, :kind, :queries, :context, :tool_calls, :tokens, :ms, :error, :at)
             """,
             {
                 "id": new_id(),
@@ -1627,6 +1633,7 @@ class Database:
                 "tool_calls": json.dumps(tool_calls) if tool_calls else None,
                 "tokens": tokens,
                 "ms": ms,
+                "error": error,
                 "at": now_iso(),
             },
         )
