@@ -73,6 +73,8 @@ def _settings_payload(request: Request) -> dict:
         "yt_transcribe_fallback": cfg.youtube.transcribe_fallback,
         "yt_max_duration_min": cfg.youtube.max_duration_min,
         "desktop_notifications": cfg.notifications.desktop,
+        # #110: the nightly "what did I forget?" for open loops. Opt-in.
+        "notifications_nightly_nudge": cfg.notifications.nightly_nudge,
         "activity_enabled": cfg.activity.enabled,
         "activity_paused": st.activity.is_paused() if st.activity else False,
         "activity_poll_secs": cfg.activity.poll_secs,
@@ -186,6 +188,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.youtube.max_duration_min = body.yt_max_duration_min
     if body.desktop_notifications is not None:
         cfg.notifications.desktop = body.desktop_notifications
+    if body.notifications_nightly_nudge is not None:
+        cfg.notifications.nightly_nudge = body.notifications_nightly_nudge
     if body.activity_enabled is not None:
         cfg.activity.enabled = body.activity_enabled
     if body.activity_poll_secs is not None:

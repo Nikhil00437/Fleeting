@@ -497,6 +497,8 @@ class SettingsIn(BaseModel):
     yt_transcribe_fallback: bool | None = None
     yt_max_duration_min: int | None = Field(default=None, ge=5, le=240)
     desktop_notifications: bool | None = None
+    # #110: nightly "what did I forget?" for open loops. Off by default.
+    notifications_nightly_nudge: bool | None = None
     activity_enabled: bool | None = None
     activity_poll_secs: int | None = Field(default=None, ge=5, le=300)
     activity_idle_after_min: int | None = Field(default=None, ge=1, le=60)

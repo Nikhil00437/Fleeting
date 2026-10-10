@@ -244,6 +244,25 @@ export default function VaultTab({
                     }
                   />
                 </label>
+
+                <div className="mt-4 border-t border-ink-800/80 pt-4">
+                  <p className="text-xs font-semibold text-ink-100">
+                    Nightly "what did I forget?"
+                  </p>
+                  <p className="text-[11px] text-ink-400">
+                    Once a night, list the open loops still yours — overdue tasks and loose ends
+                    from your reports. Nothing is invented; it only reads what you already wrote.
+                  </p>
+                </div>
+                <Toggle
+                  checked={s.notifications_nightly_nudge}
+                  onChange={(v) =>
+                    void save(
+                      { notifications_nightly_nudge: v },
+                      v ? "nightly nudge enabled" : "nightly nudge disabled",
+                    )
+                  }
+                />
               </div>
             </div>
           </section>

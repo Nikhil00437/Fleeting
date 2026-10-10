@@ -44,6 +44,7 @@ const settings: Settings = {
   yt_transcribe_fallback: true,
   yt_max_duration_min: 45,
   desktop_notifications: true,
+  notifications_nightly_nudge: false,
   activity_enabled: true,
   activity_paused: false,
   activity_poll_secs: 20,

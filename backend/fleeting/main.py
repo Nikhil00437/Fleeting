@@ -25,6 +25,7 @@ from .config import Config, ensure_dirs
 from .db import Database
 from .events import EventBus
 from .process import Processor
+from .services import nudges
 from .services.transcribe import Transcriber
 from .state import AppState
 
@@ -144,6 +145,14 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
 
             await dailylog.generate_daily_log(db, cfg, day, rolling=True)
             bus.publish("dailylog.updated", {"day": day, "kind": "daily-report"})
+
+            # #110: ask what is still open, once the day's report exists — the
+            # report is what usually surfaces the loose ends in the first
+            # place. No separate timer: rollover is already the moment the app
+            # notices a day ended, and on a laptop that is usually when it
+            # wakes up rather than at 00:00, which is the better hour to be
+            # told what you forgot.
+            await asyncio.to_thread(nudges.nightly_notify, db, cfg, bus, day=day)
 
         async def backfill_yesterday() -> None:
             """If the machine was off at midnight, produce yesterday's report on boot."""

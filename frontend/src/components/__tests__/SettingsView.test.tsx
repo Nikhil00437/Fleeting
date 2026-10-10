@@ -44,6 +44,7 @@ const mockBaseSettings: Settings = {
   yt_transcribe_fallback: false,
   yt_max_duration_min: 30,
   desktop_notifications: true,
+  notifications_nightly_nudge: false,
   activity_enabled: true,
   activity_paused: false,
   activity_poll_secs: 5,

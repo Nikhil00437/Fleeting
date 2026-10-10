@@ -125,6 +125,10 @@ class YouTubeConfig:
 @dataclass
 class NotificationsConfig:
     desktop: bool = True
+    # #110: a nightly "what did I forget?" for open loops. Off by default —
+    # an unrequested midnight notification is how an app gets muted, and
+    # #416's stale-contact list sets the same precedent.
+    nightly_nudge: bool = False
 
 
 @dataclass

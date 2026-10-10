@@ -974,6 +974,24 @@ def save_periodic_review_as_note(request: Request, body: dict) -> dict:
     return {"ok": True, "note": note}
 
 
+@router.get("/nudge")
+
+def get_nudge_endpoint(request: Request) -> dict:
+    """#110 tonight's open loops, on demand rather than only as a notification.
+
+    Deterministic: #169's threads plus overdue tasks, nothing invented. The
+    same list the nightly notification is built from, so the two cannot
+    disagree about what was forgotten.
+    """
+    st = request.app.state.st
+    from datetime import datetime
+
+    from ..services.nudges import nightly_nudge
+
+    day = datetime.now().astimezone().strftime("%Y-%m-%d")
+    return nightly_nudge(st.db, st.cfg, day=day)
+
+
 @router.get("/unfinished-threads")
 def get_threads_endpoint(request: Request) -> list[dict]:
     """#169 Persistent unfinished threads list from reports."""

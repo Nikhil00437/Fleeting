@@ -575,6 +575,7 @@ export interface Settings {
   yt_transcribe_fallback: boolean;
   yt_max_duration_min: number;
   desktop_notifications: boolean;
+  notifications_nightly_nudge: boolean;
   activity_enabled: boolean;
   activity_paused: boolean;
   activity_poll_secs: number;
