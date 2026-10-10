@@ -197,7 +197,7 @@ async def test_execute_action_unknown_tool(env):
 @pytest.mark.anyio
 async def test_available_actions_structure():
     assert isinstance(AVAILABLE_ACTIONS, list)
-    assert len(AVAILABLE_ACTIONS) == 9
+    assert len(AVAILABLE_ACTIONS) == 10
     names = {a["name"] for a in AVAILABLE_ACTIONS}
     expected = {
         "delete_tasks",
@@ -208,6 +208,7 @@ async def test_available_actions_structure():
         "delete_note",
         "pin_note",
         "generate_daily_digest",
+        "bulk_edit",
         "pause_activity",
     }
     assert names == expected

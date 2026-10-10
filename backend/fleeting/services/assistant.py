@@ -607,6 +607,21 @@ def _format_action_result(tool: str, params: dict, res: dict) -> str:
         state = "paused" if paused else "resumed"
         return f"Activity tracking has been {state}."
 
+    if tool == "bulk_edit":
+        op = (res.get("operation") or "").replace("_", " ")
+        value = res.get("value")
+        what = f"{op} “{value}”" if value else op
+        if res.get("preview"):
+            # The dry run is the point: name the notes, not just the number.
+            listed = ", ".join(
+                f"[[note:{m['id']}|{m['title']}]]" for m in (res.get("matches") or [])[:5]
+            )
+            more = len(res.get("matches") or []) - 5
+            tail = f", and {more} more" if more > 0 else ""
+            return f"Not changed anything yet. This would {what} on {res.get('count', 0)} notes: {listed}{tail}."
+        changed = res.get("changed", 0)
+        return f"Applied “{what}” to {changed} of {res.get('count', 0)} notes."
+
     return "Action completed successfully."
 
 

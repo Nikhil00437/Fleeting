@@ -7,7 +7,10 @@ to the frontend via EventBus.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
+import time
 from datetime import datetime
 import logging
 from pathlib import Path
@@ -258,6 +261,232 @@ def pause_activity(params: dict, db: Database, cfg: Config, bus: EventBus) -> di
     return {"ok": True, "paused": paused}
 
 
+# ---- #109 bulk edits ------------------------------------------------------
+#
+# "Retag all my router notes as homelab" touches every note that matched a
+# phrase the user never saw until after it was written. So this is two calls:
+# the first resolves and shows, the second writes. Nothing in between can
+# retag a note on its own.
+#
+# Selection is lexical FTS through the one query parser rather than the hybrid
+# path: a bulk edit must not need the embedding server, must not depend on
+# vectors that change when the model changes, and must produce the same set
+# twice for the same words.
+
+BULK_OPERATIONS = ("add_tag", "remove_tag", "archive", "unarchive", "pin", "unpin")
+
+# The keyword search's own maximum, so "hit the cap" and "too many to touch"
+# are the same condition rather than two numbers that can disagree.
+BULK_CAP = 200
+
+# A preview is a promise about a moment; fifteen minutes is long enough to read
+# a list and decide, short enough that a tab left open overnight cannot apply a
+# stale selection in the morning.
+BULK_PREVIEW_TTL = 900
+
+
+def _bulk_find(query: str, cfg: Config, db: Database) -> list[dict]:
+    from .semantic_search import hybrid_search
+
+    return hybrid_search(db, query, cfg, mode="keyword", limit=BULK_CAP)
+
+
+def _bulk_matching_ids(query: str, cfg: Config, db: Database) -> list[str]:
+    """The notes a query selects, refusing anything broader than BULK_CAP."""
+    if not query or not query.strip():
+        raise ValueError("bulk_edit needs a query saying which notes")
+    notes = _bulk_find(query, cfg, db)
+    if len(notes) >= BULK_CAP:
+        # Never truncate: silently editing the first 200 of 5000 is worse than
+        # refusing, because the user cannot see what was left out.
+        raise ValueError(
+            f"At least {BULK_CAP} notes match '{query}'. Narrow it with "
+            f"tag:, type:, person: or a date so the edit stays reviewable."
+        )
+    return [str(n["id"]) for n in notes]
+
+
+def _bulk_preview_key(query: str, operation: str, value: str) -> str:
+    """The storage key for one preview, derived from what it would change.
+
+    Deliberately not random. The confirm flow re-sends the *original prompt*
+    and lets the model call the tool again, so a random token would never come
+    back and the edit would loop on the preview forever. Keying by the edit
+    itself means the confirm turn finds exactly the preview it was shown —
+    and if the model comes back with different parameters, that is a
+    different key, so it previews again instead of applying something the
+    user never saw.
+    """
+    digest = hashlib.sha256(f"{query.strip()}|{operation}|{value}".encode()).hexdigest()
+    return f"bulk_preview:{digest[:32]}"
+
+
+def _bulk_store_preview(
+    db: Database, key: str, ids: list[str], operation: str, value: str
+) -> str:
+    db.kv_set(
+        key,
+        json.dumps({"ids": ids, "operation": operation, "value": value, "at": time.time()}),
+    )
+    return key.split(":", 1)[1]
+
+
+def _bulk_read_preview(params: dict, db: Database, *, spend: bool = True) -> dict:
+    """Fetch a preview record, optionally spending it.
+
+    `execute_action` snapshots the undo state *before* the action runs, so the
+    snapshot peeks (`spend=False`) and the action spends. A preview that could
+    be applied twice is the one thing this whole tool exists to prevent.
+    """
+    token = str(params.get("preview_token") or "").strip()
+    if not token:
+        raise ValueError("bulk_edit needs a preview_token")
+    key = f"bulk_preview:{token}"
+    raw = db.kv_get(key)
+    if not raw:
+        raise ValueError("That preview has expired. Run it again to see the notes.")
+    if spend:
+        db.kv_delete(key)
+    rec = json.loads(raw)
+    if time.time() - float(rec.get("at") or 0) > BULK_PREVIEW_TTL:
+        if spend:
+            db.kv_delete(key)
+        raise ValueError("That preview has expired. Run it again to see the notes.")
+    return rec
+
+
+def _bulk_confirmed_token(params: dict, db: Database) -> str | None:
+    """The preview token this call is approving, if it is approving one.
+
+    The confirm turn re-sends the prompt rather than the tool call, so the
+    token is looked up from the edit's own key. An edit with no stored preview
+    has not been shown to the user, so it returns None and previews instead —
+    applying on a bare confirm=true would be the one way to write notes the
+    user never saw.
+    """
+    if params.get("preview_token") or not params.get("confirm"):
+        return None
+    operation = str(params.get("operation") or "").strip()
+    if not operation:
+        return None
+    query = str(params.get("query") or "")
+    value = str(params.get("value") or "").strip().lstrip("#").lower()
+    key = _bulk_preview_key(query, operation, value)
+    return key.split(":", 1)[1] if db.kv_get(key) else None
+
+
+def bulk_edit(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
+    """Preview first, then apply, to every note in the preview.
+
+    Both phases go through one entry point so the operation can never be
+    applied from the preview call: without a token this only reports.
+    """
+    params = params or {}
+    operation = str(params.get("operation") or "").strip()
+    value = str(params.get("value") or "").strip().lstrip("#").lower()
+    query = str(params.get("query") or "")
+    confirmed = _bulk_confirmed_token(params, db)
+    if confirmed:
+        params = {**params, "preview_token": confirmed}
+    applying = bool(params.get("preview_token"))
+
+    try:
+        if applying:
+            # The operation and tag come from the preview, not from this call:
+            # the user approved a specific change to a specific set, so a
+            # re-specified query or value here must not widen or redirect it.
+            rec = _bulk_read_preview(params, db)
+            ids = rec["ids"]
+            operation = str(rec.get("operation") or "")
+            value = str(rec.get("value") or "")
+        else:
+            if operation not in BULK_OPERATIONS:
+                raise ValueError(
+                    f"Unknown operation '{operation}'. "
+                    f"Use one of: {', '.join(BULK_OPERATIONS)}"
+                )
+            if operation in ("add_tag", "remove_tag") and not value:
+                raise ValueError(f"'{operation}' needs a tag name")
+            query = str(params.get("query") or "")
+            ids = _bulk_matching_ids(query, cfg, db)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    if operation not in BULK_OPERATIONS:
+        return {"ok": False, "error": f"Unknown operation '{operation}'."}
+
+    if not ids:
+        return {"ok": False, "error": "No notes matched."}
+
+    notes = [n for n in (db.get_note(i) for i in ids) if n and not n.get("trashed_at")]
+    matches = [{"id": n["id"], "title": n.get("title") or "(untitled)"} for n in notes]
+
+    if not applying:
+        return {
+            "ok": True,
+            "preview": True,
+            "operation": operation,
+            "value": value or None,
+            "count": len(matches),
+            "matches": matches,
+            "preview_token": _bulk_store_preview(
+                db,
+                _bulk_preview_key(str(params.get("query") or ""), operation, value),
+                [n["id"] for n in notes],
+                operation,
+                value,
+            ),
+        }
+
+    from .tags_vocab import apply_preferred_tags, preferred_tags
+
+    changed = 0
+    for note in notes:
+        fields: dict[str, Any] = {}
+        if operation == "add_tag":
+            # #257: the same snapping enrichment output gets, so a tag typed
+            # here lands on the same word the model would have produced.
+            tags = [str(t) for t in (note.get("tags") or [])]
+            # Dedupe before snapping: apply_preferred_tags returns its input
+            # untouched when no vocabulary is configured, so without this an
+            # existing tag plus the same tag again compares unequal and the
+            # note is rewritten with a duplicate.
+            candidates = list(dict.fromkeys(tags + [value]))
+            new = apply_preferred_tags(candidates, preferred_tags(cfg))
+            if new != tags:
+                fields["tags"] = new
+        elif operation == "remove_tag":
+            tags = [str(t) for t in (note.get("tags") or [])]
+            if value in tags:
+                fields["tags"] = [t for t in tags if t != value]
+        elif operation in ("archive", "unarchive"):
+            target = 1 if operation == "archive" else 0
+            if int(note.get("archived") or 0) != target:
+                fields["archived"] = target
+        elif operation in ("pin", "unpin"):
+            target = 1 if operation == "pin" else 0
+            if int(note.get("pinned") or 0) != target:
+                fields["pinned"] = target
+
+        if not fields:
+            continue
+        updated = db.update_note(note["id"], fields)
+        if updated:
+            changed += 1
+            # Every write the UI must see live announces itself; a bulk edit
+            # that skips this leaves the view stale until navigation.
+            bus.publish("note.updated", updated)
+
+    return {
+        "ok": True,
+        "operation": operation,
+        "value": value or None,
+        "count": len(matches),
+        "changed": changed,
+        "matches": matches,
+    }
+
+
 ACTIONS: dict[str, Callable[[dict, Database, Config, EventBus], Any]] = {
     "delete_tasks": delete_tasks,
     "create_task": create_task,
@@ -268,6 +497,7 @@ ACTIONS: dict[str, Callable[[dict, Database, Config, EventBus], Any]] = {
     "pin_note": pin_note,
     "generate_daily_digest": generate_daily_digest,
     "pause_activity": pause_activity,
+    "bulk_edit": bulk_edit,
 }
 
 AVAILABLE_ACTIONS: list[dict] = [
@@ -384,6 +614,41 @@ AVAILABLE_ACTIONS: list[dict] = [
             "required": ["paused"],
         },
     },
+    {
+        "name": "bulk_edit",
+        "description": (
+            "Change one thing across every note matching a query, e.g. 'retag all "
+            "my router notes as homelab'. Never applies on the first call: it "
+            "reports the matched notes and returns a preview_token, which you "
+            "must pass back to apply the change."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Which notes, in plain words. Operators like tag:, "
+                        "person: and type: work here too."
+                    ),
+                },
+                "operation": {
+                    "type": "string",
+                    "enum": ["add_tag", "remove_tag", "archive", "unarchive", "pin", "unpin"],
+                    "description": "What to change on each matched note.",
+                },
+                "value": {"type": "string", "description": "The tag, for add_tag and remove_tag."},
+                "preview_token": {
+                    "type": "string",
+                    "description": (
+                        "From the preview call. Applies exactly the notes that "
+                        "preview listed; omit it to preview instead of editing."
+                    ),
+                },
+            },
+            "required": ["operation"],
+        },
+    },
 ]
 
 
@@ -470,6 +735,35 @@ def _snapshot_undo(tool: str, params: dict, db: Database) -> tuple[str, dict] | 
     if tool == "pause_activity":
         return ("kv", {"key": "activity_paused", "value": db.kv_get("activity_paused", "0")})
 
+    if tool == "bulk_edit":
+        # The before-state of every note the preview named, captured before the
+        # edit runs. Reading the preview here rather than trusting the model's
+        # params is what keeps undo pointing at the notes that actually change.
+        # The confirm turn arrives without a token, so resolve it the same way
+        # the action will.
+        confirmed = _bulk_confirmed_token(params, db)
+        if confirmed:
+            params = {**params, "preview_token": confirmed}
+        try:
+            rec = _bulk_read_preview(params, db, spend=False)
+        except ValueError:
+            rec = None
+        if not rec:
+            return None
+        rows = []
+        for note_id in rec["ids"]:
+            note = db.get_note(str(note_id))
+            if note:
+                rows.append(
+                    {
+                        "id": note["id"],
+                        "tags": [str(t) for t in (note.get("tags") or [])],
+                        "archived": int(note.get("archived") or 0),
+                        "pinned": int(note.get("pinned") or 0),
+                    }
+                )
+        return ("bulk_edit", {"notes": rows}) if rows else None
+
     # generate_daily_digest is deliberately absent: the previous digest is gone
     # once regenerated, and re-deriving it would be a guess. It has its own
     # path — an edited report is preserved by #72's edited_body.
@@ -543,6 +837,18 @@ def _restore_undo(rec: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     elif kind == "kv":
         db.kv_set(before["key"], before["value"])
         bus.publish("activity.live", {"paused": before["value"] == "1", "session": None})
+
+    elif kind == "bulk_edit":
+        # #109: the snapshot holds every touched field of every touched note,
+        # so this is one restore loop rather than one branch per operation —
+        # archive, pin and retag are undone by the same code.
+        for row in before["notes"]:
+            note = db.update_note(
+                row["id"],
+                {"tags": row["tags"], "archived": row["archived"], "pinned": row["pinned"]},
+            )
+            if note:
+                bus.publish("note.updated", note)
 
     else:
         return {"ok": False, "error": f"cannot undo '{kind}'"}
