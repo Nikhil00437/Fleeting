@@ -2710,15 +2710,25 @@ class Database:
 
         Vectors of different dimensionality cannot be compared, so these notes
         are invisible to semantic search while the new model is active.
+
+        Only notes that can be searched are counted. An archived or trashed
+        note's vector can never match anything, so counting it would leave the
+        number permanently above zero and re-schedule the migration on every
+        boot — the loop this count exists to end.
         """
         if dimensions is None:
             row = self.execute(
-                "SELECT COUNT(*) AS c FROM note_embeddings WHERE model != ?", (model,)
+                "SELECT COUNT(*) AS c FROM note_embeddings e "
+                "JOIN notes n ON n.id = e.note_id "
+                "WHERE e.model != ? AND n.trashed_at IS NULL AND n.archived = 0",
+                (model,),
             ).fetchone()
         else:
             row = self.execute(
-                "SELECT COUNT(*) AS c FROM note_embeddings "
-                "WHERE model != ? OR dimensions != ?",
+                "SELECT COUNT(*) AS c FROM note_embeddings e "
+                "JOIN notes n ON n.id = e.note_id "
+                "WHERE (e.model != ? OR e.dimensions != ?) "
+                "AND n.trashed_at IS NULL AND n.archived = 0",
                 (model, dimensions),
             ).fetchone()
         return int(row["c"])

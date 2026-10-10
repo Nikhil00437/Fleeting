@@ -138,3 +138,41 @@ def test_reembedding_reports_progress(db: Database, monkeypatch) -> None:
     seen: list[int] = []
     eb.reembed_corpus(db, _cfg(), batch=2, on_progress=seen.append)
     assert seen and seen[-1] == 4
+
+# ---- staleness only counts notes that can actually be searched ------------
+#
+# An archived or trashed note is excluded from search, so its vector can never
+# match anything. Counting it would leave `stale` permanently above zero and
+# re-schedule the migration on every single boot, forever — the exact loop this
+# count was meant to end.
+
+
+def _stale_note(db: Database, model: str) -> None:
+    note = db.insert_note({"title": "kept", "raw_text": "body", "status": "done"})
+    db.upsert_note_embedding(note["id"], b"\x00" * 4, 4, model)
+
+
+def test_an_archived_note_does_not_count_as_stale(db: Database) -> None:
+    _stale_note(db, "old-model")
+    db.execute("UPDATE notes SET archived = 1 WHERE title = 'kept'")
+    db.commit()
+    assert db.count_stale_embeddings("new-model") == 0
+
+
+def test_a_trashed_note_does_not_count_as_stale(db: Database) -> None:
+    _stale_note(db, "old-model")
+    db.execute("UPDATE notes SET trashed_at = '2026-01-01' WHERE title = 'kept'")
+    db.commit()
+    assert db.count_stale_embeddings("new-model") == 0
+
+
+def test_a_live_note_still_counts_as_stale(db: Database) -> None:
+    _stale_note(db, "old-model")
+    assert db.count_stale_embeddings("new-model") == 1
+
+
+def test_the_dimension_check_also_ignores_invisible_notes(db: Database) -> None:
+    _stale_note(db, "new-model")
+    db.execute("UPDATE notes SET archived = 1 WHERE title = 'kept'")
+    db.commit()
+    assert db.count_stale_embeddings("new-model", 768) == 0
