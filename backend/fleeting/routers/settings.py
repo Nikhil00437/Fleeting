@@ -11,8 +11,10 @@ from fastapi import APIRouter, HTTPException, Request
 from ..activity import session_idle_probe
 from ..config import CONFIG_PATH, LLMConfig, expand_path, save_config
 from ..models import LLMProbeIn, SettingsIn
+from ..models import ReprocessIn
 from ..services import health as health_svc
 from ..services import llm
+from ..services.reprocess import reprocess_corpus, validate_reprocess
 
 log = logging.getLogger("fleeting.settings")
 
@@ -381,3 +383,35 @@ async def start_embeddings_backfill(request: Request) -> dict:
 
     st.backfill_task = asyncio.create_task(_run())
     return {"started": True}
+
+
+@router.post("/reprocess")
+async def start_reprocess(body: ReprocessIn, request: Request) -> dict:
+    """#95 re-embed, and optionally re-enrich, every note — with progress.
+
+    The confirm is a field on the body rather than a default, so a caller
+    cannot overwrite a corpus by posting nothing: the default scope is the
+    half that cannot destroy anything.
+    """
+    import asyncio
+
+    st = request.app.state.st
+    reason = validate_reprocess(st.cfg, body.scope, body.confirm)
+    if reason:
+        raise HTTPException(422, reason)
+    existing = getattr(st, "reprocess_task", None)
+    if existing is not None and not existing.done():
+        return {"ok": False, "reason": "already running"}
+
+    async def _run() -> None:
+        try:
+            await reprocess_corpus(
+                st.db, st.cfg, st.bus, scope=body.scope, confirm=body.confirm
+            )
+        except Exception:
+            log.exception("reprocess failed")
+        finally:
+            st.reprocess_task = None
+
+    st.reprocess_task = asyncio.create_task(_run())
+    return {"ok": True, "scope": body.scope, "started": True}

@@ -553,3 +553,10 @@ class AssistantChatOut(BaseModel):
 class AssistantSuggestionsOut(BaseModel):
     suggestions: list[str]
 
+
+class ReprocessIn(BaseModel):
+    """#95. `everything` requires confirm because it overwrites the user's words."""
+
+    scope: str = "embeddings"
+    confirm: bool = False
+
