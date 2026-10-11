@@ -1,5 +1,6 @@
 import { createPortal, flushSync } from "react-dom";
 import { vt } from "./motion";
+import { EntitiesView } from "./components/EntitiesView";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyServerEvent, emptyServerState, type ServerState } from "./components/serverEvents";
 import { api } from "./api";
@@ -39,12 +40,13 @@ import {
  TextIcon,
  XIcon,
 } from "./components/Icons";
-import type { Note, Stats, WhisperProgress } from "./types";
+import type { EntityNote, EntityRow, Note, Stats, WhisperProgress } from "./types";
 
 type View =
   | "inbox"
   | "today"
   | "review"
+  | "entities"
   | "planner"
   | "timeline"
   | "reports"
@@ -114,6 +116,24 @@ export default function App() {
  const [tasksKey, setTasksKey] = useState(0);
  const [timelineKey, setTimelineKey] = useState(0);
  const [collectionsKey, setCollectionsKey] = useState(0);
+
+ // #258: the index is fetched when it is opened rather than on boot, so a
+ // view nobody visits costs nothing.
+ const [entityPeople, setEntityPeople] = useState<EntityRow[] | null>(null);
+ const [entitySelected, setEntitySelected] = useState<string | null>(null);
+ const [entityNotes, setEntityNotes] = useState<EntityNote[] | null>(null);
+ const [entityLoading, setEntityLoading] = useState(false);
+
+ const openEntity = async (name: string) => {
+  setEntitySelected(name);
+  setEntityNotes(null);
+  try {
+   setEntityNotes(await api.entityNotes(name));
+  } catch {
+   setEntityNotes([]);
+   toast("Could not load that person's notes", "err");
+  }
+ };
 
  const desktop = typeof window !== "undefined" ? window.fleetingDesktop : undefined;
  const isElectron = Boolean(desktop?.isElectron);
@@ -222,6 +242,17 @@ export default function App() {
   collectionsKey,
   embedding,
  };
+
+ // #258: fetch the people index when the view is opened, not on boot.
+ useEffect(() => {
+  if (view !== "entities" || entityPeople) return;
+  setEntityLoading(true);
+  api
+   .entitiesPeople()
+   .then(setEntityPeople)
+   .catch(() => setEntityPeople([]))
+   .finally(() => setEntityLoading(false));
+ }, [view, entityPeople]);
 
  useEffect(() => {
   const es = new EventSource("/api/events");
@@ -389,6 +420,16 @@ export default function App() {
    label: "Review",
    icon: <RefreshIcon className="h-4 w-4 text-iris-400" />,
    hint: "w",
+  },
+  {
+   // #258: the entity index. The extraction has existed since #411 with no
+   // surface; this is the only way to reach a name you would not have
+   // thought to search for. Labelled "Entities" because that is what the
+   // list actually holds — see EntitiesView.
+   id: "entities",
+   label: "Entities",
+   icon: <RefreshIcon className="h-4 w-4 text-sky-400" />,
+   hint: "e",
   },
   {
    id: "planner",
@@ -991,6 +1032,18 @@ export default function App() {
        />
       ))}
      {view === "review" && <ReviewView onToast={toast} />}
+    {view === "entities" && (
+     <EntitiesView
+      people={entityPeople}
+      selected={entitySelected}
+      notes={entityNotes}
+      loading={entityLoading}
+      onSelect={openEntity}
+      onBack={() => setEntitySelected(null)}
+      onToast={toast}
+      resolveAlias={api.resolveEntityAlias}
+     />
+    )}
      {view === "planner" && (
       <PlannerView onToast={toast} refreshKey={tasksKey} onTasksChanged={refreshStats} />
      )}

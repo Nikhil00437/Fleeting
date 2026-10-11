@@ -485,6 +485,24 @@ export interface TaskRef extends TaskItem {
   item_id?: string;
 }
 
+/** #258 the entity index. `mentions` and `notes_count` are different numbers. */
+export interface EntityRow {
+  name: string;
+  mentions: number;
+  notes_count: number;
+  first_seen: string | null;
+  last_seen: string | null;
+}
+
+/** #413 a note as the entity page shows it — enough to click, nothing more. */
+export interface EntityNote {
+  id: string;
+  title: string;
+  summary?: string | null;
+  type?: string | null;
+  created_at?: string | null;
+}
+
 export interface HealthStatus {
   ok: boolean;
   version: string;

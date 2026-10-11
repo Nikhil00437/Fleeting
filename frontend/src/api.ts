@@ -11,6 +11,8 @@ import type {
   TodayData,
   WeekPlan,
   RepoInfo,
+  EntityNote,
+  EntityRow,
   HealthStatus,
   ConnectionTest,
   LLMProbeOverrides,
@@ -828,6 +830,20 @@ export const api = {
   healthPanelRetry: () =>
     req<{ ok: boolean; detail?: string; models?: string[] }>("/health-panel/retry", {
       method: "POST",
+    }),
+
+  /** #258 the entity index. People, most-mentioned first. */
+  entitiesPeople: () => req<EntityRow[]>("/entities/people"),
+
+  /** #413 every note mentioning a person, newest first. */
+  entityNotes: (name: string) =>
+    req<EntityNote[]>(`/entities/people/${encodeURIComponent(name)}/notes`),
+
+  /** #417 fold an ambiguous first name into the right person. */
+  resolveEntityAlias: (alias: string, canonical: string) =>
+    req<{ ok: boolean }>("/entities/ambiguous/resolve", {
+      method: "POST",
+      body: JSON.stringify({ alias, canonical }),
     }),
 
   /** #112: what each recent LLM call looked at and ran. */

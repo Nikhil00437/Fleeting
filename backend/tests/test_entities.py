@@ -173,3 +173,35 @@ def test_people_index_includes_pending_notes(db: Database) -> None:
     note = db.insert_note({"title": "t", "raw_text": "Priya called.", "type": "text"})
     assert db.get_note(note["id"])["status"] == "pending"
     assert [p["name"] for p in people_index(db)] == ["Priya"]
+
+
+# ---- sentence-initial words are not names --------------------------------
+#
+# The extractor is tuned for short dictated captures, where a capitalised run
+# is usually a person. LLM-written prose capitalises the first word of every
+# sentence, and that word is not a name. Measured on a digest-heavy corpus,
+# this list took the extracted count from 160 to 106 — a real fix to a real
+# source of false positives, and not a fix to the underlying problem.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Also worth noting, the parser needs work",
+        "Moreover, the cache never expires",
+        "Addressed the failing test in the parser",
+        "However, the estimate was wrong",
+        "Basically the whole thing is unverified",
+    ],
+)
+def test_a_sentence_initial_word_is_not_a_person(text: str) -> None:
+    assert extract_people(text) == []
+
+
+def test_a_name_after_a_stripped_leader_is_still_found() -> None:
+    """The mechanism must keep working, not just stop over-firing."""
+    assert extract_people("Ask Priya about the router") == ["Priya"]
+
+
+def test_a_name_inside_a_sentence_is_unaffected() -> None:
+    assert "Priya" in extract_people("the plan is fine also, Priya agreed")
