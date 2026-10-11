@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import Config
 from .db import Database, now_iso
 from .events import EventBus
-from .services import clarify, llm, markdown
+from .services import clarify, llm, markdown, reminders
 from .services.claims import unverified, verify_claims
 from .services.embeddings import embed_note
 from .services.fewshot import build_few_shot
@@ -261,6 +261,17 @@ class Processor:
                 await clarify.step(self.db, self.cfg, _note_id=note_id)
             except Exception:
                 log.warning("clarifying step failed for %s", note_id, exc_info=True)
+
+            # #415: a date written down is a fact that outlives the note, so it
+            # moves to its own list where the user can correct or delete it.
+            try:
+                added = reminders.extract_and_store(
+                    self.db, note.get("raw_text") or "", note_id=note_id
+                )
+                if added:
+                    log.info("note %s: %d reminder(s) extracted", note_id, added)
+            except Exception:
+                log.warning("reminder extraction failed for %s", note_id, exc_info=True)
 
             # Fetch existing tasks for this note to preserve state on reprocessing
             existing_rows = self.db.execute(

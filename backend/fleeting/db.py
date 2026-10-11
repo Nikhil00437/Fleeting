@@ -433,6 +433,27 @@ MIGRATIONS: list[str] = [
       at TEXT NOT NULL
     );
     """,
+    # v25 — 0.9 #415 birthdays and anniversaries. Their own table rather than a
+    # note field because a date written down in March is still true in
+    # November: the note is where the mention happened, this is where the fact
+    # lives. `source_key` is what makes re-extraction idempotent, and what a
+    # deleted reminder leaves behind so a reprocess does not undo the deletion.
+    """CREATE TABLE IF NOT EXISTS reminders (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      month INTEGER NOT NULL,
+      day INTEGER NOT NULL,
+      note_id TEXT,
+      source_key TEXT NOT NULL UNIQUE,
+      dismissed INTEGER NOT NULL DEFAULT 0,
+      at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS reminders_deleted (
+      source_key TEXT PRIMARY KEY,
+      at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -1606,6 +1627,106 @@ class Database:
             (max(1, min(int(limit), 100)),),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- #415 reminders -------------------------------------------------
+    #
+    # `source_key` is unique, so re-extracting the same sentence is a no-op.
+    # A deleted reminder keeps its key, which is what stops the next reprocess
+    # from resurrecting something the user deliberately removed.
+
+    def add_reminder(
+        self,
+        name: str,
+        kind: str,
+        month: int,
+        day: int,
+        *,
+        note_id: str | None = None,
+        source_key: str,
+    ) -> dict | None:
+        """Insert unless this exact reminder was already seen. None if so."""
+        existing = self.execute(
+            "SELECT * FROM reminders WHERE source_key = ?", (source_key,)
+        ).fetchone()
+        if existing or self.reminder_key_exists(source_key):
+            return None
+        rid = new_id()
+        self.execute(
+            "INSERT INTO reminders (id, name, kind, month, day, note_id, source_key, at) "
+            "VALUES (:id, :name, :kind, :month, :day, :note_id, :key, :at)",
+            {
+                "id": rid,
+                "name": name,
+                "kind": kind,
+                "month": int(month),
+                "day": int(day),
+                "note_id": note_id,
+                "key": source_key,
+                "at": now_iso(),
+            },
+        )
+        self.commit()
+        return self.get_reminder(rid)
+
+    def get_reminder(self, reminder_id: str) -> dict | None:
+        row = self.execute(
+            "SELECT * FROM reminders WHERE id = ?", (reminder_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_reminders(self, include_dismissed: bool = False) -> list[dict]:
+        where = "" if include_dismissed else " WHERE dismissed = 0"
+        rows = self.execute(
+            f"SELECT * FROM reminders{where} ORDER BY month ASC, day ASC, name ASC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_reminder(self, reminder_id: str, changes: dict) -> dict | None:
+        allowed = {"name", "kind", "month", "day", "dismissed"}
+        clean = {k: v for k, v in (changes or {}).items() if k in allowed}
+        if not clean:
+            return self.get_reminder(reminder_id)
+        sets = ", ".join(f"{k} = :{k}" for k in clean)
+        self.execute(
+            f"UPDATE reminders SET {sets} WHERE id = :id", {**clean, "id": reminder_id}
+        )
+        self.commit()
+        return self.get_reminder(reminder_id)
+
+    def delete_reminder(self, reminder_id: str) -> bool:
+        """Remove it, and remember it was removed.
+
+        The tombstone is the point: without it the next reprocess reads the
+        same sentence and quietly puts the reminder back, so deleting would not
+        be a decision the user could make.
+        """
+        row = self.execute(
+            "SELECT source_key FROM reminders WHERE id = ?", (reminder_id,)
+        ).fetchone()
+        self.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
+        if row:
+            self.execute(
+                "INSERT OR IGNORE INTO reminders_deleted (source_key, at) VALUES (?, ?)",
+                (row["source_key"], now_iso()),
+            )
+        self.commit()
+        return True
+
+    def reminder_key_exists(self, source_key: str) -> bool:
+        """True when this reminder is stored *or* was deleted on purpose."""
+        for table in ("reminders", "reminders_deleted"):
+            row = self.execute(
+                f"SELECT 1 AS x FROM {table} WHERE source_key = ?", (source_key,)
+            ).fetchone()
+            if row:
+                return True
+        return False
+
+    def undelete_reminder(self, source_key: str) -> bool:
+        """Forget a deletion, so extraction may find this one again."""
+        self.execute("DELETE FROM reminders_deleted WHERE source_key = ?", (source_key,))
+        self.commit()
+        return True
 
     # #112/#453: one row per LLM call. Capped like query_log — an audit log
     # nobody prunes becomes the biggest table in a local-first app.

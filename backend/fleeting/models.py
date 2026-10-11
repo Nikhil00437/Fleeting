@@ -566,3 +566,9 @@ class ClarifyIn(BaseModel):
     """#260: the user's answer to the question a vague capture was held for."""
 
     reply: str
+
+
+class ReminderIn(BaseModel):
+    """#415: a correction to one extracted reminder."""
+
+    changes: dict = Field(default_factory=dict)

@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from ..models import ReminderIn
+
 from ..activity import aggregate_day, app_blocked
 from ..config import expand_path
 from ..services import dailylog, periodic_review, standup, unfinished_threads, weeklylog, what_shipped
@@ -990,6 +992,53 @@ def get_nudge_endpoint(request: Request) -> dict:
 
     day = datetime.now().astimezone().strftime("%Y-%m-%d")
     return nightly_nudge(st.db, st.cfg, day=day)
+
+
+@router.get("/reminders")
+def list_reminders(request: Request, days: int = Query(45, ge=1, le=365)) -> dict:
+    """#415 birthdays and anniversaries coming up, soonest first."""
+    st = request.app.state.st
+    from ..services.reminders import upcoming
+
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    items = upcoming(st.db, today=today, days=days)
+    return {"day": today, "count": len(items), "items": items}
+
+
+@router.get("/reminders/all")
+def all_reminders(request: Request) -> list[dict]:
+    """The whole list, not just what is due — the user came to edit one."""
+    st = request.app.state.st
+    from ..services.reminders import list_reminders as all_rows
+
+    return all_rows(st.db)
+
+
+@router.patch("/reminders/{reminder_id}")
+def patch_reminder(reminder_id: str, body: ReminderIn, request: Request) -> dict:
+    """Correct a reminder. Extracted dates are guesses; this is how one is fixed."""
+    st = request.app.state.st
+    from ..services.reminders import update_reminder
+
+    try:
+        row = update_reminder(st.db, reminder_id, body.changes)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not row:
+        raise HTTPException(404, "reminder not found")
+    return row
+
+
+@router.delete("/reminders/{reminder_id}")
+def drop_reminder(reminder_id: str, request: Request) -> dict:
+    """Delete one, permanently: a reprocess must not put it back."""
+    st = request.app.state.st
+    from ..services.reminders import delete_reminder
+
+    if not st.db.get_reminder(reminder_id):
+        raise HTTPException(404, "reminder not found")
+    delete_reminder(st.db, reminder_id)
+    return {"deleted": reminder_id}
 
 
 @router.get("/unfinished-threads")
