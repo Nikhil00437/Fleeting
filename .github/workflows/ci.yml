@@ -1,0 +1,66 @@
+# #191 CI. Every gate the project actually has, in one workflow.
+#
+# Deliberately not more than this. There is no eslint: `tsc -b` already runs
+# with `strict`, `noUnusedLocals` and `noUnusedParameters`, and a second
+# type-aware linter over the same files buys duplication, not signal. Adding it
+# later is one line here plus one config file.
+#
+# `ruff check` runs before pytest rather than alongside it. A lint failure is
+# the fast answer, and there is no point spending two minutes on a suite that
+# is going to fail anyway.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded run is not worth finishing: cancel it and spend the minutes on
+# the commit that is actually current.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Python
+        run: uv python install 3.12
+      - name: Sync
+        run: uv sync --all-groups
+      # Lint first: it is the fast failure, and the expensive suite is
+      # pointless once something is known to be wrong.
+      - name: Lint
+        run: uv run ruff check .
+      - name: Test
+        run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+      # tsc before vitest, same reason as ruff before pytest.
+      - name: Type-check
+        working-directory: frontend
+        run: bunx tsc -b
+      - name: Test
+        working-directory: frontend
+        run: bun run test
+      # The build is a separate gate from type-checking: Vite can succeed on
+      # code that will not deploy, and this is the only job that would notice.
+      - name: Build
+        working-directory: frontend
+        run: bun run build

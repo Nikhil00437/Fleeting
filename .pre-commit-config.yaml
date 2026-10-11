@@ -1,0 +1,39 @@
+# #191/#193 pre-commit.
+#
+# Linters and the type-checker only — no test suite. pytest takes ~50s and
+# vitest ~10s, which is long enough that people reach for --no-verify, and a
+# hook that gets routinely bypassed is worse than no hook at all. CI runs the
+# full suite on every push; this is the loop that catches a stray import before
+# it reaches the other end of a commit.
+#
+# No eslint, for the same reason CI has none: `tsc -b` already runs with
+# `strict`, `noUnusedLocals` and `noUnusedParameters`, and a second type-aware
+# linter over the same files buys duplication rather than signal.
+
+repos:
+  - repo: local
+    hooks:
+      # Both entries name their directory explicitly. pre-commit runs hooks
+      # from the repository root, so a bare `ruff check .` here would scan
+      # scripts/ as well and a bare `tsc -b` would look for a tsconfig.json
+      # that is not there. The paths below are what make this hook check the
+      # same files CI does — drift between the two is worse than no hook.
+      #
+      # ruff runs with --fix because these are whole-project checks, not
+      # per-file ones: a hook that rewrites files you did not stage is
+      # surprising, and the alternative is a fix command nobody runs.
+      - id: ruff-backend
+        name: ruff (backend)
+        entry: uv run --project backend ruff check --fix backend
+        language: system
+        pass_filenames: false
+        files: ^backend/.*\.py$
+        require_serial: true
+
+      - id: tsc-frontend
+        name: tsc -b (frontend)
+        entry: bash -c 'cd frontend && bunx tsc -b'
+        language: system
+        pass_filenames: false
+        files: ^(frontend/src/.*\.tsx?|frontend/tsconfig[^/]*\.json)$
+        require_serial: true

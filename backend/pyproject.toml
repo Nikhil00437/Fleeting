@@ -21,6 +21,9 @@ dev = [
     "anyio>=4.6",
     # #191/#193: the linter CI and pre-commit run.
     "ruff>=0.14",
+    # In the dev group rather than assumed globally, so `uv run pre-commit
+    # install` works on a fresh clone with nothing else set up.
+    "pre-commit>=4.0",
 ]
 
 [build-system]
