@@ -149,6 +149,7 @@ def people_index(db: Database) -> list[dict]:
         """
         SELECT raw_text, created_at FROM notes
         WHERE trashed_at IS NULL AND sensitive = 0
+          AND (generated = 0 OR generated IS NULL)
         ORDER BY created_at
         """
     ).fetchall()
@@ -226,6 +227,7 @@ def notes_for_person(db: Database, name: str) -> list[dict]:
         """
         SELECT id, raw_text FROM notes
         WHERE trashed_at IS NULL AND sensitive = 0
+          AND (generated = 0 OR generated IS NULL)
         ORDER BY created_at DESC
         """
     ).fetchall()

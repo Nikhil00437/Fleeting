@@ -160,6 +160,10 @@ async def step(db: "Database", cfg: "Config", *, _note_id: str) -> str | None:
     note = db.get_note(_note_id)
     if not note or not (note.get("raw_text") or "").strip():
         return None
+    if int(note.get("generated") or 0):
+        # The app wrote this one. Its words are generated, so asking the user
+        # what they meant by them is a question about the app's own prose.
+        return None
     fields = _fields_of(note)
     if fields.get("clarify"):
         return str(fields["clarify"])

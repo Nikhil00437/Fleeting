@@ -485,6 +485,11 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("enrich_confidence", "REAL"),
         ("enrich_feedback", "INTEGER NOT NULL DEFAULT 0"),
         ("claims", "TEXT"),
+        # #258: the app wrote this note, the user did not. Digests are imported
+        # back from the vault, and every text heuristic that reads a note —
+        # tone, clarity, the entity index, the benchmark — is wrong on them,
+        # because LLM-written prose capitalises for sentences, not for names.
+        ("generated", "INTEGER NOT NULL DEFAULT 0"),
     )),
     # #94: the failure that made a call fall back. Without it the health panel
     # can report latency but not *why* the app stopped using the model.
@@ -528,6 +533,7 @@ NOTE_COLUMNS = frozenset({
     "created_at", "updated_at", "processed_at", "capture_id", "source_title",
     "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
     "snoozed_until", "enrich_confidence", "enrich_feedback", "claims",
+    "generated",
 })
 
 # query_log LRU cap (v18) — a local single-user inbox never needs more.
@@ -694,12 +700,12 @@ class Database:
                                source, audio_path, status, error, pinned, archived,
                                created_at, updated_at, processed_at, capture_id, source_title,
                                starred, trashed_at, color, fields, sensitive, review_state,
-                               snoozed_until)
+                               snoozed_until, generated)
             VALUES (:id, :type, :title, :summary, :raw_text, :tags, :action_items,
                     :source, :audio_path, :status, :error, :pinned, :archived,
                     :created_at, :updated_at, :processed_at, :capture_id, :source_title,
                     :starred, :trashed_at, :color, :fields, :sensitive, :review_state,
-                    :snoozed_until)
+                    :snoozed_until, :generated)
             """,
             _note_to_sql(note),
         )
@@ -2926,6 +2932,8 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         # #96/#255. Guarded by row.keys() like their neighbours: a row written
         # before the columns existed must still deserialize.
         "enrich_confidence": row["enrich_confidence"] if "enrich_confidence" in row.keys() else None,
+        # #258: absent on a database that predates the guarded column.
+        "generated": int(row["generated"] or 0) if "generated" in row.keys() else 0,
         "enrich_feedback": int(row["enrich_feedback"] or 0) if "enrich_feedback" in row.keys() else 0,
         # #263: JSON array of {text, supported, span}. Absent on rows written
         # before the column existed.
@@ -2970,6 +2978,9 @@ def _note_to_sql(note: dict) -> dict:
     out.setdefault("sensitive", 0)
     out.setdefault("review_state", "enriched")
     out.setdefault("snoozed_until", None)
+    # #258: silent default is a capture the user wrote. Only the app's own
+    # digests set this, and only via the vault import path.
+    out.setdefault("generated", 0)
     out.setdefault("audio_path", None)
     out.setdefault("processed_at", None)
     out.setdefault("capture_id", None)

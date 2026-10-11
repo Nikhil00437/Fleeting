@@ -233,6 +233,17 @@ class VaultWatcher:
             return self._observer is not None and self._observer.is_alive()
 
 
+def _is_generated_path(path: Path | str) -> bool:
+    """True for a file the app wrote rather than one the user wrote.
+
+    The vault is a two-way street: digests are mirrored into Daily/ and then
+    imported straight back as notes, which is how most of a heavy inbox ends
+    up being machine-written prose with a human's name on it.
+    """
+    parent = Path(path).parent.name.lower()
+    return parent in ("daily", "dailylog", "daily-logs")
+
+
 def sync_file_change(
     path: Path | str,
     db: Database,
@@ -399,6 +410,11 @@ def sync_file_change(
     new_note_data = {
         "type": parsed.get("type") or "text",
         "title": title,
+        # #258: anything under Daily/ is a digest this app wrote. Marking it
+        # keeps the text heuristics — tone, clarity, the entity index, the
+        # benchmark — off LLM-written prose, where capitalisation carries no
+        # information about people or urgency.
+        "generated": 1 if _is_generated_path(path) else 0,
         "raw_text": parsed.get("raw_text") or "",
         "summary": parsed.get("summary") or "",
         "tags": parsed.get("tags") or [],

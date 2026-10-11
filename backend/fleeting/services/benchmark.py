@@ -120,6 +120,7 @@ def sample_notes(db: "Database", *, limit: int = DEFAULT_SAMPLE) -> list[dict]:
     rows = db.execute(
         "SELECT * FROM notes WHERE trashed_at IS NULL AND archived = 0 "
         "AND (sensitive = 0 OR sensitive IS NULL) "
+        "AND (generated = 0 OR generated IS NULL) "
         "AND raw_text IS NOT NULL AND TRIM(raw_text) != '' "
         "ORDER BY created_at DESC, id ASC LIMIT ?",
         (max(1, int(limit)),),
