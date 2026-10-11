@@ -572,3 +572,10 @@ class ReminderIn(BaseModel):
     """#415: a correction to one extracted reminder."""
 
     changes: dict = Field(default_factory=dict)
+
+
+class BenchmarkIn(BaseModel):
+    """#264: which models to compare, over how many of the user's notes."""
+
+    models: list[str] | None = None
+    sample: int = Field(default=8, ge=1, le=50)

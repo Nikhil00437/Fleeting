@@ -6,11 +6,12 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .. import __version__
 from ..events import sse_format
+from ..models import BenchmarkIn
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -177,3 +178,21 @@ def create_samples(request: Request) -> dict:
         st.bus.publish("note.created", note)
         created.append(note["id"])
     return {"ok": True, "created": len(created)}
+
+
+@router.post("/benchmark/run")
+async def run_benchmark(body: BenchmarkIn, request: Request) -> dict:
+    """#264 score candidate models on your own past notes.
+
+    Read-only: nothing is written, and sensitive notes are excluded from the
+    sample. Slow by nature — it is a handful of model calls per note — so the
+    sample is small and the caller should not hold the tab open on 50 notes.
+    """
+    st = request.app.state.st
+    from ..services.benchmark import benchmark_models
+
+    if body.models and not [m for m in body.models if m.strip()]:
+        raise HTTPException(422, "no model names given")
+    return await benchmark_models(
+        st.db, st.cfg, st.bus, models=body.models, sample=body.sample
+    )
