@@ -25,7 +25,7 @@ from .config import Config, ensure_dirs
 from .db import Database
 from .events import EventBus
 from .process import Processor
-from .services import nudges
+from .services import nudges, schedules
 from .services.transcribe import Transcriber
 from .state import AppState
 
@@ -320,8 +320,25 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         if backfill_task is not None:
             st.backfill_task = backfill_task
 
+        # #106: one tick a minute. Deliberately not a cron daemon — a local
+        # single-user app has one clock already (the activity collector's), and
+        # a job missed while the laptop slept is missed rather than fired late.
+        async def schedule_loop() -> None:
+            while True:
+                try:
+                    await asyncio.sleep(60)
+                    if cfg.llm.provider != "none":
+                        await schedules.run_due_jobs(db, cfg, bus)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception("scheduled job tick failed")
+
+        schedule_task = asyncio.get_running_loop().create_task(schedule_loop())
+
         log.info("fleeting %s ready on http://%s:%d", __version__, cfg.server.host, cfg.server.port)
         yield
+        schedule_task.cancel()
         if activity_task:
             activity_task.cancel()
         if st.vault_watcher:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import json
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -10,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..events import EventBus, sse_format
 
-from ..models import AssistantChatIn, AssistantChatOut, AssistantSuggestionsOut, PinNoteIn
+from ..models import AssistantChatIn, AssistantChatOut, AssistantSuggestionsOut, PinNoteIn, ScheduleJobIn, ScheduleToggleIn
 from ..services import chatlog
 from ..services.actions import undo_action
 from ..services.assistant import (
@@ -215,3 +217,47 @@ def unpin_from_context(chat_id: str, note_id: str, request: Request) -> dict:
     from ..services.pinned_context import unpin_note
 
     return {"ok": True, "ids": unpin_note(request.app.state.st.db, chat_id, note_id)}
+
+
+@router.get("/jobs")
+def list_scheduled_jobs(request: Request) -> list[dict]:
+    """#106 the scheduled jobs, with when each next runs."""
+    from ..services.schedules import list_jobs, next_run_after
+
+    now = datetime.now().astimezone()
+    out = []
+    for sched in list_jobs(request.app.state.st.db):
+        row = sched.to_dict()
+        row["next_run"] = next_run_after(sched, now) if sched.enabled else None
+        out.append(row)
+    return out
+
+
+@router.post("/jobs")
+def create_scheduled_job(body: ScheduleJobIn, request: Request) -> dict:
+    """#106 create a job. A schedule it cannot read is refused, not guessed."""
+    from ..services.schedules import create_job
+
+    try:
+        sched = create_job(request.app.state.st.db, body.prompt, body.schedule)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return sched.to_dict()
+
+
+@router.post("/jobs/{job_id}/toggle")
+def toggle_scheduled_job(job_id: str, body: ScheduleToggleIn, request: Request) -> dict:
+    from ..services.schedules import set_enabled
+
+    sched = set_enabled(request.app.state.st.db, job_id, body.enabled)
+    if not sched:
+        raise HTTPException(404, "job not found")
+    return sched.to_dict()
+
+
+@router.delete("/jobs/{job_id}")
+def remove_scheduled_job(job_id: str, request: Request) -> dict:
+    from ..services.schedules import delete_job
+
+    delete_job(request.app.state.st.db, job_id)
+    return {"deleted": job_id}

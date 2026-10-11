@@ -433,6 +433,19 @@ MIGRATIONS: list[str] = [
       at TEXT NOT NULL
     );
     """,
+    # v26 — 0.9 #106 scheduled assistant jobs. `body` holds the parsed schedule
+    # JSON rather than a cron string, because the five phrases people actually
+    # say are not a cron grammar and pretending otherwise invites a parser that
+    # silently means the wrong hour.
+    """CREATE TABLE IF NOT EXISTS schedules (
+      id TEXT PRIMARY KEY,
+      job TEXT NOT NULL,
+      body TEXT NOT NULL,
+      last_run TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      at TEXT NOT NULL
+    );
+    """,
     # v25 — 0.9 #415 birthdays and anniversaries. Their own table rather than a
     # note field because a date written down in March is still true in
     # November: the note is where the mention happened, this is where the fact

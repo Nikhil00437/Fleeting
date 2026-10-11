@@ -587,3 +587,14 @@ class PinNoteIn(BaseModel):
     """#101: the note to attach to a thread."""
 
     note_id: str
+
+
+class ScheduleJobIn(BaseModel):
+    """#106: what to do, and when."""
+
+    prompt: str
+    schedule: str
+
+
+class ScheduleToggleIn(BaseModel):
+    enabled: bool
