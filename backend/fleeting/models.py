@@ -536,6 +536,8 @@ class LLMProbeIn(BaseModel):
 
 class AssistantChatIn(BaseModel):
     messages: list[ChatMessage]
+    # #101 which thread this turn belongs to, so its pinned notes are found.
+    chat_id: str | None = None
     repo: str | None = None
     type: str | None = None
     confirm: bool = False
@@ -579,3 +581,9 @@ class BenchmarkIn(BaseModel):
 
     models: list[str] | None = None
     sample: int = Field(default=8, ge=1, le=50)
+
+
+class PinNoteIn(BaseModel):
+    """#101: the note to attach to a thread."""
+
+    note_id: str

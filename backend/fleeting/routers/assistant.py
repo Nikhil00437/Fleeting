@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..events import EventBus, sse_format
 
-from ..models import AssistantChatIn, AssistantChatOut, AssistantSuggestionsOut
+from ..models import AssistantChatIn, AssistantChatOut, AssistantSuggestionsOut, PinNoteIn
 from ..services import chatlog
 from ..services.actions import undo_action
 from ..services.assistant import (
@@ -36,6 +36,7 @@ async def chat(request: Request, body: AssistantChatIn) -> AssistantChatOut:
         repo=body.repo,
         filter_type=body.type,
         confirm=body.confirm,
+        chat_id=body.chat_id,
     )
     return AssistantChatOut(**result)
 
@@ -55,6 +56,7 @@ async def chat_stream(request: Request, body: AssistantChatIn) -> StreamingRespo
                 repo=body.repo,
                 filter_type=body.type,
                 confirm=body.confirm,
+                chat_id=body.chat_id,
             ):
                 yield sse_format(json.dumps(event))
         except Exception as exc:  # never leave the client hanging
@@ -176,3 +178,40 @@ def suggestions(request: Request) -> AssistantSuggestionsOut:
     st = request.app.state.st
     prompts = get_assistant_suggestions(st.db, st.cfg)
     return AssistantSuggestionsOut(suggestions=prompts)
+
+
+@router.get("/chats/{chat_id}/context")
+def pinned_context(chat_id: str, request: Request) -> dict:
+    """#101 the notes pinned into this thread, so the panel can render them."""
+    from ..services.pinned_context import pinned_notes
+
+    notes = pinned_notes(request.app.state.st.db, chat_id)
+    return {
+        "chat_id": chat_id,
+        "items": [
+            {"id": n["id"], "title": n.get("title") or "(untitled)",
+             "snippet": (n.get("summary") or n.get("raw_text") or "")[:160]}
+            for n in notes
+        ],
+    }
+
+
+@router.post("/chats/{chat_id}/context")
+def pin_into_context(chat_id: str, body: PinNoteIn, request: Request) -> dict:
+    """#101 attach a note to a thread, so it is in context whether or not a
+    query would ever rank it."""
+    from ..services.pinned_context import pin_note
+
+    try:
+        ids = pin_note(request.app.state.st.db, chat_id, body.note_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"ok": True, "ids": ids}
+
+
+@router.delete("/chats/{chat_id}/context/{note_id}")
+def unpin_from_context(chat_id: str, note_id: str, request: Request) -> dict:
+    """#101 detach a note again."""
+    from ..services.pinned_context import unpin_note
+
+    return {"ok": True, "ids": unpin_note(request.app.state.st.db, chat_id, note_id)}

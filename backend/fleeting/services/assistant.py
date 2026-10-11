@@ -102,6 +102,7 @@ def build_assistant_context(
     repo: str | None = None,
     filter_type: str | None = None,
     queries: list[str] | None = None,
+    pinned: list[dict] | None = None,
 ) -> tuple[str, list[dict], dict]:
     """Retrieve relevant notes, active tasks, and recent daily logs to build grounded assistant context.
 
@@ -319,11 +320,19 @@ def build_assistant_context(
             lines.append(f"- Day {day}:\n{summary}")
         sections.append("\n".join(lines))
 
+    # #101 first, and labelled: a pinned note is what the user says the
+    # conversation is about, so retrieval must not be able to outrank it.
+    if pinned:
+        from .pinned_context import pinned_block
+
+        sections.insert(0, pinned_block(pinned))
+
     context_text = "\n\n".join(sections)
     context_used = {
         "notes_count": len(notes),
         "tasks_count": len(tasks),
         "logs_count": len(logs),
+        "pinned_count": len(pinned or []),
     }
 
     return context_text, sources, context_used
@@ -739,6 +748,7 @@ async def ask_assistant(
     repo: str | None = None,
     filter_type: str | None = None,
     confirm: bool = False,
+    chat_id: str | None = None,
 ) -> dict:
     """Orchestrate grounded RAG assistant response with source citations.
 
@@ -782,8 +792,20 @@ async def ask_assistant(
     # #112: collect the retrieval trace, then store it — the user has to be able
     # to answer "what did you look at?" *after* the answer arrives.
     queries: list[str] = []
+    # #101: notes the user pinned into this thread, ahead of retrieval.
+    pinned: list[dict] = []
+    if chat_id:
+        from .pinned_context import pinned_notes
+
+        pinned = pinned_notes(db, chat_id)
     context_text, sources, context_used = build_assistant_context(
-        user_query, db, cfg, repo=repo, filter_type=filter_type, queries=queries
+        user_query,
+        db,
+        cfg,
+        repo=repo,
+        filter_type=filter_type,
+        queries=queries,
+        pinned=pinned,
     )
     def record(tool_calls: list[dict] | None = None, error: str | None = None) -> None:
         try:
@@ -913,6 +935,7 @@ async def ask_assistant_stream(
     repo: str | None = None,
     filter_type: str | None = None,
     confirm: bool = False,
+    chat_id: str | None = None,
 ):
     """Async generator yielding {"type": "delta"|"done"|"error", ...} events.
 
@@ -934,8 +957,14 @@ async def ask_assistant_stream(
         yield {"type": "done", "message": {"role": "assistant", "content": "How can I help you today?"}, "sources": [], "context_used": {"notes_count": 0, "tasks_count": 0, "logs_count": 0}, "pending_action": None}
         return
 
+    # #101: same pinned notes as the non-streaming path.
+    pinned: list[dict] = []
+    if chat_id:
+        from .pinned_context import pinned_notes
+
+        pinned = pinned_notes(db, chat_id)
     context_text, sources, context_used = build_assistant_context(
-        user_query, db, cfg, repo=repo, filter_type=filter_type
+        user_query, db, cfg, repo=repo, filter_type=filter_type, pinned=pinned
     )
 
     fast_intent = match_fast_intent(user_query)

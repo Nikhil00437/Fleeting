@@ -491,6 +491,12 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         # because LLM-written prose capitalises for sentences, not for names.
         ("generated", "INTEGER NOT NULL DEFAULT 0"),
     )),
+    # #101 notes pinned into a thread. A guarded column rather than a table:
+    # the ids are a small list hanging off a chat row, and nothing queries them
+    # across threads.
+    ("assistant_chats", (
+        ("context_ids", "TEXT"),
+    )),
     # #94: the failure that made a call fall back. Without it the health panel
     # can report latency but not *why* the app stopped using the model.
     ("llm_traces", (
