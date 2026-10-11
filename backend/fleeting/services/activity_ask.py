@@ -13,7 +13,6 @@ from datetime import datetime
 
 from ..config import Config
 from ..db import Database
-from .dailylog import build_transcript
 
 log = logging.getLogger("fleeting.activity_ask")
 

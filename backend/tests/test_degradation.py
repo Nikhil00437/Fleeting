@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
 
 
 def _health(client) -> dict:

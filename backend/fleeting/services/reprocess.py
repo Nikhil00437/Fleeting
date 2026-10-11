@@ -17,7 +17,7 @@ import logging
 from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, Any
 
-from .tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
+from .tags_vocab import apply_preferred_tags, preferred_tags
 
 if TYPE_CHECKING:
     from ..config import Config

@@ -23,7 +23,6 @@ import pytest
 
 from fleeting.config import LLMConfig
 from fleeting.services.language import (
-    Language,
     detect_language,
     language_instruction,
 )
@@ -105,7 +104,6 @@ def test_an_unknown_note_gets_no_instruction() -> None:
 
 def _capture_system(monkeypatch) -> list[str]:
     """enrich_chain posts inline, so the prompt is read off the wire."""
-    import httpx
 
     from fleeting.services import llm as llm_svc
 

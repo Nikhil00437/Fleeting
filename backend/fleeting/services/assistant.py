@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ..events import EventBus
 from .actions import ACTIONS, AVAILABLE_ACTIONS, DESTRUCTIVE_ACTIONS, execute_action

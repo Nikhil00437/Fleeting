@@ -7,7 +7,7 @@ running a missed one from three days ago.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import pytest

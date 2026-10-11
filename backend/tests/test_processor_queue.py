@@ -16,7 +16,6 @@ import asyncio
 
 import pytest
 
-import fleeting.process as fproc
 from fleeting.config import Config
 from fleeting.db import Database
 from fleeting.events import EventBus
@@ -221,7 +220,6 @@ async def test_active_ids_reflects_in_flight_notes(proc) -> None:
 @pytest.mark.anyio
 async def test_keep_audio_false_deletes_file_after_processing(tmp_path) -> None:
     """#91: with keep_audio off the raw audio file is removed once transcribed."""
-    from pathlib import Path
 
     db = Database(tmp_path / "p.db")
     db.migrate()

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from ..db import Database, now_iso
+from ..db import Database
 from .similar import near_duplicate_titles
 
 # Notes untouched for this long with nothing pending are archive candidates.

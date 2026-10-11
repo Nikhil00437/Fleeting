@@ -97,7 +97,6 @@ async def test_the_role_model_still_gets_a_fallback_chain(monkeypatch) -> None:
 
 
 def test_the_digest_uses_the_report_model() -> None:
-    from fleeting.services.dailylog import generate_with_llm
 
     cfg = LLMConfig(provider="ollama", model="big", report_model="writer")
     assert llm_svc.model_for(cfg, "report") == "writer"

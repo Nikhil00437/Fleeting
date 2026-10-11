@@ -60,7 +60,7 @@ def _session(db, project: str | None, seconds: int, app: str = "kitty") -> None:
     db.execute(
         "INSERT INTO activity (app_class, title, first_seen, last_seen, seconds, day, project)"
         " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (app, f"work", NOW.isoformat(), NOW.isoformat(), seconds, "2026-10-08", project),
+        (app, "work", NOW.isoformat(), NOW.isoformat(), seconds, "2026-10-08", project),
     )
 
 

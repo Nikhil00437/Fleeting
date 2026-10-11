@@ -150,7 +150,6 @@ def test_probe_accepts_unsaved_overrides(client: TestClient) -> None:
     monkey = pytest.MonkeyPatch()
     monkey.setattr(httpx, "AsyncClient", FakeAsyncClient)
     from fleeting.routers import settings as settings_router
-    from fleeting.services import llm as llm_mod
 
     monkey.setattr(settings_router.llm, "check_llm", spy)
     try:

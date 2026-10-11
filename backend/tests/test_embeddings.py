@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import math
-import struct
 from unittest.mock import MagicMock, patch
 
 import pytest
-import httpx
 
-from fleeting.config import Config, LLMConfig
+from fleeting.config import Config
 from fleeting.db import Database
 from fleeting.services.embeddings import (
     LocalHashVectorizer,

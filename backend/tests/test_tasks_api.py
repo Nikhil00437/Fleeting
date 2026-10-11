@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timedelta
+from datetime import datetime, timedelta
 
-import pytest
 
-from fleeting.models import TaskOut
 
 
 def _capture_events(client, monkeypatch):

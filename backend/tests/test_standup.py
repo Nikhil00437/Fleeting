@@ -61,7 +61,7 @@ def test_collect_standup_data_finds_today_tasks_and_blockers(db: Database) -> No
     today = "2026-10-08"
 
     # Open task for today
-    t_today = db.insert_task(
+    db.insert_task(
         {
             "text": "Deploy to staging",
             "done": False,
@@ -70,7 +70,7 @@ def test_collect_standup_data_finds_today_tasks_and_blockers(db: Database) -> No
         }
     )
     # Blocked task
-    t_blocked = db.insert_task(
+    db.insert_task(
         {
             "text": "Database migration",
             "done": False,

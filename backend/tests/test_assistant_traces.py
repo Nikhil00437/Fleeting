@@ -37,7 +37,6 @@ def _seed(db: Database) -> None:
         "type": "text",
         "summary": "Homelab router firmware notes.",
         "raw_text": "The router runs OpenWrt on a GL.iNet.",
-        "type": "text",
     })
     db.insert_note({
         "title": "Sourdough",

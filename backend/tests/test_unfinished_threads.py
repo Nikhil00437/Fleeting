@@ -40,7 +40,7 @@ def test_extract_threads_from_daily_logs(db: Database) -> None:
 
 def test_extract_threads_from_stale_carried_over_tasks(db: Database) -> None:
     # An open task created 5 days ago
-    t = db.insert_task(
+    db.insert_task(
         {
             "text": "Refactor database connection pool",
             "done": False,

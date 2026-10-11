@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from fleeting.config import Config
 from fleeting.db import Database, now_iso
-from fleeting.models import AssistantChatIn, AssistantChatOut, AssistantSuggestionsOut, ChatMessage
+from fleeting.models import AssistantChatOut, AssistantSuggestionsOut
 from fleeting.services.assistant import (
     _extractive_heuristic_answer,
     ask_assistant,
@@ -327,7 +327,7 @@ def test_api_chat_endpoint(client: TestClient) -> None:
         json={"text": "Researching vector databases and reciprocal rank fusion for Fleeting."},
     )
     assert r_capture.status_code == 200
-    note_id = r_capture.json()["id"]
+    r_capture.json()["id"]
 
     # 2. Chat with assistant
     payload = {

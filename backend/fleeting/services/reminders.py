@@ -187,8 +187,6 @@ def upcoming(
     horizon = (
         date.fromisoformat(today) + timedelta(days=max(1, int(days)))
     ).isoformat()
-    limit = max(1, int(days))
-
     out: list[dict[str, Any]] = []
     for row in db.list_reminders():
         when = next_occurrence((int(row["month"]), int(row["day"])), today=today)

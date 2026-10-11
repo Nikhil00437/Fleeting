@@ -119,7 +119,6 @@ async def test_enrichment_chat_sends_authorization(fake_http) -> None:
     from fleeting.services.llm import enrich
 
     cfg = LLMConfig(provider="custom", base_url="http://x:9000", model="m", api_key="sk-secret")
-    reply = '{"title": "t", "summary": "s", "tags": [], "action_items": []}'
     with patch("fleeting.services.llm._parse_json_loose", return_value={"title": "t"}):
         await enrich("some captured text", cfg)
 

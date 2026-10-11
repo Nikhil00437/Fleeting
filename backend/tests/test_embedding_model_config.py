@@ -7,7 +7,6 @@ the name being resolved in two places that disagree, and a legal provider
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import httpx
 import pytest
@@ -233,7 +232,6 @@ def test_a_dedicated_embedding_url_overrides_the_shared_one(monkeypatch) -> None
 
 
 def test_the_batched_path_honours_the_same_override(monkeypatch) -> None:
-    from fleeting.config import Config
     from fleeting.services.embedding_batch import embed_batch
 
     seen: list[str] = []

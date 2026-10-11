@@ -161,7 +161,6 @@ def test_replacements_and_auto_format(tmp_path, monkeypatch):
 
 def test_correction_loop_extends_vocabulary(client, tmp_path, monkeypatch):
     """#435: fixing typos in a voice transcript feeds whisper's vocabulary."""
-    import fleeting.config as fcfg
 
     r = client.post("/api/capture/audio", files={"file": ("m.webm", b"not real audio", "audio/webm")})
     assert r.status_code == 200

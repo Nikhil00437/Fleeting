@@ -75,6 +75,11 @@ def fetch_transcript(url: str, *, lang_prefs: tuple[str, ...] = ("en", "hi")) ->
         )
     except subprocess.TimeoutExpired as exc:
         raise YouTubeError("caption download timed out") from exc
+    if proc.returncode != 0:
+        # Without this a broken or missing yt-dlp reported "no usable captions
+        # found for this video", which sends the user to look at their video
+        # instead of at the tool that failed.
+        raise YouTubeError(_clean_err(proc.stderr))
 
     sub_files = sorted(tmp.glob("video*.vtt")) + sorted(tmp.glob("video*.srt"))
     if sub_files:

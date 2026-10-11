@@ -8,7 +8,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fleeting.db import Database
-from fleeting.services.tag_audit import tag_audit
 
 
 @pytest.fixture
@@ -70,7 +69,7 @@ def test_delete_tag_keeps_notes(db: Database) -> None:
 
 def test_rewrite_leaves_fts_in_sync(db: Database) -> None:
     """Tags are indexed in FTS — a rename must reindex, or MATCH misses."""
-    a = db.insert_note({"title": "A", "raw_text": "x", "tags": ["oldtag"]})
+    db.insert_note({"title": "A", "raw_text": "x", "tags": ["oldtag"]})
     assert db.search("tag:oldtag")
     db.rename_tag("oldtag", "newtag")
     assert db.search("tag:newtag")

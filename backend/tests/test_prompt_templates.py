@@ -17,7 +17,6 @@ from fleeting.services.prompt_templates import (
     TARGETS,
     default_template,
     get_template,
-    is_default,
     reset_template,
     set_template,
     substitute,
@@ -182,7 +181,6 @@ def test_a_reset_report_template_is_the_shipped_default(db: Database) -> None:
 
 
 def test_template_endpoints(client) -> None:
-    st = client.app.state.st
     listed = client.get("/api/prompt-templates")
     assert listed.status_code == 200
     assert {t["target"] for t in listed.json()} == {"enrich", "daily_report"}

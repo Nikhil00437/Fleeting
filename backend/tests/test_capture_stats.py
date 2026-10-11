@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import datetime, timezone
 import pytest
 
 from fleeting.db import Database, datetime_now_local

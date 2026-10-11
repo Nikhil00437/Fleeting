@@ -19,8 +19,8 @@ def env(tmp_path):
 @pytest.mark.anyio
 async def test_delete_all_tasks(env):
     db, cfg, bus = env
-    t1 = db.insert_task({"text": "Task 1", "priority": "P1"})
-    t2 = db.insert_task({"text": "Task 2", "priority": "P2"})
+    db.insert_task({"text": "Task 1", "priority": "P1"})
+    db.insert_task({"text": "Task 2", "priority": "P2"})
     assert len(db.list_tasks(status="all")) == 2
 
     events = []

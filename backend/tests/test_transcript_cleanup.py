@@ -12,7 +12,6 @@ be invented.
 
 from __future__ import annotations
 
-import httpx
 import pytest
 
 from fleeting.config import LLMConfig
@@ -131,7 +130,7 @@ async def test_a_model_failure_propagates(cfg: LLMConfig, reply) -> None:
 @pytest.mark.anyio
 async def test_no_llm_means_no_cleanup(cfg: LLMConfig, reply) -> None:
     """Same degradation as every other writing call: refuse, never guess."""
-    seen = reply("whatever")
+    reply("whatever")
     cfg.provider = "none"
     with pytest.raises(LLMUnavailable):
         await writing.clean_transcript("call the dentist", cfg)

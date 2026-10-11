@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 
 def test_get_weekly_log_defaults_to_last_week(client) -> None:

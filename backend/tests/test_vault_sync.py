@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import re
-import time
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
-from fleeting.config import Config, PathsConfig
+from fleeting.config import Config
 from fleeting.db import Database
 from fleeting.events import EventBus
-from fleeting.services.markdown import parse_note_md, render_note_md, sync_note, vault_path_for
+from fleeting.services.markdown import parse_note_md, sync_note, vault_path_for
 from fleeting.services.vault_watcher import (
-    VaultSyncRegistry,
-    VaultWatcher,
     resync_all,
     sync_file_change,
     sync_registry,

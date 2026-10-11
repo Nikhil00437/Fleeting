@@ -11,7 +11,7 @@ back to a deterministic digest when the LLM is unreachable, like the daily one.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date
 
 import pytest
 

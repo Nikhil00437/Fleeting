@@ -11,8 +11,7 @@ Provides facet filtering by note type and repository.
 from __future__ import annotations
 
 import logging
-import sqlite3
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .embeddings import cosine_similarity, embed_text, unpack_vector
 from .query_parser import note_matches_parsed, parse_query

@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from fleeting.config import LLMConfig
 from fleeting.db import Database
 from fleeting.services.llm import _sanitize, heuristic_enrich
 

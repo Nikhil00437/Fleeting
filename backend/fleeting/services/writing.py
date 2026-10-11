@@ -15,7 +15,6 @@ like success and lose the user's work.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import TYPE_CHECKING

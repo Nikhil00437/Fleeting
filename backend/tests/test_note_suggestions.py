@@ -91,7 +91,7 @@ def test_endpoint_returns_suggestions_for_one_note(client) -> None:
     note_id = client.post(
         "/api/capture/text", json={"text": "todo: reflash the router"}
     ).json()["id"]
-    r = client.get(f"/api/assistant/note-suggestions", params={"note_id": note_id})
+    r = client.get("/api/assistant/note-suggestions", params={"note_id": note_id})
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
@@ -101,7 +101,7 @@ def test_endpoint_for_a_sensitive_note_is_empty(client) -> None:
         "/api/capture/text", json={"text": "the passphrase is swordfish"}
     ).json()["id"]
     client.patch(f"/api/notes/{note_id}", json={"sensitive": True})
-    r = client.get(f"/api/assistant/note-suggestions", params={"note_id": note_id})
+    r = client.get("/api/assistant/note-suggestions", params={"note_id": note_id})
     assert r.json() == []
 
 

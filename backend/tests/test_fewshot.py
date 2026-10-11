@@ -118,7 +118,6 @@ def test_trashed_notes_never_become_examples(db: Database) -> None:
 @pytest.mark.anyio
 async def test_examples_reach_the_model_prompt(db: Database, monkeypatch) -> None:
     """The whole point is that they are sent; assert the wire, not the builder."""
-    import httpx
 
     from fleeting.config import LLMConfig
     from fleeting.services import llm as llm_svc
@@ -141,7 +140,6 @@ async def test_examples_reach_the_model_prompt(db: Database, monkeypatch) -> Non
 @pytest.mark.anyio
 async def test_a_capture_uses_the_corrected_examples(db: Database, client, monkeypatch) -> None:
     """End to end: correcting a note changes how the *next* one is enriched."""
-    from fleeting.services import llm as llm_svc
 
     _corrected(db, "the gl-inet router needs a firmware reflash", "Flash the GL.iNet router", ["homelab"])
     seen: list[dict] = []

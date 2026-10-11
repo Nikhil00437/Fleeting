@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from fleeting.config import Config
 from fleeting.db import Database
 from fleeting.services import dailylog
 

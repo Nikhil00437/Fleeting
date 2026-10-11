@@ -59,7 +59,7 @@ def render_note_md(note: dict) -> str:
     fm_lines.extend([
         f"type: {note.get('type', 'text')}",
         f"created: {created_val}",
-        f"app: fleeting",
+        "app: fleeting",
     ])
     if tags:
         fm_lines.append("tags:")

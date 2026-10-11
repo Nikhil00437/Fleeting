@@ -78,7 +78,6 @@ def test_preferred_tags_read_the_config(db: Database) -> None:
 
 @pytest.mark.anyio
 async def test_a_capture_is_tagged_from_the_vocabulary(client, monkeypatch) -> None:
-    from fleeting.services import llm as llm_svc
 
     async def fake_chain(
         text, cfg, prompt=None, few_shot="", tag_vocab="", template="", language=""

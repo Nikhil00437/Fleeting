@@ -6,12 +6,11 @@ search and its UI are untouched.
 
 from __future__ import annotations
 
-import pytest
 
 
 def _seed(client) -> None:
     st = client.app.state.st
-    note = st.db.insert_note(
+    st.db.insert_note(
         {"raw_text": "postgres pool notes", "type": "text", "title": "db work"}
     )
     st.db.upsert_activity(
@@ -167,7 +166,6 @@ def _rewind_to_v7(path, *, drop_activity: bool = False) -> None:
 
 def test_upgrading_an_existing_db_indexes_its_history(tmp_path) -> None:
     """A user upgrading from an older build must not get an empty index."""
-    import sqlite3
 
     import fleeting.db as fdb
 
@@ -212,7 +210,6 @@ def test_migration_v8_does_not_require_the_activity_table(tmp_path) -> None:
     The FTS triggers do reference it, so they are created separately in
     migrate() behind an existence check.
     """
-    import sqlite3
 
     import fleeting.db as fdb
 

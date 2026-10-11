@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import pytest
 
-from fleeting.db import Database, new_id, now_iso
+from fleeting.db import Database
 from fleeting.models import ActionItem, TaskCreateIn, TaskOut, TaskUpdateIn
 
 
@@ -815,7 +815,7 @@ def test_orphans_finds_single_use_tags_untagged_notes_and_unlinked_tasks(tmp_pat
     """#422: three kinds of unfiled work, one query each."""
     db = Database(tmp_path / "o.db")
     db.migrate()
-    tagged = db.insert_note({"title": "tagged twice", "status": "done", "tags": ["solo", "shared"]})
+    db.insert_note({"title": "tagged twice", "status": "done", "tags": ["solo", "shared"]})
     db.insert_note({"title": "also tagged", "status": "done", "tags": ["shared"]})
     db.insert_note({"title": "no tags here", "status": "done", "tags": []})
     db.insert_note({"title": "pending no tags", "status": "pending", "tags": []})

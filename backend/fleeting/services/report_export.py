@@ -123,7 +123,6 @@ def render_pure_python_pdf(day: str, report_md: str) -> bytes:
     font_f2_idx = font_f1_idx + 1
 
     for i in range(total_pages):
-        page_obj_idx = 3 + i
         content_obj_idx = 3 + total_pages + i
 
         page_dict = (

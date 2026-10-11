@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -100,7 +99,7 @@ def test_discover_git_repos_multiple_comma_separated_and_deduplication(tmp_path)
 
 
 def test_heuristic_priority_extraction():
-    today_iso = datetime.date.today().isoformat()
+    datetime.date.today().isoformat()
 
     # P1 matches: urgent, critical, asap, blocker, immediately, p1
     res1 = heuristic_enrich("todo: fix crashing auth blocker immediately")

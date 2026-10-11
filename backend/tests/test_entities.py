@@ -92,7 +92,7 @@ def test_the_index_counts_mentions_per_person(db: Database) -> None:
 
 def test_the_index_reports_the_last_mention(db: Database) -> None:
     """#412: 'last mentioned' is what makes a stale contact visible."""
-    old = db.insert_note({
+    db.insert_note({
         "title": "old", "raw_text": "Priya reviewed it.", "type": "text",
         "created_at": "2026-01-01T00:00:00+00:00",
     })

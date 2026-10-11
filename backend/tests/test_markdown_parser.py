@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from fleeting.services.markdown import parse_note_md, render_note_md
 
 

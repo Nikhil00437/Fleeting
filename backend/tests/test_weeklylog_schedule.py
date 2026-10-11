@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
 
 
 def _should_run_weekly(today, cfg) -> bool:

@@ -8,7 +8,6 @@ never enter the system prompt, and sensitive notes never enter at all.
 
 from __future__ import annotations
 
-import httpx
 import pytest
 
 from fleeting.config import LLMConfig

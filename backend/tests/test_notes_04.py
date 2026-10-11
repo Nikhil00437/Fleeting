@@ -26,7 +26,6 @@ def test_star_toggles_and_filters(client):
 # ---- #14 snooze ----------------------------------------------------------
 
 def test_snooze_hides_until_stamp_passes(client):
-    from fleeting.db import now_iso
 
     note = _note(client, "remind me later")
     st = client.app.state.st
@@ -71,7 +70,6 @@ def test_snooze_presets_and_validation(client):
 # ---- #26 sensitive -------------------------------------------------------
 
 def test_sensitive_note_skips_vault_mirror(client, tmp_path):
-    import time
 
     from fleeting.services import markdown as md
 
@@ -202,7 +200,7 @@ def test_wikilinks_resolve_by_title_and_support_backlinks(client):
     source = _note(client, "random thought")
     other = _note(client, "unrelated")
 
-    body = f"see [[Quarterly Planning]] and [[quarterly planning|the plan]] plus [[nothing yet]]"
+    body = "see [[Quarterly Planning]] and [[quarterly planning|the plan]] plus [[nothing yet]]"
     client.patch(f"/api/notes/{source['id']}", json={"raw_text": body})
 
     links = client.get(f"/api/notes/{source['id']}/links").json()
@@ -235,7 +233,7 @@ def test_wikilinks_dont_link_to_self_or_trash(client):
 
 
 def test_removing_a_wikilink_removes_the_edge(client):
-    target = _note(client, "edge target")
+    _note(client, "edge target")
     source = _note(client, "edge source")
     client.patch(f"/api/notes/{source['id']}", json={"raw_text": "to [[Edge Target]]"})
     assert len(client.get(f"/api/notes/{source['id']}/links").json()["outgoing"]) == 1

@@ -19,6 +19,8 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "anyio>=4.6",
+    # #191/#193: the linter CI and pre-commit run.
+    "ruff>=0.14",
 ]
 
 [build-system]
@@ -30,3 +32,19 @@ packages = ["fleeting"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# #191/#193. A deliberately small rule set: real defects (undefined names,
+# duplicate dict keys, unused imports) rather than formatting. E501 is not
+# selected on purpose — 229 lines already exceed 100 characters, so enabling
+# it would mean reformatting the codebase before the linter had earned
+# anything, and line length is the formatter's business, not the linter's.
+# E741 is ignored because `l` for a loop item reads fine here and renaming it
+# is churn rather than a fix.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E741"]
+

@@ -271,7 +271,6 @@ def test_collected_commits_are_persisted_for_search(db: Database, tmp_path) -> N
     """
     from datetime import datetime
 
-    import fleeting.services.files_activity as fa
     from fleeting.services.search import persist_commits
 
     repo = tmp_path / "fleeting"

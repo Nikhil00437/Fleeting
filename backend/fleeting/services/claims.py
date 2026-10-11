@@ -17,7 +17,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..db import Database
+    pass
 
 # Share of a claim's content words that must appear in the source sentence.
 # 0.7 tolerates restatement ("is running" / "is running right now") while

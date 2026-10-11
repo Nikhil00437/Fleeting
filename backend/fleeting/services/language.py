@@ -66,7 +66,7 @@ def detect_language(text: str) -> Language:
     is for.
     """
     counts: dict[str, int] = {}
-    latin = cjk = other_letters = 0
+    latin = other_letters = 0
     for char in (text or ""):
         if not char.strip():
             continue

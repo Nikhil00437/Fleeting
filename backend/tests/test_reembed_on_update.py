@@ -13,7 +13,6 @@ import math
 import pytest
 
 import fleeting.services.embeddings as femb
-from fleeting.db import Database
 from fleeting.services.embeddings import LocalHashVectorizer, pack_vector
 
 

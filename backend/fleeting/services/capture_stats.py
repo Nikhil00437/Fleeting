@@ -9,8 +9,7 @@ Analyzes capture habits over 7, 14, 30, or 90 days:
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from ..db import Database, datetime_now_local

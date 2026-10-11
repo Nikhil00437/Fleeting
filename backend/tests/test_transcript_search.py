@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import wait_done
 
 from fleeting.db import Database
 from fleeting.services.transcript_search import transcript_search, word_hits

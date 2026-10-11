@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -60,7 +59,7 @@ def test_keyword_mode(db: Database, cfg: Config) -> None:
         "title": "Quantum Computing",
         "raw_text": "Quantum algorithms run on qubits and use superposition.",
     })
-    note2 = db.insert_note({
+    db.insert_note({
         "title": "Cooking Pasta",
         "raw_text": "Boil water with salt, add pasta for 10 minutes.",
     })
@@ -208,7 +207,7 @@ def test_filtering_by_repo(db: Database, cfg: Config) -> None:
     })
 
     # Note 4: No repo
-    note4 = db.insert_note({
+    db.insert_note({
         "title": "Random Thoughts",
         "raw_text": "Ideas for future blog posts.",
     })
