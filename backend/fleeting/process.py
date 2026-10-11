@@ -19,6 +19,7 @@ from .config import Config
 from .db import Database, now_iso
 from .events import EventBus
 from .services import clarify, llm, markdown, reminders
+from .services.language import detect_language, language_instruction
 from .services.claims import unverified, verify_claims
 from .services.embeddings import embed_note
 from .services.fewshot import build_few_shot
@@ -200,6 +201,12 @@ class Processor:
                         few_shot=build_few_shot(self.db),
                         tag_vocab=tag_prompt(preferred_tags(self.cfg)),
                         # #93: the user's edited enrichment prompt.
+                        # #262: detect the note's own language and say so in
+                        # one line, rather than maintaining a template per
+                        # language on top of the per-task ones #93 added.
+                        language=language_instruction(
+                            detect_language(note["raw_text"])
+                        ),
                         template=template_for(
                             self.db, "enrich",
                             today_iso=datetime.now(timezone.utc).date().isoformat(),

@@ -347,6 +347,7 @@ async def enrich_chain(
     few_shot: str = "",
     tag_vocab: str = "",
     template: str | None = None,
+    language: str = "",
 ) -> dict:
     """#266: `enrich` across `model_chain`, then the caller's heuristic pass.
 
@@ -376,6 +377,11 @@ async def enrich_chain(
         base_prompt += f"\n\n{few_shot}"
     if tag_vocab:
         base_prompt += f"\n\n{tag_vocab}"
+    # #262: one line telling the model to answer in the note's own language.
+    # The prompt is English, so without it a short non-English note tends to
+    # come back with an English title.
+    if language:
+        base_prompt += f"\n\n{language}"
     if prompt:
         base_prompt += f"\n\nCapture-template instruction: {prompt}"
 
