@@ -21,14 +21,6 @@ from .vault_watcher import sync_registry
 log = logging.getLogger("fleeting.markdown")
 
 
-def _slugify(text: str, max_len: int = 48) -> str:
-    text = text.strip().lower()
-    text = re.sub(r"[\s_]+", "-", text)
-    text = re.sub(r"[^a-z0-9\u0900-\u097F-]", "", text)
-    text = re.sub(r"-{2,}", "-", text).strip("-")
-    return text[:max_len].strip("-") or "note"
-
-
 def note_filename(note: dict) -> str:
     """Stable across re-enrichment: date + id only (no title slug, which churns)."""
     from .calendar_svc import date_tag
