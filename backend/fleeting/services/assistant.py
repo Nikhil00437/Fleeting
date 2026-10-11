@@ -133,7 +133,6 @@ def build_assistant_context(
         created = (note.get("created_at") or "")[:10]
         return scope_start <= created <= scope_end
 
-    # 1. Notes via hybrid search
     notes: list[dict] = []
     if clean_query:
         try:
@@ -188,7 +187,6 @@ def build_assistant_context(
             log.warning("Hybrid search failed in assistant context: %s", exc)
             notes = []
 
-    # 2. Open tasks
     tasks: list[dict] = []
     try:
         if repo:
@@ -236,7 +234,6 @@ def build_assistant_context(
             log.warning("Daily logs retrieval failed in assistant context: %s", exc)
             logs = []
 
-    # 4. Build structured sources list
     # #26: sensitive notes stay locally searchable but must never be sent to the
     # chat model — the assistant's provider can be a remote one. Filter *here*,
     # once: this used to run only while building `sources`, so the context
@@ -277,7 +274,6 @@ def build_assistant_context(
             "snippet": snippet,
         })
 
-    # 5. Assemble formatted context sections
     sections: list[str] = []
 
     if notes:
@@ -514,11 +510,9 @@ def match_fast_intent(query: str) -> tuple[str, dict] | None:
     q = query.strip()
     q_norm = q.lower().rstrip(".!? \t\n")
 
-    # 1. Delete all tasks
     if re.match(r"^(?:delete|clear)\s+all(?:\s+(?:the|of\s+the|active|my))?\s+tasks$", q_norm):
         return ("delete_tasks", {"all": True})
 
-    # 2. Delete / remove specific task
     # e.g., "delete task 123", "delete task [[task:123|...]]", "remove task 123"
     m_del = re.match(r"^(?:delete|remove)\s+task\s+(.+)$", q_norm)
     if m_del:
@@ -527,7 +521,6 @@ def match_fast_intent(query: str) -> tuple[str, dict] | None:
         if tid:
             return ("delete_tasks", {"ids": [tid]})
 
-    # 3. Mark task as done / complete task / toggle task
     # e.g., "mark task 123 as done", "mark task 123 done", "mark task 123 as complete"
     m_mark = re.match(r"^mark\s+task\s+(.+?)(?:\s+as)?\s+(?:done|complete|finished)$", q_norm)
     if m_mark:
@@ -543,12 +536,10 @@ def match_fast_intent(query: str) -> tuple[str, dict] | None:
         if tid:
             return ("toggle_task", {"task_id": tid})
 
-    # 4. Generate daily digest
     # e.g. "generate today's digest", "generate todays digest", "generate digest", "create daily digest"
     if re.match(r"^(?:generate|create|make)\s+(?:(?:today['’]?s|daily)\s+)?digest$", q_norm):
         return ("generate_daily_digest", {"rolling": True})
 
-    # 5. Pause / resume activity tracking
     if re.match(r"^pause\s+(?:activity\s+tracking|activity|tracking)$", q_norm):
         return ("pause_activity", {"paused": True})
 

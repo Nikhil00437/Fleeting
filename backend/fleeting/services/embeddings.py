@@ -127,12 +127,10 @@ def embed_text_with_model(
         base_url = url.rstrip("/")
         model = resolve_embedding_model(cfg.llm)
         payload_text = embedding_payload(text, model, kind=kind, title=title)
-        # Embeddings run on the processor thread or during a backfill, never on
-        # the UI's critical path, so they get the full configured timeout. The
-        # clamp that keeps chat responsive (5s) fails a cold model load — a
-        # server that unloads when idle pays the whole load on the next
-        # request — and an intermittent timeout is worse than a slow one
-        # because it degrades silently to hash vectors.
+        # Embeddings never sit on the UI's critical path, so they get the full
+        # configured timeout. The 5s clamp that keeps chat responsive fails a
+        # cold load — a server that unloads when idle pays the whole load on
+        # the next request — and an intermittent timeout degrades silently.
         timeout = float(cfg.llm.timeout_secs)
         data: dict = {}
         try:
@@ -168,12 +166,9 @@ def embed_text_with_model(
                             if norm > 0.0:
                                 vec = [x / norm for x in vec]
                             return [float(x) for x in vec], model
-                # Both branches return the moment they hold a vector, so
-                # arriving here means HTTP 200 with no vector in the body and
-                # no exception raised. LM Studio answers Ollama's
-                # /api/embeddings exactly that way, which makes a wrong
-                # dialect a silent downgrade rather than a visible failure —
-                # the thing this whole path exists to prevent.
+                # Both branches return as soon as they hold a vector, so
+                # reaching here means HTTP 200 with no vector and no exception
+                # — which is exactly how LM Studio answers a wrong dialect.
                 log.warning(
                     "Embedding response from %s carried no vector (%s) — falling back to "
                     "the offline local-hash-384 vector; semantic search will be "

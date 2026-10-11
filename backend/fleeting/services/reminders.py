@@ -37,12 +37,10 @@ _MONTHS = {
     if name
 }
 
-# "Priya's birthday is on March 3", "Sam's anniversary — 12 May", "birthday
-# on the 14th of February". The name is required: an unattributed "her
-# birthday is March 3" has no owner, and inventing one is worse than skipping.
-# No global re.IGNORECASE: the capital on the name is the whole point, since it
-# is what separates "Priya's birthday" from "her birthday". Case-insensitivity
-# is scoped to the words that genuinely vary, and nowhere else.
+# The name is required: an unattributed "her birthday is March 3" has no owner,
+# and inventing one is worse than skipping. That is also why there is no global
+# re.IGNORECASE — the capital is what separates "Priya's birthday" from "her
+# birthday", and scoping the flag would give it back.
 _PATTERN = re.compile(
     r"(?P<name>[A-Z][a-z]+(?:'s)?|our|my)\s+(?:'s\s+)?(?P<kind>(?i:birthday|anniversary))"
     r"[^\n]{0,24}?(?P<date>\d{1,2}\s+[A-Za-z]{3,9}|[A-Za-z]{3,9}\s+\d{1,2}|"

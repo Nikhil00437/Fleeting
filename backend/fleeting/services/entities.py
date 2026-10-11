@@ -42,16 +42,14 @@ github gitlab docker kubernetes python javascript typescript react rust golang
 openai anthropic ollama vscode jetbrains slack notion linear
 """.split())
 
-# Sentence-initial words that are only ever wrong at the *front* of a run —
-# "Ask Priya" is Priya — so they are stripped rather than rejecting the run.
-# Stripping rather than rejecting is the whole reason this is a second list.
+# Words that are only ever wrong at the *front* of a run — "Ask Priya" is
+# Priya — so stripped rather than rejecting the run. Stripping is the whole
+# reason this is a second list.
 #
-# The adverbs and reporting verbs are here because LLM-written prose capitalises
-# every sentence's first word, and a capitalised run at the front of a sentence
-# is not a name. Measured on a corpus that is mostly digests: 160 extracted
-# "people" before this list was extended, 106 after. That is a fix to a real
-# false-positive source, not a fix to the underlying problem — see the note in
-# the version file.
+# The adverbs and reporting verbs are here because LLM prose capitalises every
+# sentence's first word, and that word is not a name. Measured on a
+# digest-heavy corpus: 160 extracted "people" before, 106 after — a fix to a
+# real false-positive source, not to the underlying problem.
 SOFT_LEADING_STOP = frozenset("""
 shipped met ask asked sent fixed added removed updated created deleted
 opened closed started finished reviewed merged deployed pushed pulled

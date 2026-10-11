@@ -263,25 +263,22 @@ def pause_activity(params: dict, db: Database, cfg: Config, bus: EventBus) -> di
 
 # ---- #109 bulk edits ------------------------------------------------------
 #
-# "Retag all my router notes as homelab" touches every note that matched a
-# phrase the user never saw until after it was written. So this is two calls:
-# the first resolves and shows, the second writes. Nothing in between can
-# retag a note on its own.
+# Two calls, never one: the first resolves and shows, the second writes. A
+# bulk edit that named the wrong notes is not recoverable by editing them back,
+# because you cannot see which ones were wrong.
 #
-# Selection is lexical FTS through the one query parser rather than the hybrid
-# path: a bulk edit must not need the embedding server, must not depend on
-# vectors that change when the model changes, and must produce the same set
-# twice for the same words.
+# Selection is lexical FTS through the one query parser, not the hybrid path:
+# a bulk edit must not need the embedding server, must not shift when the
+# model changes, and must give the same set twice for the same words.
 
 BULK_OPERATIONS = ("add_tag", "remove_tag", "archive", "unarchive", "pin", "unpin")
 
 # The keyword search's own maximum, so "hit the cap" and "too many to touch"
-# are the same condition rather than two numbers that can disagree.
+# are one condition rather than two numbers that can drift apart.
 BULK_CAP = 200
 
-# A preview is a promise about a moment; fifteen minutes is long enough to read
-# a list and decide, short enough that a tab left open overnight cannot apply a
-# stale selection in the morning.
+# Long enough to read a list and decide; short enough that a tab left open
+# overnight cannot apply a stale selection in the morning.
 BULK_PREVIEW_TTL = 900
 
 
@@ -736,11 +733,9 @@ def _snapshot_undo(tool: str, params: dict, db: Database) -> tuple[str, dict] | 
         return ("kv", {"key": "activity_paused", "value": db.kv_get("activity_paused", "0")})
 
     if tool == "bulk_edit":
-        # The before-state of every note the preview named, captured before the
-        # edit runs. Reading the preview here rather than trusting the model's
-        # params is what keeps undo pointing at the notes that actually change.
-        # The confirm turn arrives without a token, so resolve it the same way
-        # the action will.
+        # Read the preview rather than the model's params, so undo points at
+        # the notes that actually change. The confirm turn arrives without a
+        # token, so resolve it the way the action will.
         confirmed = _bulk_confirmed_token(params, db)
         if confirmed:
             params = {**params, "preview_token": confirmed}

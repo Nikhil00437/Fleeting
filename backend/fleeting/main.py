@@ -146,12 +146,10 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             await dailylog.generate_daily_log(db, cfg, day, rolling=True)
             bus.publish("dailylog.updated", {"day": day, "kind": "daily-report"})
 
-            # #110: ask what is still open, once the day's report exists — the
-            # report is what usually surfaces the loose ends in the first
-            # place. No separate timer: rollover is already the moment the app
-            # notices a day ended, and on a laptop that is usually when it
-            # wakes up rather than at 00:00, which is the better hour to be
-            # told what you forgot.
+            # #110: ask what is still open, once the report exists — the report
+            # is what surfaces the loose ends in the first place. No separate
+            # timer; on a laptop rollover is when the machine wakes, which is a
+            # better hour to be told what you forgot than 00:00.
             await asyncio.to_thread(nudges.nightly_notify, db, cfg, bus, day=day)
 
         async def backfill_yesterday() -> None:
@@ -284,10 +282,8 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         if recovered:
             log.info("re-queued %d unfinished capture(s)", recovered)
         # The activity table grew forever: a row per window-title change,
-        # including sub-second rows that reads filter out after storing them.
-        # Retention knob, not a hardcoded constant, so it can be tuned without
-        # a code change. Daily reports only ever look back 24h, so a short
-        # window is enough.
+        # including sub-second rows reads filter out only after storing them.
+        # A knob rather than a constant; reports only ever look back 24h.
         retention_days = max(1, int(getattr(cfg.activity, "retention_days", 30) or 30))
         cutoff = (datetime.now().astimezone() - timedelta(days=retention_days)).strftime(
             "%Y-%m-%d"

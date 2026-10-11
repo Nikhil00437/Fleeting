@@ -219,9 +219,7 @@ export default function App() {
  // leaving vault-watcher task edits invisible until the view remounted.
  //
  // The ref carries the reducer's input so the effect does not re-subscribe on
- // every state change (which would thrash the EventSource). It is refreshed on
- // each render, and the reducer's output is pushed straight into the setters
- // below, so the two stay in step.
+ // every state change, which would thrash the EventSource.
  const serverState = useRef<ServerState>({
   ...emptyServerState(),
   notes,
@@ -422,10 +420,8 @@ export default function App() {
    hint: "w",
   },
   {
-   // #258: the entity index. The extraction has existed since #411 with no
-   // surface; this is the only way to reach a name you would not have
-   // thought to search for. Labelled "Entities" because that is what the
-   // list actually holds — see EntitiesView.
+   // #258: the only way to reach a name you would not have thought to search
+   // for. Labelled "Entities" because that is what the list holds.
    id: "entities",
    label: "Entities",
    icon: <RefreshIcon className="h-4 w-4 text-sky-400" />,
