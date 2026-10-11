@@ -33,14 +33,47 @@ jobs:
           enable-cache: true
       - name: Install Python
         run: uv python install 3.12
+      # pyproject.toml is in backend/, not the repo root. Without
+      # working-directory these run at the root and uv fails immediately with
+      # "No pyproject.toml found" — which is exactly what happened the first
+      # time this workflow was written, and only surfaced by running it.
       - name: Sync
+        working-directory: backend
         run: uv sync --all-groups
       # Lint first: it is the fast failure, and the expensive suite is
       # pointless once something is known to be wrong.
       - name: Lint
+        working-directory: backend
         run: uv run ruff check .
       - name: Test
+        working-directory: backend
         run: uv run pytest -q
+
+  # #192. Not a generated client — api.ts is already typed with no `any` — but
+  # nothing else notices when a route the frontend calls has been renamed.
+  # Runs against the OpenAPI schema the app publishes, so no server is started.
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Python
+        run: uv python install 3.12
+      # The project environment lives in backend/, but this job runs from the
+      # root because that is where scripts/ is. --project points uv at the
+      # right one without changing directory.
+      - name: Sync
+        run: uv sync --project backend --all-groups
+      # --config because scripts/ sits outside backend/, where pyproject.toml
+      # lives; without it ruff would silently fall back to its default rules
+      # and check these files by a different standard than the rest.
+      - name: Lint tooling
+        run: uv run --project backend ruff check --config backend/pyproject.toml scripts/
+      - name: Check frontend routes against the API
+        run: uv run --project backend python scripts/check_api_contract.py
 
   frontend:
     runs-on: ubuntu-latest
