@@ -21,6 +21,7 @@ import {
   XIcon,
 } from "./Icons";
 import { StatusBadge } from "./NoteCard";
+import { WritingMenu } from "./WritingMenu";
 import { ConfidenceBadge, UnverifiedClaims } from "./ConfidenceBadge";
 import { pipelineSteps, totalSecs } from "./pipeline";
 import AudioPlayer from "./AudioPlayer";
@@ -28,7 +29,7 @@ import { runNoteAction } from "./actionRunner";
 import { errorMessage } from "./settingsState";
 import { NOTE_COLORS, colorHex } from "./noteColors";
 import { diffStats, diffText } from "./textDiff";
-import type { Collection, Note, TemplateFieldDef } from "../types";
+import type { Collection, Note, TemplateFieldDef, WritingResult } from "../types";
 
 interface Attachment {
   id: string;
@@ -176,6 +177,46 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
     setTitle(note.title);
     setSummary(note.summary || "");
   }, [note.title, note.summary]);
+
+  // #446/#447/#261 — four APIs that shipped with no surface. Results are
+  // offered, never applied: `patch` is only ever called from an explicit
+  // Accept, so a rewrite the user ignored cannot have replaced their words.
+  const [result, setResult] = useState<WritingResult | null>(null);
+  const [titles, setTitles] = useState<string[]>([]);
+  const [showTitles, setShowTitles] = useState(false);
+  const [keepWording, setKeepWording] = useState(true);
+  const [writeBusy, setWriteBusy] = useState(false);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const [styles, setStyles] = useState<string[] | undefined>(undefined);
+
+  useEffect(() => {
+    api.rewriteStyles().then(setStyles).catch(() => undefined);
+  }, []);
+
+  async function runWriting(style: string) {
+    setWriteBusy(true);
+    setWriteError(null);
+    try {
+      if (style === "titles") {
+        const res = await api.suggestTitles(note.raw_text || note.summary || "", note.title);
+        setTitles(res.titles ?? []);
+        setShowTitles(true);
+        return;
+      }
+      setShowTitles(false);
+      setTitles([]);
+      setResult(
+        style === "cleaner"
+          ? await api.cleanup(note.raw_text || note.summary || "", keepWording)
+          : await api.rewrite(note.raw_text || note.summary || "", style),
+      );
+    } catch (e) {
+      setWriteError(errorMessage(e));
+      setResult(null);
+    } finally {
+      setWriteBusy(false);
+    }
+  }
 
   async function patch(changes: Partial<Note>) {
     try {
@@ -1387,6 +1428,34 @@ export default function NoteDrawer({ note, onClose, onUpdate, onDelete, onOpenNo
           )}
         </div>
       </div>
+
+      <WritingMenu
+        text={note.raw_text || note.summary || ""}
+        styles={styles}
+        result={result}
+        titles={titles}
+        showTitles={showTitles}
+        error={writeError}
+        busy={writeBusy}
+        onRun={runWriting}
+        onApply={(text) => {
+          if (!text) {
+            setResult(null);
+            setTitles([]);
+            setShowTitles(false);
+            return;
+          }
+          void patch({ raw_text: text });
+          setResult(null);
+        }}
+        onTitle={(title) => {
+          void patch({ title });
+          setShowTitles(false);
+          setTitles([]);
+        }}
+        onToast={onToast}
+        onKeepWording={setKeepWording}
+      />
     </aside>
   );
 }
@@ -1486,6 +1555,7 @@ function HistoryPanel({
           </div>
         ))}
       </div>
+
     </div>
   );
 }

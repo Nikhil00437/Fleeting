@@ -14,6 +14,7 @@ import type {
   EntityNote,
   EntityRow,
   HealthStatus,
+  WritingResult,
   ConnectionTest,
   LLMProbeOverrides,
   ActivityDay,
@@ -830,6 +831,30 @@ export const api = {
   healthPanelRetry: () =>
     req<{ ok: boolean; detail?: string; models?: string[] }>("/health-panel/retry", {
       method: "POST",
+    }),
+
+  /** #446 the styles /writing/rewrite accepts, so the UI cannot offer another. */
+  rewriteStyles: () => req<string[]>("/writing/rewrite-styles"),
+
+  /** #446 rewrite text. Returns it; the caller decides whether to apply it. */
+  rewrite: (text: string, style: string) =>
+    req<WritingResult>("/writing/rewrite", {
+      method: "POST",
+      body: JSON.stringify({ text, style }),
+    }),
+
+  /** #261 punctuate dictated text, optionally refusing to reword it. */
+  cleanup: (text: string, keepWording: boolean) =>
+    req<WritingResult>("/writing/cleanup", {
+      method: "POST",
+      body: JSON.stringify({ text, keep_wording: keepWording }),
+    }),
+
+  /** #447 three alternative titles. Empty list on any failure, never an error. */
+  suggestTitles: (text: string, current?: string) =>
+    req<{ titles: string[] }>("/writing/titles", {
+      method: "POST",
+      body: JSON.stringify({ text, current_title: current }),
     }),
 
   /** #258 the entity index. People, most-mentioned first. */

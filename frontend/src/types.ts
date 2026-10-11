@@ -1139,3 +1139,13 @@ export interface AppFlowData {
   links: AppFlowLink[];
   top_loops: AppFlowLoop[];
 }
+
+/** #446 / #261 one offered rewrite. `added_words` is the #261 wording report. */
+export interface WritingResult {
+  text: string;
+  style?: string;
+  kept_wording?: boolean;
+  added_words?: string[];
+}
+
+export type RewriteStyle = "shorter" | "clearer" | "friendlier" | "more formal";
