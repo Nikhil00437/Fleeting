@@ -89,6 +89,19 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => req<HealthStatus>("/health"),
 
+  /** #395: version, platform, redacted settings and recent warnings.
+   *  Secrets are replaced by the backend before it serialises anything, so
+   *  there is nothing to strip on this side. */
+  diagnostics: () =>
+    req<{
+      version: string;
+      python: string;
+      platform: Record<string, string>;
+      config: Record<string, Record<string, unknown>>;
+      log: { level?: string; logger?: string; message?: string }[];
+      database: { path: string; exists: boolean; size_bytes: number };
+    }>("/diagnostics"),
+
   /** Weekly digest plus the week's shape. Defaults to last week. */
   weeklyLog: (week?: string) =>
     req<WeeklyLogOut>(`/activity/weekly-log${week ? `?week=${week}` : ""}`),

@@ -6,6 +6,9 @@ import {
   TerminalIcon,
 } from "../Icons";
 import { type ToastFn } from "./shared";
+import { useState } from "react";
+import { api } from "../../api";
+import { errorMessage } from "../settingsState";
 import { backfillProgress, describeBackfill } from "../backfill";
 import ChartPalettePicker from "../ChartPalettePicker";
 import type { HealthStatus, Settings } from "../../types";
@@ -30,6 +33,9 @@ export default function SystemTab({
   onBackfill: () => void;
   backfillBusy: boolean;
 }) {
+  // #395: the bundle is gathered on click, not on mount — it tail-parses the
+  // log, and nobody opens Settings to look at a bug report.
+  const [diagBusy, setDiagBusy] = useState(false);
   const bf = embedding ? backfillProgress(embedding) : null;
   const bfMsg = describeBackfill(bf);
   const fmtUptime = (secs: number) => {
@@ -221,6 +227,42 @@ export default function SystemTab({
                     <CopyIcon className="h-3 w-3" /> Copy
                   </button>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">
+                <p className="micro-label !text-[9px]">Diagnostics Bundle</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-ink-400">
+                  Version, platform, your settings and the last few warnings —
+                  everything needed to reproduce a bug. API keys, tokens and
+                  passwords are replaced with <code className="font-mono">&lt;set&gt;</code>
+                  before anything leaves the backend.
+                </p>
+                <button
+                  data-testid="copy-diagnostics"
+                  disabled={diagBusy}
+                  onClick={async () => {
+                    setDiagBusy(true);
+                    try {
+                      const bundle = await api.diagnostics();
+                      const text = JSON.stringify(bundle, null, 2);
+                      await navigator.clipboard.writeText(text);
+                      const warnings = bundle.log?.length ?? 0;
+                      onToast(
+                        `diagnostics copied (${warnings} log ${
+                          warnings === 1 ? "entry" : "entries"
+                        })`,
+                      );
+                    } catch (err) {
+                      onToast(errorMessage(err));
+                    } finally {
+                      setDiagBusy(false);
+                    }
+                  }}
+                  className="mt-2 flex shrink-0 items-center gap-1 rounded-lg border border-ink-700 px-2.5 py-1 text-[10.5px] text-ink-300 hover:border-ember-400/40 hover:text-ink-100 disabled:opacity-50"
+                >
+                  <CopyIcon className="h-3 w-3" />
+                  {diagBusy ? "Gathering…" : "Copy for a bug report"}
+                </button>
               </div>
 
               <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">

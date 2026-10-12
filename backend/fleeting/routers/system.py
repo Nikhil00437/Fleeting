@@ -196,3 +196,28 @@ async def run_benchmark(body: BenchmarkIn, request: Request) -> dict:
     return await benchmark_models(
         st.db, st.cfg, st.bus, models=body.models, sample=body.sample
     )
+
+
+@router.get("/diagnostics")
+async def diagnostics(request: Request, min_level: str = "WARNING", limit: int = 200) -> dict:
+    """#395: everything a maintainer asks for, with secrets removed.
+
+    Read-only. The bundle is redacted at the source rather than by the client,
+    so there is no path where the unredacted config is serialised and only the
+    UI decides what to drop — that ordering is what turns a display bug into a
+    leak.
+
+    `limit` is clamped here: it is a user-supplied query parameter and the
+    bundle is meant to be pasted into a chat window.
+    """
+    st = request.app.state.st
+    from ..config import DB_PATH, LOG_PATH
+    from ..diagnostics import build_bundle
+
+    return build_bundle(
+        cfg=st.cfg,
+        log_path=LOG_PATH,
+        db_path=DB_PATH,
+        min_level=min_level,
+        limit=max(1, min(int(limit), 2000)),
+    )
