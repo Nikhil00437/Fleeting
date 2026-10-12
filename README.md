@@ -211,12 +211,35 @@ cd frontend && bun run test                  # ~535 tests
 cd frontend && bun run test:e2e              # 14 browser tests, needs the seeded demo
 ```
 
-## Ideas for v2
+## Where it's going
 
-- Weekly digest note (auto-generated Sunday summary of the daily logs)
-- Real local embeddings instead of the offline n-gram fallback (see
-  `services/embeddings.py` — `LocalHashVectorizer` is character-3-gram hashing,
-  so it catches typos and short queries but not paraphrase; pointing
-  `[llm]` at Ollama's `nomic-embed-text` gets true semantic recall)
-- Browser extension: capture selected text with one click
-- AFK detection via real wayland idle protocol instead of cursor heuristic
+Each version is one theme, landed whole. Bundles are worked in the order that
+helps most, not strictly by number — 0.18 came before several lower-numbered
+ones because tooling and tests unblock everything after them.
+
+**Shipped — 0.3 through 0.9:**
+
+| Version | Theme |
+| --- | --- |
+| 0.3 | Capture & dictation ergonomics |
+| 0.4 | Notes, Inbox & organisation |
+| 0.5 | Tasks & day planning |
+| 0.6 | Search & recall |
+| 0.7 | Timeline & activity depth |
+| 0.8 | Reports, insights & charts |
+| 0.9 | Assistant & AI quality |
+
+**In progress — 0.18:** DX, testing and ops — CI and pre-commit, property tests
+for the markdown round-trip, golden snapshots for the prompts, a seeded demo
+database, browser end-to-end tests, generated audio fixtures, a chaos switch,
+structured logging, a diagnostics bundle and a runtime metrics panel.
+
+**Still to come**, in no particular order: the desktop and CLI bundle (0.12),
+privacy and portability (0.11), vault and sharing (0.10), UI polish, theming,
+a11y and i18n (0.13), capture-pipeline reliability (0.14), knowledge work and
+writing (0.15), habits and notifications (0.16), cross-device and mobile sync
+(0.17), a public contributor guide, a query console over the SQLite schema, an
+MCP server so other local AI clients can search notes read-only, and a first-run
+setup check.
+
+Everything above is a plan, not a promise.
