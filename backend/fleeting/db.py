@@ -1977,11 +1977,39 @@ class Database:
                 items = json.loads(row["action_items"] or "[]")
             except (json.JSONDecodeError, TypeError):
                 items = []
+            if not items:
+                continue
+            # One lookup per note rather than per item. `insert_note` promotes
+            # an action item under its *bare* id and `_sync_note_action_items`
+            # writes that id back into this JSON — so re-prefixing the id here
+            # built a different string on every boot and INSERT OR IGNORE had
+            # nothing to ignore. Every process start added a copy of every
+            # task; a real database carried one text twice, as
+            # `84649eb6942e` and `037c9b9ab47e_84649eb6942e`.
+            existing = self.execute(
+                "SELECT id, text FROM tasks WHERE note_id = ?", (row["id"],)
+            ).fetchall()
+            have_ids = {r["id"] for r in existing}
+
             for it in items:
                 if isinstance(it, str):
                     it = {"text": it}
-                task_id = it.get("id") or new_id()
-                full_id = f"{row['id']}_{task_id}" if not task_id.startswith(f"{row['id']}_") else task_id
+                text = (it.get("text") or "").strip()
+                item_id = it.get("id")
+                if item_id:
+                    full_id = item_id if item_id in have_ids else f"{row['id']}_{item_id}"
+                else:
+                    # Legacy JSON carrying no id: nothing ever wrote one back,
+                    # so `new_id()` minted a fresh task on every single boot —
+                    # unbounded growth, not a single duplicate. Adopt the id of
+                    # a task already made for *this* note with the same text.
+                    # Scoping to the note is what stops two notes with the
+                    # same text being merged into one task.
+                    full_id = next(
+                        (r["id"] for r in existing if r["text"] == text),
+                        f"{row['id']}_{new_id()}",
+                    )
+                have_ids.add(full_id)
 
                 priority = (it.get("priority") or "P2").strip().upper()
                 if priority not in ("P1", "P2", "P3"):
@@ -1999,7 +2027,7 @@ class Database:
                     {
                         "id": full_id,
                         "note_id": row["id"],
-                        "text": (it.get("text") or "").strip(),
+                        "text": text,
                         "done": done,
                         "priority": priority,
                         "due_date": due_date,
