@@ -97,6 +97,43 @@ ENRICH_SYSTEM = ENRICH_SYSTEM_TEMPLATE.format(
 )
 
 
+def build_enrich_system_prompt(
+    *,
+    today_iso: str,
+    template: str | None = None,
+    few_shot: str = "",
+    tag_vocab: str = "",
+    language: str = "",
+    prompt: str = "",
+) -> str:
+    """The enrich system prompt, composed. Pure, so #392 can snapshot it.
+
+    Extracted because both `enrich` and `enrich_chain` were assembling this by
+    hand, and one of them used `str.format` where the other used `replace` —
+    so a user template containing a brace crashed one call path and not the
+    other. `replace` is the safe one; #93 already relied on it and only one
+    caller had it.
+
+    **The append order is the contract**, and it is the reason this is a
+    function with a test rather than inline concatenation: the user's own
+    corrected enrichments (#256) must outrank the tag vocabulary (#257), which
+    must outrank the language instruction (#262). A capture template's
+    instruction comes last because it is the most specific of the four.
+
+    #262 is one line, and without it a short non-English note tends to come
+    back with an English title — the prompt itself is English, so the model
+    follows it rather than the note.
+    """
+    base = (template or ENRICH_SYSTEM_TEMPLATE).replace("{today_iso}", today_iso)
+    blocks = (
+        few_shot,
+        tag_vocab,
+        language,
+        f"Capture-template instruction: {prompt}" if prompt else "",
+    )
+    return base + "".join(f"\n\n{b}" for b in blocks if b)
+
+
 class ActionItemDict(dict):
     """Dictionary representing an action item with backward compatibility for string equality."""
 
@@ -270,9 +307,7 @@ async def enrich(text: str, cfg: LLMConfig, prompt: str | None = None) -> dict:
     snippet = text[:MAX_ENRICH_CHARS]
 
     today_iso = datetime.now(timezone.utc).date().isoformat()
-    system_prompt = ENRICH_SYSTEM_TEMPLATE.format(today_iso=today_iso)
-    if prompt:
-        system_prompt += f"\n\nCapture-template instruction: {prompt}"
+    system_prompt = build_enrich_system_prompt(today_iso=today_iso, prompt=prompt or "")
 
     if cfg.provider in ("lmstudio", "custom"):
         payload = {
@@ -368,22 +403,16 @@ async def enrich_chain(
     per_step = max(5.0, cfg.timeout_secs / len(models))
     headers = auth_headers(cfg)
     today_iso = datetime.now(timezone.utc).date().isoformat()
-    # #93: the caller's edited template, already substituted. Kept out of
-    # str.format here too — a user template with a stray brace must not raise.
-    base_prompt = (template or ENRICH_SYSTEM_TEMPLATE).replace("{today_iso}", today_iso)
     # #256: the user's own corrected enrichments, which outrank anything the
     # template can say about their taste. #257: their tag vocabulary.
-    if few_shot:
-        base_prompt += f"\n\n{few_shot}"
-    if tag_vocab:
-        base_prompt += f"\n\n{tag_vocab}"
-    # #262: one line telling the model to answer in the note's own language.
-    # The prompt is English, so without it a short non-English note tends to
-    # come back with an English title.
-    if language:
-        base_prompt += f"\n\n{language}"
-    if prompt:
-        base_prompt += f"\n\nCapture-template instruction: {prompt}"
+    base_prompt = build_enrich_system_prompt(
+        today_iso=today_iso,
+        template=template,
+        few_shot=few_shot,
+        tag_vocab=tag_vocab,
+        language=language,
+        prompt=prompt or "",
+    )
 
     last_error = "no attempt made"
     for model in models:
