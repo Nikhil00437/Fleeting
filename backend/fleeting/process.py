@@ -118,8 +118,17 @@ class Processor:
         if note:
             self.bus.publish("note.updated", note)
 
-    def _fail(self, note_id: str, error: str) -> None:
-        note = self.db.update_note(note_id, {"status": "failed", "error": error})
+    def _fail(self, note_id: str, error: str, elapsed_ms: int | None = None) -> None:
+        # #390: `processed_at` used to be written only on success, which made
+        # every failure invisible to the metrics page — an error rate that
+        # ignores the failures is worse than none, because it looks healthy
+        # exactly when it should not. `enrich_ms` stays unset: a failed
+        # capture has no enrichment to time, and the gap until it gave up would
+        # drag the median toward the timeout.
+        note = self.db.update_note(
+            note_id,
+            {"status": "failed", "error": error, "processed_at": now_iso()},
+        )
         if note:
             self.bus.publish("note.updated", note)
 
@@ -238,6 +247,10 @@ class Processor:
                 "status": "done",
                 "error": None,
                 "processed_at": now_iso(),
+                # #390. `started` is already measured for the stage timings, so
+                # recording it costs one key. Includes transcription, because
+                # that is the wall-clock the user waits through.
+                "enrich_ms": int((time.monotonic() - started) * 1000),
                 # #96: the model's own verdict on the enrichment, or None. A
                 # reprocess must clear a stale score, so this is always written.
                 "enrich_confidence": enriched.get("confidence"),

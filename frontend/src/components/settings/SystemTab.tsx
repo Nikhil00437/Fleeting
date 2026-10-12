@@ -6,8 +6,8 @@ import {
   TerminalIcon,
 } from "../Icons";
 import { type ToastFn } from "./shared";
-import { useState } from "react";
-import { api } from "../../api";
+import { useEffect, useState } from "react";
+import { api, type RuntimeMetrics } from "../../api";
 import { errorMessage } from "../settingsState";
 import { backfillProgress, describeBackfill } from "../backfill";
 import ChartPalettePicker from "../ChartPalettePicker";
@@ -36,6 +36,22 @@ export default function SystemTab({
   // #395: the bundle is gathered on click, not on mount — it tail-parses the
   // log, and nobody opens Settings to look at a bug report.
   const [diagBusy, setDiagBusy] = useState(false);
+  // #390: fetched on mount rather than on click, unlike the diagnostics
+  // bundle — unlike a bug report, this is a thing you glance at.
+  const [metrics, setMetrics] = useState<RuntimeMetrics | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.runtimeMetrics(24).then((m) => {
+      if (live) setMetrics(m);
+    }).catch(() => {
+      if (live) setMetrics(null);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const fmtMs = (ms: number) =>
+    ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
   const bf = embedding ? backfillProgress(embedding) : null;
   const bfMsg = describeBackfill(bf);
   const fmtUptime = (secs: number) => {
@@ -230,6 +246,49 @@ export default function SystemTab({
               </div>
 
               <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">
+              <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3.5">
+                <p className="micro-label !text-[9px]">Last 24 hours</p>
+                {metrics ? (
+                  <>
+                    <dl className="mt-2 grid grid-cols-3 gap-3 text-center">
+                      {[
+                        ["Captures", String(metrics.throughput.total)],
+                        ["Median", fmtMs(metrics.enrichment.median_ms)],
+                        ["Errors", `${(metrics.errors.rate * 100).toFixed(0)}%`],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <dd className="font-mono text-lg leading-none text-ink-100">
+                            {value}
+                          </dd>
+                          <dt className="mt-1 text-[10px] text-ink-400">{label}</dt>
+                        </div>
+                      ))}
+                    </dl>
+                    {/* A bar per hour with work in it. Absent hours are gaps, not
+                        zeros: "nothing happened" and "nothing was measured" are
+                        different claims. */}
+                    <div className="mt-3 flex h-8 items-end gap-[2px]" role="img"
+                      aria-label={`captures per hour, ${metrics.throughput.buckets.length} active hours`}>
+                      {metrics.throughput.buckets.map((b) => (
+                        <div
+                          key={b.hour}
+                          title={`${b.hour}: ${b.count}`}
+                          className="flex-1 rounded-t bg-ember-500/60"
+                          style={{
+                            height: `${Math.max(
+                              12,
+                              (b.count / Math.max(...metrics.throughput.buckets.map((x) => x.count))) * 100,
+                            )}%`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-1 text-[11px] text-ink-400">Not available.</p>
+                )}
+              </div>
+
                 <p className="micro-label !text-[9px]">Diagnostics Bundle</p>
                 <p className="mt-1 text-[11px] leading-relaxed text-ink-400">
                   Version, platform, your settings and the last few warnings —

@@ -86,8 +86,19 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface RuntimeMetrics {
+  hours: number;
+  throughput: { total: number; per_hour: number; buckets: { hour: string; count: number }[] };
+  enrichment: { median_ms: number; p95_ms: number; samples: number };
+  errors: { failed: number; total: number; rate: number };
+}
+
 export const api = {
   health: () => req<HealthStatus>("/health"),
+
+  /** #390: how the app itself is doing, over a window of hours. */
+  runtimeMetrics: (hours = 24) =>
+    req<RuntimeMetrics>(`/metrics/runtime?hours=${hours}`),
 
   /** #395: version, platform, redacted settings and recent warnings.
    *  Secrets are replaced by the backend before it serialises anything, so

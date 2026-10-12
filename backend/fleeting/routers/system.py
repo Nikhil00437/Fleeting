@@ -221,3 +221,16 @@ async def diagnostics(request: Request, min_level: str = "WARNING", limit: int =
         min_level=min_level,
         limit=max(1, min(int(limit), 2000)),
     )
+
+
+@router.get("/metrics/runtime")
+async def runtime_metrics(request: Request, hours: int = 24) -> dict:
+    """#390: jobs per hour, median enrichment time, error rate.
+
+    Read-only. The window is clamped because `hours` arrives as a query
+    parameter and the aggregation walks every note in it.
+    """
+    st = request.app.state.st
+    from ..services.runtime_metrics import summarise
+
+    return summarise(st.db, hours=max(1, min(int(hours), 24 * 30)))

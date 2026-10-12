@@ -497,6 +497,11 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("notes", (
         ("enrich_confidence", "REAL"),
         ("enrich_feedback", "INTEGER NOT NULL DEFAULT 0"),
+        # #390: how long enrichment took, so "median enrichment time" is a
+        # measurement rather than a guess. Nullable on purpose — a row written
+        # before this column existed has no duration, and 0 would read as
+        # "instant" in the metrics page.
+        ("enrich_ms", "INTEGER"),
         ("claims", "TEXT"),
         # #258: the app wrote this note, the user did not. Digests are imported
         # back from the vault, and every text heuristic that reads a note —
@@ -551,7 +556,7 @@ NOTE_COLUMNS = frozenset({
     "audio_path", "status", "error", "pinned", "archived",
     "created_at", "updated_at", "processed_at", "capture_id", "source_title",
     "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
-    "snoozed_until", "enrich_confidence", "enrich_feedback", "claims",
+    "snoozed_until", "enrich_confidence", "enrich_feedback", "claims", "enrich_ms",
     "generated",
 })
 
@@ -719,12 +724,12 @@ class Database:
                                source, audio_path, status, error, pinned, archived,
                                created_at, updated_at, processed_at, capture_id, source_title,
                                starred, trashed_at, color, fields, sensitive, review_state,
-                               snoozed_until, generated)
+                               snoozed_until, generated, enrich_ms)
             VALUES (:id, :type, :title, :summary, :raw_text, :tags, :action_items,
                     :source, :audio_path, :status, :error, :pinned, :archived,
                     :created_at, :updated_at, :processed_at, :capture_id, :source_title,
                     :starred, :trashed_at, :color, :fields, :sensitive, :review_state,
-                    :snoozed_until, :generated)
+                    :snoozed_until, :generated, :enrich_ms)
             """,
             _note_to_sql(note),
         )
@@ -2982,6 +2987,9 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         # #258: absent on a database that predates the guarded column.
         "generated": int(row["generated"] or 0) if "generated" in row.keys() else 0,
         "enrich_feedback": int(row["enrich_feedback"] or 0) if "enrich_feedback" in row.keys() else 0,
+        # #390: None means never timed, which the metrics page reports differently
+        # from 0 meaning instant.
+        "enrich_ms": row["enrich_ms"] if "enrich_ms" in row.keys() else None,
         # #263: JSON array of {text, supported, span}. Absent on rows written
         # before the column existed.
         "claims": json.loads(row["claims"] or "null") if "claims" in row.keys() else None,
@@ -3025,6 +3033,9 @@ def _note_to_sql(note: dict) -> dict:
     out.setdefault("sensitive", 0)
     out.setdefault("review_state", "enriched")
     out.setdefault("snoozed_until", None)
+    # #390. Nullable with no default: NULL means "never timed", which is not the
+    # same as 0 meaning "instant", and the metrics page treats them differently.
+    out.setdefault("enrich_ms", None)
     # #258: silent default is a capture the user wrote. Only the app's own
     # digests set this, and only via the vault import path.
     out.setdefault("generated", 0)
