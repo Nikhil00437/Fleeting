@@ -7,10 +7,13 @@ minimal placeholder when the frontend hasn't been built).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import logging.handlers
 import secrets
 import time
 from datetime import datetime, timedelta
+from typing import Any
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .activity import ActivityCollector
-from .config import Config, ensure_dirs
+from .config import Config, LoggingConfig, ensure_dirs
 from .db import Database
 from .events import EventBus
 from .process import Processor
@@ -90,7 +93,45 @@ def _maybe_backfill_embeddings(db: Database, cfg: Config, bus, st=None) -> "asyn
         return None
 
 
-def _setup_logging() -> None:
+# Fields LogRecord always carries; everything else on `record.__dict__` came
+# from `extra` and is the caller's data.
+_LOG_RECORD_KEYS = frozenset(
+    logging.LogRecord("", 0, "", 0, "", None, None).__dict__
+) | {"message", "asctime", "taskName"}
+
+
+class _JsonFormatter(logging.Formatter):
+    """One JSON object per line, carrying `extra` fields (#389).
+
+    Anything the caller passed as `extra` is merged in, which is what makes the
+    record filterable — a diagnostics bundle (#395) needs `note_id` as a field,
+    not a phrase to grep for. `default=str` rather than raising: one stray
+    object in `extra` should cost you that value, not the whole line.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        for key, value in record.__dict__.items():
+            if key not in _LOG_RECORD_KEYS and not key.startswith("_"):
+                payload[key] = value
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _setup_logging(cfg: LoggingConfig | None = None) -> None:
+    """Wire the root logger from config. #389.
+
+    Takes the config rather than reading it, because `create_app` loads the
+    config before calling this — an earlier version ran first and hardcoded
+    INFO, so no setting could ever take effect.
+    """
+    cfg = cfg or LoggingConfig()
     ensure_dirs()
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     try:
@@ -98,24 +139,59 @@ def _setup_logging() -> None:
         # suite must not append to the user's real log.
         from .config import LOG_PATH
 
-        handlers.append(logging.FileHandler(LOG_PATH, encoding="utf-8"))
+        if cfg.max_bytes > 0:
+            # #389: the user's log reached 6.2 MB with no bound at all.
+            handlers.append(
+                logging.handlers.RotatingFileHandler(
+                    LOG_PATH,
+                    maxBytes=cfg.max_bytes,
+                    backupCount=cfg.backups,
+                    encoding="utf-8",
+                )
+            )
+        else:
+            handlers.append(logging.FileHandler(LOG_PATH, encoding="utf-8"))
     except OSError:
         pass
+
+    fmt: logging.Formatter | None = None
+    if cfg.log_format.strip().lower() == "json":
+        fmt = _JsonFormatter()
+    else:
+        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        level=getattr(logging, str(cfg.level).upper(), logging.INFO),
+        format=fmt,
         handlers=handlers,
     )
+    # `basicConfig` is a no-op once the root logger has handlers, which it does
+    # after the first call — so a second `create_app`, or a test setting DEBUG,
+    # would silently keep the old configuration. It is a script convenience;
+    # an app that owns its logging has to actually apply it.
+    root = logging.getLogger()
+    for existing in list(root.handlers):
+        root.removeHandler(existing)
+        try:
+            existing.close()
+        except (OSError, ValueError):
+            pass
+    for handler in handlers:
+        handler.setFormatter(fmt)
+        root.addHandler(handler)
+    root.setLevel(getattr(logging, str(cfg.level).upper(), logging.INFO))
 
 
 def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> FastAPI:
-    _setup_logging()
     ensure_dirs()
     if cfg is None and load_from_disk:
         from .config import load_config
 
         cfg = load_config()
     cfg = cfg or Config()
+    # After the config load, not before: #389's level and format are settings,
+    # and a setup that ran first could only ever hardcode them.
+    _setup_logging(cfg.logging)
 
     # #443/#444: pin the process-wide "today" and holiday set before any
     # date query can run.

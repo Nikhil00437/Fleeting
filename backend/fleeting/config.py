@@ -160,6 +160,28 @@ class ActivityConfig:
 
 
 @dataclass
+class LoggingConfig:
+    """#389.
+
+    `level` was a hardcoded `logging.INFO` that no config could change, which
+    is the opposite of what a log level is for.
+
+    `log_format` defaults to text because this is a local app and the person
+    reading the log is usually its owner, tailing it. JSON is there for #395's
+    diagnostics bundle, which has to filter errors out of a log rather than
+    grep prose — not because JSON is better in the abstract.
+
+    `max_bytes` exists because the user's log had reached 6.2 MB and grew
+    without bound. 0 disables rotation, for anyone who wants the whole history.
+    """
+
+    level: str = "INFO"
+    log_format: str = "text"  # "text" | "json"
+    max_bytes: int = 2_000_000
+    backups: int = 3
+
+
+@dataclass
 class NotesConfig:
     # #274: notes sit in the trash this long before the boot purge hard-deletes
     # them. 0 disables the purge entirely (trash grows forever).
@@ -207,6 +229,7 @@ class Config:
     tasks: TasksConfig = field(default_factory=TasksConfig)
     entities: EntitiesConfig = field(default_factory=EntitiesConfig)
     writing: WritingConfig = field(default_factory=WritingConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
 # Sections that map to dataclass fields, used for (de)serialization.
@@ -219,6 +242,7 @@ _SECTIONS: dict[str, type] = {
     "notifications": NotificationsConfig,
     "activity": ActivityConfig,
     "notes": NotesConfig,
+    "logging": LoggingConfig,
     "tasks": TasksConfig,
     "entities": EntitiesConfig,
     "writing": WritingConfig,
