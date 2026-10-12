@@ -21,6 +21,11 @@ telemetry.
 └────────────┘   └──────────────────────────────────────────────┘
 ```
 
+![Fleeting workspace](assets/demo.gif)
+
+Seeded demo data, captured from the real app — the middle of the loop is a
+capture made somewhere else landing in the inbox without a reload.
+
 ## What it does
 
 - **Capture anything, instantly** — type in the always-present bar, hit the mic

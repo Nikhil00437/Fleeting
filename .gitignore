@@ -27,3 +27,4 @@ docs/
 future_ideas.md
 *.zip
 .demo/
+.demo-frames/
