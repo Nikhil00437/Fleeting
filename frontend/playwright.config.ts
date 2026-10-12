@@ -38,7 +38,28 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        // The HUD is a dictation bar and will not render past its error state
+        // without a microphone: `getUserMedia` fails headless, so `CaptureHud`
+        // shows "Not supported" and none of its real UI is reachable. These
+        // give Chromium a synthetic input device — a real MediaStream and a
+        // real MediaRecorder, which a hand-rolled stub cannot provide, since
+        // `new MediaRecorder(fakeStream)` throws.
+        launchOptions: {
+          args: [
+            "--use-fake-ui-for-media-stream",
+            "--use-fake-device-for-media-stream",
+            "--autoplay-policy=no-user-gesture-required",
+          ],
+        },
+        permissions: ["microphone"],
+      },
+    },
+  ],
   webServer: {
     // `scripts/e2e-server.sh` seeds and starts it, so the database is the same
     // deterministic one #394 will screenshot.

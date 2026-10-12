@@ -64,9 +64,15 @@ def _voice_note(db: Database, cfg: Config) -> str:
 
 
 async def _run(proc: Processor, note_id: str) -> dict:
+    """Wait for the capture to settle, with room to spare.
+
+    Two seconds looked generous until this failed once in four runs while
+    Chromium was competing for the CPU — the processor genuinely just needs
+    longer under load, and a flake here would train people to re-run.
+    """
     proc.start()
     proc.enqueue(note_id)
-    for _ in range(200):
+    for _ in range(1500):
         note = proc.db.get_note(note_id)
         if note and note.get("status") in ("done", "failed"):
             return note
