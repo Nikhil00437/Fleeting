@@ -232,6 +232,12 @@ async def request_chat(
     headers: dict[str, str] | None = None,
 ) -> str:
     """POST a chat request to an Ollama/OpenAI-compatible server, return content."""
+    # #396: the single door every chat call passes through, so one line here
+    # covers them all. `maybe_fail` is an attribute read and an early return
+    # when FLEETING_CHAOS is unset.
+    from .. import chaos
+
+    chaos.maybe_fail("llm", "chat request")
     try:
         content = await _post_chat(url, payload, timeout_secs, headers)
     except Exception as exc:

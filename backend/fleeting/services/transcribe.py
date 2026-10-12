@@ -398,6 +398,11 @@ class Transcriber:
 
     def transcribe_file(self, path: str | Path, language: str | None = None) -> dict:
         """Transcribe any audio/video file. Returns {text, duration, language}."""
+        # #396: the single door to the model. See `chaos` for why there is
+        # exactly one call site.
+        from .. import chaos
+
+        chaos.maybe_fail("whisper", f"transcribe {Path(path).name}")
         path = Path(path)
         if not path.exists() or path.stat().st_size == 0:
             raise TranscriptionError(f"audio file missing or empty: {path}")
