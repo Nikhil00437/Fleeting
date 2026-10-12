@@ -183,6 +183,52 @@ def test_json_includes_the_traceback(tmp_path, monkeypatch) -> None:
         logging.getLogger().handlers.clear()
 
 
+def test_setup_works_in_a_process_with_no_logging_configured(tmp_path, monkeypatch) -> None:
+    """The one case the rest of this file cannot reach, and it caught a crash.
+
+    `logging.basicConfig` is a no-op when the root logger already has handlers,
+    and pytest configures logging before any test runs — so the entire backend
+    suite executed this code path with `basicConfig` short-circuiting. In a
+    fresh process it does not short-circuit, and passing a `Formatter` as
+    `format=` raised `TypeError` at startup. The app did not boot, and 5804
+    tests were green.
+
+    A subprocess is the only way to observe a genuinely unconfigured logger,
+    so this is a subprocess.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    data = tmp_path / "data" / "fleeting"
+    conf = tmp_path / "config" / "fleeting"
+    data.mkdir(parents=True)
+    conf.mkdir(parents=True)
+    code = (
+        "from fleeting.config import Config\n"
+        "from fleeting.main import _setup_logging\n"
+        "import logging\n"
+        "_setup_logging(Config().logging)\n"
+        "logging.getLogger('fleeting.fresh').warning('fresh process logs')\n"
+        "print('OK')\n"
+    )
+    env = {
+        "PATH": __import__("os").environ.get("PATH", ""),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "VIRTUAL_ENV": str(Path(sys.prefix)),
+    }
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=str(Path(__file__).resolve().parents[1]),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "OK" in out.stdout
+
+
 def test_rotation_can_be_switched_off(tmp_path, monkeypatch) -> None:
     from fleeting import main as main_mod
     from fleeting import config as fcfg

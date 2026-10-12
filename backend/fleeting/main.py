@@ -160,9 +160,13 @@ def _setup_logging(cfg: LoggingConfig | None = None) -> None:
     else:
         fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+    # No `format=` here: basicConfig wants a *string*, and passing the Formatter
+    # crashes a fresh process at startup. It is only reached when the root
+    # logger has no handlers, which is why 5804 backend tests never hit it —
+    # pytest configures logging before `create_app` runs. The formatter is
+    # attached per-handler below, which is what actually takes effect.
     logging.basicConfig(
         level=getattr(logging, str(cfg.level).upper(), logging.INFO),
-        format=fmt,
         handlers=handlers,
     )
     # `basicConfig` is a no-op once the root logger has handlers, which it does
