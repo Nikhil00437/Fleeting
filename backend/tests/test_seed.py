@@ -81,6 +81,17 @@ def test_seeded_notes_are_not_marked_generated(db: Database) -> None:
     assert all(n["generated"] == 0 for n in _notes(db))
 
 
+def test_seeded_notes_arrive_already_enriched(db: Database) -> None:
+    """A `pending` note is re-queued on every boot and gets rewritten.
+
+    `Processor.recover_unfinished` picks up anything pending, and with no LLM
+    the heuristic sets the title to the first 60 characters of the body — so
+    demo notes shipped with careful titles came back as body prefixes.
+    """
+    seed_demo(db)
+    assert {n["status"] for n in _notes(db)} == {"done"}
+
+
 def test_activity_spans_every_day_of_the_window(db: Database) -> None:
     """A heatmap with gaps is not a demo of a heatmap."""
     seed_demo(db, days=14, today=TODAY)

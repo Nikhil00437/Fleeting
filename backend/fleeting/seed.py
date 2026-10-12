@@ -58,6 +58,11 @@ def _capture(i: int, day: date, hour: int) -> dict:
         "confidence": 0.8,
         "created_at": f"{day.isoformat()}T{hour:02d}:{(i * 7) % 60:02d}:00+00:00",
         "pinned": 1 if i % 7 == 0 else 0,
+        # Already enriched. A note left at the default `pending` is re-queued
+        # on every boot by `Processor.recover_unfinished`, and with no LLM the
+        # heuristic rewrites the title to the first 60 characters of the body —
+        # which quietly replaced every seeded title with a body prefix.
+        "status": "done",
     }
 
 

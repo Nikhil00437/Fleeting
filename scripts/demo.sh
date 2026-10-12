@@ -34,6 +34,25 @@ export FLEETING_URL="http://127.0.0.1:7426"
 
 mkdir -p "$XDG_DATA_HOME/fleeting" "$XDG_CONFIG_HOME/fleeting" "$DEMO_DIR/vault"
 
+# The XDG variables relocate the database and the config, but they do NOT
+# relocate `paths.vault_dir`, which defaults to ~/Documents/FleetingVault, and
+# they do not switch off the activity collector or the LLM. Without this file
+# the demo starts a vault watcher on the real vault — the exact path that once
+# mirrored test notes into it and imported ~440 back as real captures.
+cat > "$XDG_CONFIG_HOME/fleeting/config.toml" <<'EOF'
+[paths]
+vault_dir = "VAULT_PLACEHOLDER"
+vault_sync = true
+
+[llm]
+provider = "none"
+
+[activity]
+enabled = false
+api_token = ""
+EOF
+sed -i "s|VAULT_PLACEHOLDER|$DEMO_DIR/vault|" "$XDG_CONFIG_HOME/fleeting/config.toml"
+
 if [[ "$RESEED" == "1" ]]; then
   rm -f "$XDG_DATA_HOME/fleeting/fleeting.db"*
   echo "reseeding"
