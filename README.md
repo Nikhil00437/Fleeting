@@ -178,6 +178,10 @@ header belonging to the app itself (or the Vite dev server). Requests with no
 extension will therefore need to declare itself allowed here rather than assume
 it can post freely.
 
+For how a capture actually travels through the app — and the invariants that
+are not visible from reading any single file — see
+[ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Layout
 
 ```
@@ -202,8 +206,9 @@ bin/                   flee (CLI capture), fleeting-app (desktop launcher)
 ## Tests
 
 ```bash
-cd backend && uv run pytest                  # 235 tests
-cd frontend && npx vitest run                # 70 tests
+cd backend && uv run pytest                  # ~5.8k tests
+cd frontend && bun run test                  # ~535 tests
+cd frontend && bun run test:e2e              # 14 browser tests, needs the seeded demo
 ```
 
 ## Ideas for v2
