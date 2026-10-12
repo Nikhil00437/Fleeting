@@ -12,9 +12,8 @@ const {
   Notification,
   screen,
 } = require("electron");
-const { spawn, execFile } = require("child_process");
+const { spawn } = require("child_process");
 const fs = require("fs");
-const http = require("http");
 const os = require("os");
 const path = require("path");
 
@@ -35,30 +34,24 @@ const TRAY_ICON_PATH = path.join(ROOT_DIR, "deploy", "fleeting-tray.png");
 const STATE_FILE = path.join(os.homedir(), ".config", "fleeting", "window-state.json");
 const CONFIG_FILE = path.join(os.homedir(), ".config", "fleeting", "config.toml");
 
-/**
- * Tray-originated writes hit the same host guard as the UI, so they need the
- * bearer token when one is configured. Read once at startup — this file is
- * tiny and the tray must not block on it per click.
- */
-function apiToken() {
-  try {
-    const text = fs.readFileSync(CONFIG_FILE, "utf8");
-    const section = text.match(/\[activity\]([\s\S]*?)(\n\[|$)/);
-    const token = section && section[1].match(/^\s*api_token\s*=\s*"([^"]*)"/m);
-    return token ? token[1] : "";
-  } catch {
-    return "";
-  }
-}
+// #190: the token/header/state/probe/cmd logic lives in lib.cjs because this
+// file cannot be imported by a test runner — it configures `app` at module
+// load. One copy, tested; do not reimplement any of it here.
+const {
+  readApiToken,
+  authHeaders,
+  loadWindowState,
+  saveWindowState,
+  probeHealth,
+  runCmd,
+} = require("./lib.cjs");
 
 let authToken = "";
 
 function apiPost(pathname, body) {
-  const headers = { "Content-Type": "application/json" };
-  if (authToken) headers.Authorization = `Bearer ${authToken}`;
   return fetch(`${BACKEND_URL}${pathname}`, {
     method: "POST",
-    headers,
+    headers: authHeaders(authToken),
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -69,54 +62,17 @@ let tray = null;
 let backendProc = null;
 let isQuitting = false;
 
-function loadWindowState() {
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-    }
-  } catch {
-    /* ignore corrupt state */
-  }
-  return { width: 1360, height: 860, maximized: false };
-}
-
-function saveWindowState(win) {
-  if (!win || win.isDestroyed()) return;
-  try {
-    const maximized = win.isMaximized();
-    const bounds = maximized ? loadWindowState() : win.getBounds();
-    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-    fs.writeFileSync(
-      STATE_FILE,
-      JSON.stringify({
-        width: bounds.width || 1360,
-        height: bounds.height || 860,
-        x: bounds.x,
-        y: bounds.y,
-        maximized,
-      }),
-    );
-  } catch {
-    /* ignore write errors */
-  }
-}
-
-function probeHealth() {
-  return new Promise((resolve) => {
-    const req = http.get(`${BACKEND_URL}/api/health`, { timeout: 1200 }, (res) => {
-      res.resume();
-      resolve(res.statusCode === 200);
-    });
-    req.on("error", () => resolve(false));
-    req.on("timeout", () => {
-      req.destroy();
-      resolve(false);
-    });
-  });
+function windowStateFor(win) {
+  if (!win || win.isDestroyed()) return null;
+  const maximized = win.isMaximized();
+  // A maximized window reports no bounds, so keep the restored geometry
+  // rather than saving nulls over it.
+  const bounds = maximized ? loadWindowState(STATE_FILE) : win.getBounds();
+  return { ...bounds, maximized };
 }
 
 async function ensureBackend() {
-  if (await probeHealth()) return true;
+  if (await probeHealth(BACKEND_URL)) return true;
 
   // Spawn FastAPI backend via uv
   try {
@@ -145,7 +101,7 @@ async function ensureBackend() {
   }
 
   for (let i = 0; i < 60; i++) {
-    if (await probeHealth()) return true;
+    if (await probeHealth(BACKEND_URL)) return true;
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
@@ -201,7 +157,7 @@ async function createWindow() {
     return mainWindow;
   }
 
-  const state = loadWindowState();
+  const state = loadWindowState(STATE_FILE);
 
   mainWindow = new BrowserWindow({
     width: state.width || 1360,
@@ -231,23 +187,23 @@ async function createWindow() {
   mainWindow.on("maximize", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("window:maximized", true);
-      saveWindowState(mainWindow);
+      saveWindowState(STATE_FILE, windowStateFor(mainWindow));
     }
   });
   mainWindow.on("unmaximize", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("window:maximized", false);
-      saveWindowState(mainWindow);
+      saveWindowState(STATE_FILE, windowStateFor(mainWindow));
     }
   });
   mainWindow.on("resize", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(mainWindow);
+    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(STATE_FILE, windowStateFor(mainWindow));
   });
   mainWindow.on("move", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(mainWindow);
+    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(STATE_FILE, windowStateFor(mainWindow));
   });
   mainWindow.on("close", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(mainWindow);
+    if (mainWindow && !mainWindow.isDestroyed()) saveWindowState(STATE_FILE, windowStateFor(mainWindow));
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -271,7 +227,7 @@ async function createWindow() {
     }
   });
 
-  const up = await probeHealth();
+  const up = await probeHealth(BACKEND_URL);
   if (!up) {
     await mainWindow.loadURL(
       `data:text/html;charset=utf-8,${encodeURIComponent(SPLASH_HTML)}`,
@@ -389,14 +345,6 @@ function fallbackCopy(text) {
 
     copyProc.on("error", () => finish(copiedToClipboard));
     copyProc.on("exit", (code) => finish(code === 0 || copiedToClipboard));
-  });
-}
-
-// #3: clipboard hotkey — primary selection if present, else clipboard,
-// tagged with the active window's title so Inbox knows where it came from.
-function runCmd(cmd, args) {
-  return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: 2000 }, (err, stdout) => resolve(err ? "" : String(stdout || "")));
   });
 }
 
@@ -604,7 +552,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    authToken = apiToken();
+    authToken = readApiToken(CONFIG_FILE);
 
     // Auto-grant microphone & clipboard permissions for local app
     session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {

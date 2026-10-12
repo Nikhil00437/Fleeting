@@ -18,5 +18,8 @@ export default defineConfig({
     // Behaviour tests (effects, events, error boundaries) opt in per file with
     // a `@vitest-environment jsdom` docblock — see *.dom.test.tsx.
     environment: "node",
+    // #190: the Electron shell lives outside this root, so its tests need
+    // naming explicitly. Both are plain node — no DOM either way.
+    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../electron/**/*.test.js"],
   },
 });
