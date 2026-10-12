@@ -211,6 +211,10 @@ cd frontend && bun run test                  # ~535 tests
 cd frontend && bun run test:e2e              # 14 browser tests, needs the seeded demo
 ```
 
+Patching it? [CONTRIBUTING.md](CONTRIBUTING.md) has the few rules that are not
+obvious from the code — they are the ones that have already caused data loss, a
+crash at boot, or a card that silently went stale.
+
 ## Where it's going
 
 Each version is one theme, landed whole. Bundles are worked in the order that
