@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..activity import session_idle_probe
 from ..config import CONFIG_PATH, LLMConfig, expand_path, save_config
+from ..services.keyring import KEYRING_MARKER, delete_secret, resolve, set_secret
 from ..models import LLMProbeIn, SettingsIn
 from ..models import ReprocessIn
 from ..services import health as health_svc
@@ -43,7 +44,7 @@ def _settings_payload(request: Request) -> dict:
         "llm_base_url": cfg.llm.base_url,
         "llm_model": cfg.llm.model,
         "llm_timeout_secs": cfg.llm.timeout_secs,
-        "llm_api_key_set": bool(cfg.llm.api_key),
+        "llm_api_key_set": bool(resolve("llm.api_key", cfg.llm.api_key or "") or cfg.llm.api_key),
         # #257/#416/#451: same idea as the llm_* block — the section's own
         # fields, flattened so the settings UI reads one shape.
         "llm_fallback_models": cfg.llm.fallback_models,
@@ -179,10 +180,32 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.entities.stale_days = body.entities_stale_days
     if body.writing_style_guide is not None:
         cfg.writing.style_guide = body.writing_style_guide
-    if body.llm_api_key is not None:
-        # Never echoed back by GET, so an absent value must mean "unchanged"
-        # rather than "wipe it".
-        cfg.llm.api_key = body.llm_api_key.strip()
+    # #139: a secret never reaches config.toml. The field there records *that* a
+    # key exists, never what it is, so a leaked config reveals nothing usable.
+    #
+    # Named explicitly rather than looped: each of the three has a different
+    # config attribute and a different Settings field, and a loop that derives
+    # both from one string is exactly the kind of cleverness that stores a token
+    # in the wrong place.
+    for field, attr, secret_name in (
+        ("llm_api_key", "api_key", "llm.api_key"),
+        ("transcribe_hf_token", "hf_token", "transcribe.hf_token"),
+        ("activity_api_token", "api_token", "activity.api_token"),
+    ):
+        value = getattr(body, field, None)
+        if value is None:
+            continue
+        value = value.strip()
+        section = cfg.llm if attr == "api_key" else getattr(cfg, field.split("_")[0])
+        if value:
+            set_secret(secret_name, value)
+            setattr(section, attr, KEYRING_MARKER)
+        else:
+            # An empty value is an explicit "clear it", which is how someone
+            # revokes a key they no longer want lying around.
+            delete_secret(secret_name)
+            setattr(section, attr, "")
+
     if body.transcribe_model is not None:
         if body.transcribe_model != cfg.transcribe.model:
             cfg.transcribe.model = body.transcribe_model

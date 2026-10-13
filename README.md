@@ -269,6 +269,25 @@ misreporting: notes come from a capture, and the database file does not shrink
 because you deleted a note. Trashed notes are counted separately — they are
 still on disk.
 
+## Secrets
+
+API keys, the Hugging Face token and the activity token are stored in the
+**OS keyring** where one exists (`secret-tool` on Linux, `keyring` elsewhere), and
+`GET /api/keyring` reports which store is in use and whether it is a real one.
+
+`config.toml` keeps a marker — `<stored in keyring>` — so the file says *that* a
+key exists without saying what it is. A leaked config therefore reveals nothing
+usable, and a dotfile repo stops being a liability.
+
+On a machine with no keyring the fallback is a `0600` file in the same config
+directory, and the API reports `secure: false` with the path. That is a
+downgrade, so it is stated rather than silent — a file mode is not a keyring, and
+saying so is the difference between a tradeoff and a surprise.
+
+Sending an empty key through Settings clears it. "Revoke the key I no longer
+want lying around" is a thing people need to do, so leaving the old one behind
+was not an option.
+
 ## Capture kinds that never reach a model
 
 Settings → AI, or `llm.never_use_ai_types` in `config.toml`:

@@ -18,6 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..config import TranscribeConfig
+from .keyring import resolve
 
 # #435: words the user typed over a transcript are the corrections — harvest
 # them into the whisper vocabulary. Common words are ignored; the ceiling is
@@ -436,9 +437,11 @@ class Transcriber:
             raise TranscriptionError(f"whisper failed: {exc}") from exc
         text = " ".join(p for p in parts if p).strip()
         speakers: list[str] = []
-        if self.cfg.diarize and self.cfg.hf_token:
+        # #139: config may hold only the "a key is stored" marker.
+        hf_token = resolve("transcribe.hf_token", self.cfg.hf_token or "")
+        if self.cfg.diarize and hf_token:
             try:
-                turns = _diarize_wav(wav_path, self.cfg.hf_token)
+                turns = _diarize_wav(wav_path, hf_token)
                 for w in words:
                     w["speaker"] = next((t["speaker"] for t in turns if t["start"] <= w["s"] < t["end"]), None)
                 speakers = sorted({t["speaker"] for t in turns})

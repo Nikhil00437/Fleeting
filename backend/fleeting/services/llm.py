@@ -157,7 +157,12 @@ def auth_headers(cfg: LLMConfig) -> dict[str, str]:
     Sent whenever a key is configured, regardless of provider: local servers
     ignore it, and an OpenAI-compatible gateway may sit behind any of them.
     """
-    key = (cfg.api_key or "").strip()
+    # #139: `cfg.api_key` may be a marker saying "a key is stored"; the real
+    # value lives in the keyring. Sending the marker is a 401 that looks like a
+    # bad key rather than a missing lookup.
+    from .keyring import resolve
+
+    key = resolve("llm.api_key", cfg.api_key or "").strip()
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 

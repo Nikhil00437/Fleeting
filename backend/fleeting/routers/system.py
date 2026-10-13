@@ -120,6 +120,18 @@ def backups_endpoint(request: Request) -> dict:
     }
 
 
+@router.get("/keyring")
+def keyring_status() -> dict:
+    """#139: where secrets are stored, and whether that store is a real one.
+
+    Ungated and secret-free by construction: it reports the backend *name* and
+    whether it is secure, never a value.
+    """
+    from ..services.keyring import status as _keyring_status
+
+    return _keyring_status()
+
+
 @router.get("/inventory")
 def inventory_endpoint(request: Request) -> dict:
     """#137: what is stored per category, and how big.
