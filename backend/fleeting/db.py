@@ -579,6 +579,67 @@ def new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+# How many pre-migration backups to keep. Three is enough to cover "the last
+# update did it", which is the only question anyone actually has.
+BACKUP_KEEP = 3
+
+
+def _backup_before_migration(db_path: str | Path, current: int) -> Path | None:
+    """Copy the database to `<name>.pre-v<N>.bak` before migrating past it.
+
+    Uses SQLite's backup API rather than `shutil.copy`, and that is the whole
+    point: the app runs in WAL mode, so the most recent commits live in the
+    `-wal` sidecar. Copying the main file alone produces a database that is
+    quietly missing the last writes — a backup that cannot restore the thing it
+    was taken for.
+
+    Best effort. A backup that fails to write must not stop the app from
+    starting; refusing to launch turns a recoverable problem into an outage,
+    and the migration itself is transactional, so the worst case is the same
+    as having no backup at all.
+    """
+    source = Path(db_path)
+    if not source.exists():
+        return None
+    target = source.with_name(f"{source.name}.pre-v{current}.bak")
+    try:
+        src = sqlite3.connect(str(source))
+        try:
+            dst = sqlite3.connect(str(target))
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+    except (sqlite3.Error, OSError) as exc:
+        log.warning("could not back up %s before migrating: %s", source, exc)
+        return None
+    _prune_backups(source, target.name)
+    return target
+
+
+def _prune_backups(source: Path, keep_name: str) -> None:
+    """Drop the oldest beyond `BACKUP_KEEP`.
+
+    Matching is on the `pre-v<N>` stem rather than a version number: after
+    several updates in a row the same N recurs, and comparing integers would
+    count four copies of one backup as four distinct ones.
+    """
+    try:
+        existing = sorted(
+            (p for p in source.parent.iterdir() if p.name.startswith(f"{source.name}.pre-v")),
+            key=lambda p: p.stat().st_mtime,
+        )
+    except OSError:
+        return
+    for stale in existing[:-BACKUP_KEEP]:
+        try:
+            stale.unlink()
+        except OSError:
+            log.debug("could not remove old backup %s", stale)
+
+
 class Database:
     """Thread-local connections against one SQLite file."""
 
@@ -612,6 +673,10 @@ class Database:
         explicit transaction makes a failed migration a no-op instead.
 
         DDL in SQLite is transactional, so this rollback is real.
+
+        #188: an existing database is copied first. This is the one moment the
+        app rewrites every row it owns with no undo, and `migrate()` has been
+        the site of two real incidents — see `_backup_before_migration`.
         """
         conn = self.conn
         conn.execute(
@@ -620,6 +685,8 @@ class Database:
         conn.commit()
         row = conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
         current = row["v"] or 0
+        if current > 0 and current < len(MIGRATIONS):
+            _backup_before_migration(self.path, current)
         for version, script in enumerate(MIGRATIONS, start=1):
             if version <= current:
                 continue

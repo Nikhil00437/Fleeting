@@ -351,14 +351,14 @@ ones because tooling and tests unblock everything after them.
 | 0.7 | Timeline & activity depth |
 | 0.8 | Reports, insights & charts |
 | 0.9 | Assistant & AI quality |
+| 0.18 | DX, testing, ops & ecosystem |
 
-**In progress — 0.18:** DX, testing and ops — CI and pre-commit, property tests
-for the markdown round-trip, golden snapshots for the prompts, a seeded demo
-database, browser end-to-end tests, generated audio fixtures, a chaos switch,
-structured logging, a diagnostics bundle and a runtime metrics panel.
+**In progress — 0.11:** privacy, security and portability — keyring-backed API
+keys, a panic button, per-source retention, an audit log, a network-egress
+self-check, encrypted backup and restore.
 
 **Still to come**, in no particular order: the desktop and CLI bundle (0.12),
-privacy and portability (0.11), vault and sharing (0.10), UI polish, theming,
+vault and sharing (0.10), UI polish, theming,
 a11y and i18n (0.13), capture-pipeline reliability (0.14), knowledge work and
 writing (0.15), habits and notifications (0.16), cross-device and mobile sync
 (0.17), a public contributor guide, a query console over the SQLite schema, an
