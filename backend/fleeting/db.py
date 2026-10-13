@@ -640,6 +640,12 @@ def new_id() -> str:
 BACKUP_KEEP = 3
 
 
+def _backup_index_path(db_path: str | Path) -> Path:
+    """The index lives beside the database it describes. Same directory means a
+    backup and its record travel together when you copy one somewhere safe."""
+    return Path(db_path).with_name("backups.index.jsonl")
+
+
 def _backup_before_migration(db_path: str | Path, current: int) -> Path | None:
     """Copy the database to `<name>.pre-v<N>.bak` before migrating past it.
 
@@ -671,6 +677,18 @@ def _backup_before_migration(db_path: str | Path, current: int) -> Path | None:
     except (sqlite3.Error, OSError) as exc:
         log.warning("could not back up %s before migrating: %s", source, exc)
         return None
+    # #457: recorded in a hash-chained index, so "is this the backup I made?" has
+    # an answer. Best effort like the backup itself — an index failure must not
+    # stop a migration, or turn a recoverable problem into a broken app.
+    try:
+        from .services.backup_index import append as _append_index
+
+        _append_index(
+            _backup_index_path(source), target, kind="pre-migration", version=current
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("could not add %s to the backup index", target.name, exc_info=True)
+
     _prune_backups(source, target.name)
     return target
 

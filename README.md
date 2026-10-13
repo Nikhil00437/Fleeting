@@ -239,6 +239,20 @@ without being read — a plugin folder someone sent you is data, not code.
 See `plugins/README.md` for the format and `plugins/notion-sync/` for a worked
 example.
 
+## Backups
+
+Every pre-migration backup (#188) is recorded in `backups.index.jsonl` beside the
+database, and `GET /api/backups` lists them with a verdict.
+
+The index is **hash-chained**: each entry carries the hash of the entry before
+it, so editing or removing one breaks every hash after it. A plain list of
+hashes would not help — an index is a file, and whoever replaces a backup can
+rewrite its row so the index still verifies.
+
+That detects accidental corruption, an interrupted write, and casual editing.
+It is **not** a signature and not encryption: anyone who can write the index can
+recompute the whole chain.
+
 ## What it stores
 
 `GET /api/inventory`, and Settings → **System** under Storage. Every category

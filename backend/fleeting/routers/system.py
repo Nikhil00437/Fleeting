@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from .. import __version__
 from ..events import sse_format
 from ..models import BenchmarkIn
+from ..main import _db_path
 from ..services.offline import report
 from ..services.preflight import Probe, check_all
 
@@ -99,6 +100,24 @@ def audit_log(request: Request, limit: int = 50, action: str | None = None) -> d
     Read-only by construction — an audit log you can write through is not one.
     """
     return {"entries": request.app.state.st.db.audit_log(limit=limit, action=action)}
+
+
+@router.get("/backups")
+def backups_endpoint(request: Request) -> dict:
+    """#457: what backups exist, and whether the index still describes them.
+
+    Read-only on purpose. Restoring a backup is a separate, deliberate act, and
+    an endpoint that both lists and restores invites a UI button one click away
+    from the wrong file.
+    """
+    from ..services.backup_index import read_all, verify
+    from ..db import _backup_index_path
+
+    index = _backup_index_path(_db_path())
+    return {
+        "backups": read_all(index),
+        "problems": verify(index),
+    }
 
 
 @router.get("/inventory")
