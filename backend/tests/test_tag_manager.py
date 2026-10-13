@@ -100,7 +100,7 @@ def test_tag_endpoints_publish_note_updated(client: TestClient, monkeypatch) -> 
 
     # Merge and delete endpoints publish the same way.
     client.post("/api/tags/merge", json={"from_tags": ["hydra"], "to": "cephalopod"})
-    client.post("/api/tags/delete", json={"tag": "cephalopod"})
+    client.post("/api/tags/delete", json={"tag": "cephalopod", "confirm": True})
     assert published.count("note.updated") == 3
 
 

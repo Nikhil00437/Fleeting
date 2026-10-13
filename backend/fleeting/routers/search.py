@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from ..models import NoteOut
 from ..services.semantic_search import hybrid_search
+from ..services.bulk import preview, require_confirm
 
 router = APIRouter(prefix="/api", tags=["search"])
 
@@ -153,12 +154,46 @@ def merge_tags(body: TagMergeIn, request: Request) -> dict:
 
 class TagDeleteIn(BaseModel):
     tag: str = Field(min_length=1, max_length=120)
+    """#455. Stripping a tag touches every note carrying it, so it takes the same
+    confirmation as any other bulk destructive call."""
+
+    confirm: bool = False
+
+
+def _tag_preview(st, tag: str) -> dict:
+    """Notes that carry this tag, so the number can be checked before it lands."""
+    rows = st.db.list_notes(tag=tag, limit=500) if _accepts_tag(st.db) else []
+    return preview(
+        len(rows),
+        [{"id": r["id"], "title": r.get("title") or (r.get("raw_text") or "")[:60]} for r in rows],
+        tag=tag,
+    )
+
+
+def _accepts_tag(db) -> bool:
+    """`list_notes` grew a `tag` filter later than this route; a database without
+    it still has to be able to delete a tag."""
+    import inspect
+
+    return "tag" in inspect.signature(db.list_notes).parameters
+
+
+@router.get("/tags/delete/preview")
+def delete_tag_preview(request: Request, tag: str = Query(min_length=1, max_length=120)) -> dict:
+    """#455. Never mutates."""
+    return _tag_preview(request.app.state.st, tag)
 
 
 @router.post("/tags/delete")
 def delete_tag(body: TagDeleteIn, request: Request) -> dict:
-    """#50: strip a tag from every note (notes themselves stay)."""
+    """#50: strip a tag from every note (notes themselves stay).
+
+    #455: without `confirm` this refuses with the count and a sample rather than
+    rewriting every note carrying the tag.
+    """
     st = request.app.state.st
+    detail = _tag_preview(st, body.tag)
+    require_confirm(body, body.confirm, detail)
     updated = st.db.delete_tag(body.tag)
     for note in updated:
         st.bus.publish("note.updated", note)

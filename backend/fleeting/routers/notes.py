@@ -13,8 +13,8 @@ from ..config import save_config
 from ..db import now_iso
 from ..events import EventBus
 from ..models import ClarifyIn, NoteOut, NoteUpdateIn, RegenerateIn, SnoozeIn
-from ..services import markdown
-from ..services import clarify
+from ..services import clarify, markdown
+from ..services.bulk import preview, require_confirm
 from ..services.embeddings import embed_note
 from ..services.fewshot import build_few_shot
 from ..services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
@@ -344,10 +344,45 @@ def trash_purge(note_id: str, request: Request) -> dict:
     return purge_note(note_id, request)
 
 
+class TrashEmptyIn(BaseModel):
+    """#455. Absent body and an empty trash both mean "not confirmed" — the
+    refusal is then a 409 carrying the preview, never a silent no-op."""
+
+    confirm: bool = False
+
+
+def _trash_preview(st) -> dict:
+    """What emptying the trash would cost, as titles you can recognise.
+
+    An id is not a sample. The point of this is that the person clicking can
+    tell whether what is about to go is what they think is in there.
+    """
+    rows = st.db.trashed_notes(limit=1000)
+    return preview(
+        len(rows),
+        [{"id": r["id"], "title": r.get("title") or (r.get("raw_text") or "")[:60]} for r in rows],
+        oldest=(rows[0].get("trashed_at") if rows else None),
+        newest=(rows[-1].get("trashed_at") if rows else None),
+    )
+
+
+@trash_router.get("/empty")
+def trash_empty_preview(request: Request) -> dict:
+    """#455. Never mutates, so it is safe for a UI to call on open."""
+    return _trash_preview(request.app.state.st)
+
+
 @trash_router.post("/empty")
-def trash_empty(request: Request) -> dict:
-    """Purge every trashed note immediately."""
+def trash_empty(request: Request, body: TrashEmptyIn | None = None) -> dict:
+    """Purge every trashed note. Requires `{"confirm": true}` when there is
+    anything to purge.
+
+    This endpoint was called as a probe once and destroyed a note that was
+    already in the trash. The confirmation is the fix; see `services/bulk.py`.
+    """
     st = request.app.state.st
+    detail = _trash_preview(st)
+    require_confirm(body, bool(body and body.confirm), detail)
     purged = 0
     for note in st.db.trashed_notes(limit=1000):
         st.db.delete_note(

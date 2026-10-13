@@ -5,6 +5,7 @@ import { AreaTrend, Bars, Ring, StackBar } from "./charts";
 import HeaderSparkline from "./HeaderSparkline";
 import NoteCard from "./NoteCard";
 import { runNoteAction } from "./actionRunner";
+import { describeBulkRefusal } from "./bulk";
 import { buildTagTree, flattenTagTree, normalizeTag, tagMatches } from "./tagTree";
 import TagManager from "./TagManager";
 import { inboxZeroProgress } from "./inboxZero";
@@ -305,6 +306,12 @@ export default function Inbox({
   }
 
   async function handleEmptyTrash() {
+    // #455. The button's own label says how many are in there, so this is a
+    // second chance rather than the only one — and the server refuses an
+    // unconfirmed call with the same numbers, so the two cannot disagree.
+    const preview = await api.trashPreview().catch(() => null);
+    const n = preview?.count ?? trashNotes?.length ?? 0;
+    if (!window.confirm(describeBulkRefusal(preview ?? { count: n, samples: [] }))) return;
     await runNoteAction({
       api,
       toast,

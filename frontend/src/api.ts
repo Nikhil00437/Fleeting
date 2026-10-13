@@ -37,6 +37,7 @@ import type {
   AssistantSuggestionsOut,
   ContextPreview,
   LlmTrace,
+  BulkPreview,
   PackListResponse,
   PreflightReport,HealthPanel,
   ProcessApp,
@@ -237,7 +238,16 @@ export const api = {
 
   trash: () => req<Note[]>("/trash"),
 
-  emptyTrash: () => req<{ ok: boolean; purged: number }>("/trash/empty", { method: "POST" }),
+  /** #455: the count and samples of what is in the trash. Never mutates. */
+  trashPreview: () => req<BulkPreview>("/trash/empty"),
+
+  /** #455: `confirm` is required — the server refuses with a 409 and a preview
+   * without it. Omitting it is how a delete does *not* happen. */
+  emptyTrash: () =>
+    req<{ ok: boolean; purged: number }>("/trash/empty", {
+      method: "POST",
+      body: JSON.stringify({ confirm: true }),
+    }),
 
   archiveNote: (id: string) => req<Note>(`/notes/${id}/archive`, { method: "POST" }),
   pinNote: (id: string) => req<Note>(`/notes/${id}/pin`, { method: "POST" }),

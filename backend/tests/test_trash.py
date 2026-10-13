@@ -60,7 +60,7 @@ def test_trash_empty_purges_everything(client):
     client.delete(f"/api/notes/{a['id']}")
     client.delete(f"/api/notes/{b['id']}")
 
-    assert client.post("/api/trash/empty").json()["purged"] == 2
+    assert client.post("/api/trash/empty", json={"confirm": True}).json()["purged"] == 2
     assert client.get("/api/trash").json() == []
     assert client.get(f"/api/notes/{a['id']}").status_code == 404
 

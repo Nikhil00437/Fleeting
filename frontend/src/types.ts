@@ -1181,3 +1181,13 @@ export interface PackListResponse {
   packs: Pack[];
   errors: string[];
 }
+
+/** #455 what a destructive bulk call would cost. The server sends this on a 409
+ * so the UI can render the confirmation from the refusal alone. */
+export interface BulkPreview {
+  count: number;
+  samples: { id: string; title: string }[];
+  oldest?: string | null;
+  newest?: string | null;
+  tag?: string;
+}
