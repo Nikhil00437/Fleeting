@@ -38,6 +38,7 @@ import type {
   ContextPreview,
   LlmTrace,
   BulkPreview,
+  OfflineReport,
   PackListResponse,
   PreflightReport,HealthPanel,
   ProcessApp,
@@ -874,6 +875,11 @@ export const api = {
     ),
 
   /** #100: which dependencies are missing, and how to fix each one. */
+  /** #460: what the app would reach for, and whether that leaves the machine.
+   * The SPA adds its own half — it is the only thing that can see the web font
+   * the page fetches from itself. */
+  offline: () => req<OfflineReport>("/offline"),
+
   preflight: () => req<PreflightReport>("/preflight"),
 
   /** #94: re-probe the provider. Always resolves — a failure is the answer. */

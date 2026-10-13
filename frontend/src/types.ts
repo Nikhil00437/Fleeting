@@ -1191,3 +1191,17 @@ export interface BulkPreview {
   newest?: string | null;
   tag?: string;
 }
+
+/** #460 what the app would reach for, and whether that leaves the machine. */
+export interface OfflineFeature {
+  name: string;
+  enabled: boolean;
+  /** "none" stays on this machine; "remote" leaves it. */
+  network: "none" | "remote";
+  detail: string;
+}
+
+export interface OfflineReport {
+  offline: boolean;
+  features: OfflineFeature[];
+}

@@ -11,8 +11,9 @@ import { api, type RuntimeMetrics } from "../../api";
 import { errorMessage } from "../settingsState";
 import { backfillProgress, describeBackfill } from "../backfill";
 import ChartPalettePicker from "../ChartPalettePicker";
-import type { HealthStatus, PreflightReport, Settings } from "../../types";
+import type { HealthStatus, OfflineReport, PreflightReport, Settings } from "../../types";
 import PreflightCard from "../PreflightCard";
+import { combine, describeOffline, remoteStylesheets } from "../offline";
 
 /** Diagnostics tab: /api/health telemetry and where the config lives. */
 export default function SystemTab({
@@ -44,6 +45,14 @@ export default function SystemTab({
   // question "what is missing?" is the first thing anyone opens Settings with.
   // `loadAll` is the refresh button's handle, so preflight re-runs with it.
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
+  // #460. Read after paint: the font stylesheet is in `document.styleSheets` by
+  // then, and reading it during render would miss it every time.
+  const [remoteHrefs, setRemoteHrefs] = useState<string[]>([]);
+  const [offlineReport, setOfflineReport] = useState<OfflineReport | null>(null);
+  useEffect(() => {
+    setRemoteHrefs(remoteStylesheets());
+    api.offline().then(setOfflineReport).catch(() => {});
+  }, []);
   const [preflightError, setPreflightError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -114,6 +123,22 @@ export default function SystemTab({
               >
                 <RefreshIcon className="h-3 w-3" /> Refresh
               </button>
+            </div>
+
+            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+              <p className="micro-label !text-[9px]">Network</p>
+              <p className="text-[11px] text-ink-200">
+                {describeOffline(combine(offlineReport, remoteHrefs))}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {combine(offlineReport, remoteHrefs).map((f) => (
+                  <li key={f.name} className="text-[10px] text-ink-500">
+                    <span className={f.network === "remote" ? "text-amber-300" : ""}>{f.name}</span>
+                    {" — "}
+                    {f.detail}
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <PreflightCard checks={preflight?.checks ?? null} error={preflightError ?? undefined} />

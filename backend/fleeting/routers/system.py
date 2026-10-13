@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from .. import __version__
 from ..events import sse_format
 from ..models import BenchmarkIn
+from ..services.offline import report
 from ..services.preflight import Probe, check_all
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -89,6 +90,16 @@ def preflight(request: Request) -> dict:
             ],
         }
     return check_all(probe)
+
+
+@router.get("/offline")
+def offline_status(request: Request) -> dict:
+    """#460: what this machine would reach for, and whether it leaves.
+
+    Deliberately ungated and cheap — it is the answer to "does this thing phone
+    home?", and that question should not require a config change to ask.
+    """
+    return report(request.app.state.st.cfg)
 
 
 @router.get("/health")

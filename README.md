@@ -239,6 +239,27 @@ without being read — a plugin folder someone sent you is data, not code.
 See `plugins/README.md` for the format and `plugins/notion-sync/` for a worked
 example.
 
+## What leaves your machine
+
+Settings → **System → Diagnostics** shows it, and `GET /api/offline` returns it.
+
+The answer for a default install is **not zero**, and the page says so:
+
+| Feature | Leaves the machine? |
+| --- | --- |
+| LLM & embeddings | only if you point them somewhere other than `127.0.0.1` |
+| Transcription | no — the model downloads once, then runs locally |
+| **YouTube capture** | **yes, and it is on by default** — `yt-dlp` fetches the video |
+| **Web fonts** | **yes, on every page load** — Inter and IBM Plex Mono come from `fonts.googleapis.com` |
+
+So "local-first" is accurate; "no network" is not. Turning YouTube capture off
+(`youtube.max_duration_min = 0`) removes one row. The fonts are the remaining
+one, and vendoring two woff2 files is what would close it.
+
+A loopback or `.local` address counts as local — Ollama on `127.0.0.1` is a
+socket, not a phone home — but a LAN address like `192.168.x.x` does leave the
+machine, so the classifier reads the address rather than the scheme.
+
 ## Hooks
 
 `~/.config/fleeting/hooks/*.py`, each defining `on_<event>(payload)` functions.
