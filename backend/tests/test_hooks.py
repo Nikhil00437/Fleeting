@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from repo import REPO_ROOT
 from fleeting.events import EventBus
 from fleeting.services.hooks import (
     HOOK_EVENTS,
@@ -270,7 +271,11 @@ def test_the_shipped_example_hook_is_a_valid_hook() -> None:
 
     found = discover(REPO_ROOT / "hooks")
     assert [(h.name, h.events) for h in found] == [
-        ("example_desk_log.py", ("note.created",))
+        ("example_desk_log.py", ("note.created",)),
+        (
+            "run_command.py",
+            ("note.created", "note.updated", "task.created", "task.updated", "dailylog.updated"),
+        ),
     ]
 
 
@@ -310,3 +315,139 @@ def test_every_event_in_the_docs_table_is_hookable() -> None:
     from fleeting.services.hooks import HOOK_EVENTS, _py_name
 
     assert documented == {f"on_{_py_name(e)}" for e in HOOK_EVENTS}
+
+
+# ---- #496: user-defined actions, as a shipped hook ----
+
+def _run_example(tmp_path, actions_toml, event="note.created", payload=None, env=None):
+    """Run the shipped `run_command.py` example against a temp actions file."""
+    import os
+    import subprocess
+    import sys as _sys
+
+    actions = tmp_path / "actions.toml"
+    # `None` means "leave whatever is already there" — needed to test an
+    # unreadable file, since writing it is what this helper normally does.
+    if actions_toml is not None:
+        actions.write_text(actions_toml, encoding="utf-8")
+    func = event.replace(".", "_")
+    script = f"""
+import json, os, pathlib, runpy, sys
+os.environ["FLEETING_ACTIONS"] = {str(actions)!r}
+os.environ["FLEETING_HOOK_OUT"] = {str(tmp_path / "ran.json")!r}
+mod = runpy.run_path({str(REPO_ROOT / "hooks" / "run_command.py")!r})
+mod["on_{func}"](json.loads({json.dumps(payload if payload is not None else {"id": "n1", "title": "Router fix"})!r}))
+"""
+    proc = subprocess.run([_sys.executable, "-c", script], capture_output=True, text=True,
+                          timeout=30, env={**os.environ, **(env or {})})
+    return proc, json.loads((tmp_path / "ran.json").read_text()) if (tmp_path / "ran.json").exists() else None
+
+
+def test_a_declared_command_runs_with_the_payload(tmp_path) -> None:
+    """#496: a shell command on note events, with no code written."""
+    out = tmp_path / "ran.txt"
+    proc, _ = _run_example(
+        tmp_path,
+        "[[action]]\n"
+        'event = "note.created"\n'
+        f'command = ["sh", "-c", "echo \\"$1\\" > {out}", "sh", "{{title}}"]\n',
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert out.read_text().strip() == "Router fix"
+
+
+def test_no_actions_file_is_not_an_error(tmp_path) -> None:
+    proc, _ = _run_example(tmp_path, "", env={"FLEETING_ACTIONS": str(tmp_path / "gone.toml")})
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_a_malformed_actions_file_is_reported_not_fatal(tmp_path) -> None:
+    """The most likely first-run mistake: a hand-written TOML with one typo."""
+    proc, _ = _run_example(tmp_path, "this is not toml {{{")
+    assert proc.returncode == 0
+    assert "toml" in proc.stderr.lower()
+
+
+def test_a_command_that_fails_does_not_raise(tmp_path) -> None:
+    proc, _ = _run_example(tmp_path, '[[action]]\nevent = "note.created"\ncommand = ["false"]\n')
+    assert proc.returncode == 0
+
+
+def test_a_command_is_never_run_through_a_shell(tmp_path) -> None:
+    """A note is user text. `{title}` is substituted into an argv *element*,
+    never into a shell string, so this note cannot become a command."""
+    marker = tmp_path / "pwned"
+    payload = {"id": "n1", "title": f"$(touch {marker})"}
+    proc, _ = _run_example(tmp_path, """
+[[action]]
+event = "note.created"
+command = ["sh", "-c", "echo hi"]
+""", payload=payload, env={})
+    assert proc.returncode == 0
+    assert not marker.exists()
+
+
+def test_an_unknown_event_is_ignored(tmp_path) -> None:
+    proc, _ = _run_example(tmp_path, '[[action]]\nevent = "note.deleted"\ncommand = ["false"]\n')
+    assert proc.returncode == 0
+
+
+def test_an_action_with_no_command_is_skipped(tmp_path) -> None:
+    proc, _ = _run_example(tmp_path, '[[action]]\nevent = "note.created"\n')
+    assert proc.returncode == 0
+
+
+def test_an_action_for_another_event_does_not_run(tmp_path) -> None:
+    """Exit code alone cannot tell: a wrong event, a failed command and a
+    command that never ran all leave the hook returning 0. The only way to see
+    the difference is for the command to leave a trace."""
+    marker = tmp_path / "ran"
+    proc, _ = _run_example(
+        tmp_path,
+        '[[action]]\nevent = "note.deleted"\n' + f'command = ["touch", "{marker}"]\n',
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert not marker.exists(), "an action for note.deleted ran on note.created"
+
+
+def test_a_failing_command_says_so_on_stderr(tmp_path) -> None:
+    proc, _ = _run_example(tmp_path, '[[action]]\nevent = "note.created"\ncommand = ["false"]\n')
+    assert proc.returncode == 0
+    assert "exited" in proc.stderr
+
+
+def test_a_hanging_command_is_killed_and_reported(tmp_path) -> None:
+    """The action's own `timeout` wins over the hook runner's 10s default, so a
+    wedged command cannot hold up a capture for a minute."""
+    import time
+
+    started = time.monotonic()
+    proc, _ = _run_example(
+        tmp_path,
+        '[[action]]\nevent = "note.created"\ncommand = ["sleep", "30"]\ntimeout = 1\n',
+    )
+    assert proc.returncode == 0
+    assert time.monotonic() - started < 20, "the sleep was not killed"
+    assert "timed out" in proc.stderr
+
+
+def test_an_unreadable_actions_file_is_reported_not_fatal(tmp_path) -> None:
+    """Hand-edited files get the wrong permissions. This runs on every note
+    write, so it must not be a traceback."""
+    actions = tmp_path / "actions.toml"
+    actions.write_text("[[action]]\nevent = \"note.created\"\n", encoding="utf-8")
+    actions.chmod(0o000)
+    try:
+        proc, _ = _run_example(tmp_path, None)
+    finally:
+        actions.chmod(0o644)
+    assert proc.returncode == 0, proc.stderr
+    assert "cannot read" in proc.stderr
+
+
+def test_the_docs_list_the_same_events_as_the_hook(tmp_path) -> None:
+    """The actions file uses the same event names as every other hook."""
+    import re
+    doc = (REPO_ROOT / "hooks" / "README.md").read_text(encoding="utf-8")
+    assert "actions.toml" in doc
+    assert re.search(r"event\s*=\s*\"note\.created\"", doc)

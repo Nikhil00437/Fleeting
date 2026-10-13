@@ -45,6 +45,33 @@ bomb wearing a feature's clothes.
 - **The event fires at most once per publish**, in filename order, so two hooks
   for one event run in a predictable sequence.
 
+## Running a command instead (no code)
+
+`run_command.py` in this folder does the same thing from a config file, so you
+can trigger a command without writing any Python. Copy it into your hooks folder
+alongside `actions.toml`:
+
+```toml
+# ~/.config/fleeting/actions.toml
+[[action]]
+event = "note.created"
+command = ["notify-send", "Fleeting", "{title}"]
+
+[[action]]
+event = "task.updated"
+command = ["notify-send", "Tasks changed"]
+timeout = 5
+```
+
+- `command` is an **argv list**, never a shell string. `{title}`, `{id}`,
+  `{type}` and `{created_at}` are substituted into argv *elements*, so a note
+  containing `$(rm -rf ~)` is an argument and not a command.
+- `timeout` is seconds and defaults to 10.
+- A command that fails, times out or does not exist prints to stderr and is
+  skipped. Nothing raises.
+- A missing or malformed `actions.toml` is a one-line message on stderr, not a
+  traceback — this file runs on every capture.
+
 ## These are your own code
 
 A hook runs with your full permissions — the same trust level as a shell alias.

@@ -244,6 +244,18 @@ and `hooks/example_desk_log.py` for a working one.
 These are your own code with your own permissions. Theme packs cannot install
 them.
 
+To trigger a **command** instead of writing Python, copy `hooks/run_command.py`
+into the same folder and declare actions in `~/.config/fleeting/actions.toml`:
+
+```toml
+[[action]]
+event = "note.created"
+command = ["notify-send", "Fleeting", "{title}"]
+```
+
+`command` is an argv list, never a shell string — `{title}` is substituted into an
+argv *element*, so a note containing `$(rm -rf ~)` is an argument, not a command.
+
 ## Themes & prompt packs
 
 A pack is one JSON file — a `theme` of CSS custom properties and a `prompts`
