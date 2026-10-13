@@ -40,6 +40,36 @@ def tag_prompt(tags: list[str]) -> str:
     )
 
 
+def merge_tags(user: list, model: list) -> list[str]:
+    """User tags first, model tags appended, deduplicated case-insensitively.
+
+    The pipeline used to write the model's tags over the column, so a capture
+    that arrived with `tags: ["work"]` came back tagged from its own text. The
+    user said what they meant; the model can only contribute what was missing —
+    which is also the #256 ranking, the user's own corrections above the
+    vocabulary.
+
+    Dedup is case-insensitive because `Work` and `work` are the same tag to
+    anyone reading the list, and keeping both looks like a bug in the list. The
+    *user's* casing wins, since theirs is the one they typed.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for source in (user, model):
+        for raw in source or []:
+            if not isinstance(raw, str):
+                continue
+            tag = raw.strip()
+            if not tag:
+                continue
+            key = tag.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(tag)
+    return out
+
+
 def apply_preferred_tags(tags: list[str], vocabulary: list[str]) -> list[str]:
     """Snap near-miss tags onto the vocabulary, dropping the duplicates.
 

@@ -24,7 +24,7 @@ from .services.claims import unverified, verify_claims
 from .services.embeddings import embed_note
 from .services.fewshot import build_few_shot
 from .services.prompt_templates import template_for
-from .services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt
+from .services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt, merge_tags
 from .services.transcribe import Transcriber, TranscriptionError
 from .services.youtube import YouTubeError, ingest as yt_ingest
 
@@ -230,6 +230,11 @@ class Processor:
             # #257: enforced, not just suggested. A sensitive note is skipped
             # here too — its tags came from keywords, and silently rewriting
             # them would misdescribe where they came from.
+            # Tags supplied at capture outrank anything the model suggests, so
+            # they are merged in rather than overwritten. #256's ranking —
+            # the user's own corrections above the vocabulary — holds here too.
+            enriched = {**enriched, "tags": merge_tags(note.get("tags") or [], enriched["tags"])}
+
             vocab = preferred_tags(self.cfg)
             if vocab and source.get("enrichment") != "heuristic-sensitive":
                 enriched = {**enriched, "tags": apply_preferred_tags(enriched["tags"], vocab)}
