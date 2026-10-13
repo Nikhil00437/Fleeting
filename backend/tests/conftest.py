@@ -30,6 +30,7 @@ REAL_PATHS = (
     # hooks dir would *run your code* on every event.
     "PACKS_DIR",
     "HOOKS_DIR",
+    "PLUGINS_DIR",
 )
 _REAL = {name: fcfg.__dict__[name] for name in REAL_PATHS}
 

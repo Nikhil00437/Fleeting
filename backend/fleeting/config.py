@@ -42,6 +42,8 @@ LOG_PATH = DATA_DIR / "fleeting.log"
 # still point at the user's real ~/.config during a test run.
 PACKS_DIR = CONFIG_PATH.parent / "packs"
 HOOKS_DIR = CONFIG_PATH.parent / "hooks"
+# #499: plugins are folders of files, one level like packs and hooks.
+PLUGINS_DIR = CONFIG_PATH.parent / "plugins"
 
 
 def packs_dir() -> Path:
@@ -52,6 +54,10 @@ def packs_dir() -> Path:
 
 def hooks_dir() -> Path:
     return Path(HOOKS_DIR)
+
+
+def plugins_dir() -> Path:
+    return Path(PLUGINS_DIR)
 
 
 @dataclass

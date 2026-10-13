@@ -224,6 +224,21 @@ deploy/                systemd user unit, .desktop entry, app icon
 bin/                   flee (CLI capture), fleeting-app (desktop launcher)
 ```
 
+## Plugins
+
+A folder in `~/.config/fleeting/plugins/` with a `plugin.json` declaring capture
+sources, enrichers and views. `GET /api/plugins` lists them and reports what is
+wrong with the ones that will not load.
+
+The manifest is a **catalogue, not an execution vector**. Running things is
+[hooks](#hooks) and `actions.toml`, which are opt-in per file; a manifest only
+*names* a hook, and that hook still has to be installed by you. The loader copies
+only keys it knows, so a `"command"` or `"script"` field in a manifest is dropped
+without being read — a plugin folder someone sent you is data, not code.
+
+See `plugins/README.md` for the format and `plugins/notion-sync/` for a worked
+example.
+
 ## Hooks
 
 `~/.config/fleeting/hooks/*.py`, each defining `on_<event>(payload)` functions.

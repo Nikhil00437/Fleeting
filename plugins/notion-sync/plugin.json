@@ -1,0 +1,25 @@
+{
+  "name": "Notion Sync",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "Sends each capture to a Notion page and tags the note with the page id",
+  "author": "fleeting",
+  "provides": {
+    "capture_sources": [
+      {
+        "name": "notion",
+        "title": "Notion page",
+        "description": "A capture that becomes a Notion page as well as a note",
+        "hook": "example_desk_log.py"
+      }
+    ],
+    "enrichers": [
+      {
+        "name": "notion-tags",
+        "description": "Adds the Notion page id to the note's tags",
+        "hook": "example_desk_log.py"
+      }
+    ],
+    "views": []
+  }
+}
