@@ -7,6 +7,7 @@ import logging
 import time
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 
 from .. import __version__
@@ -14,6 +15,13 @@ from ..events import sse_format
 from ..models import BenchmarkIn
 
 router = APIRouter(prefix="/api", tags=["system"])
+
+
+class SqlIn(BaseModel):
+    """#295. `limit` is clamped again in the service; the default is for humans."""
+
+    sql: str
+    limit: int = 200
 
 log = logging.getLogger("fleeting.system")
 
@@ -243,3 +251,31 @@ async def runtime_metrics(request: Request, hours: int = 24) -> dict:
     from ..services.runtime_metrics import summarise
 
     return summarise(st.db, hours=max(1, min(int(hours), 24 * 30)))
+
+
+@router.post("/sql")
+async def run_sql(body: SqlIn, request: Request) -> dict:
+    """#295: a read-only console over the app's own database.
+
+    Gated behind `[experimental].sql_console` because it is the most powerful
+    thing in the app. Read-only is enforced twice over — a separate `mode=ro`
+    connection *and* an authorizer — because read-only mode does not stop
+    ATTACH, and an attached database opens read-write. See
+    `services/sqlite_console.py`; the tests there are mostly attempts to break
+    it, because that is the only evidence that works.
+    """
+    st = request.app.state.st
+    from . import require_experimental  # #195
+
+    require_experimental(st.cfg, "sql_console")
+
+    from ..config import DB_PATH
+    from ..services.sqlite_console import QueryError, run_readonly
+
+    try:
+        return run_readonly(DB_PATH, body.sql, limit=body.limit)
+    except QueryError as exc:
+        # 400: the query was refused or would not run. Not 403 — the endpoint
+        # exists, it is the query that is the problem, and the message is the
+        # useful part.
+        raise HTTPException(400, str(exc)) from exc

@@ -143,6 +143,7 @@ default; turn one on in `~/.config/fleeting/config.toml`:
 tone = true            # GET  /api/notes/tone          urgency/sentiment ordering
 benchmark = true       # POST /api/benchmark/run      score models on your own notes
 pinned_context = true  # notes pinned into an assistant thread
+sql_console = true      # POST /api/sql                 read-only SELECT over the schema
 ```
 
 `GET /api/health` reports which are on. They are gated with a **404** rather than

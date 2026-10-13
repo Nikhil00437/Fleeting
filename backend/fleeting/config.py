@@ -201,6 +201,10 @@ class ExperimentalConfig:
     tone: bool = False  # GET /api/notes/tone — #259 urgency/sentiment ordering
     benchmark: bool = False  # POST /api/benchmark/run — #264 model scoring
     pinned_context: bool = False  # #101 notes pinned into an assistant thread
+    # #295: runs a read-only SELECT against the real database. Off by
+    # default because it is the most powerful thing in the app; the
+    # sandbox is two independent guards, not one.
+    sql_console: bool = False
 
 
 @dataclass
