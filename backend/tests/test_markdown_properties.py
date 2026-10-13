@@ -192,7 +192,17 @@ def _cases():
 # Built once and reused. The generator used to be called per test, and the id
 # list was hardcoded to 1024 — so adding a tag set broke collection instead of
 # adding coverage.
-CASES = list(_cases())
+# The corpus is the full 8 x 8 x 6 x 4 = 1536 product. That is exhaustive by
+# construction, and it was 67% of the entire backend suite.
+#
+# The ambiguity this file guards lives in **title vs body**: a title containing
+# `---` against a body containing `---` is the collision that has actually cost
+# this codebase a bug, and that is the 8 x 8 axis. Tags and task items do not
+# interact with either, so they are crossed with one representative set here and
+# then each exhausted on its own below.
+#
+# Every fragment that appears anywhere in the corpus still appears below.
+CASES = [row for i, row in enumerate(_cases()) if i % 24 == 0]
 
 
 # ---- the property ---------------------------------------------------------
@@ -352,3 +362,32 @@ def test_an_attack_title_never_reaches_the_path(title: str) -> None:
     assert "\\" not in name
     assert ".." not in name
     assert name.endswith(".md")
+
+# ---- the tag and task axes, on their own ---------------------------------
+#
+# Crossed with one fixed note rather than with every title and body, because
+# neither interacts with them. Each set is still exercised exhaustively, and the
+# mixed-case sets are here for a reason: every original tag was lowercase, so a
+# renderer that lowercased them passed the whole file. Found by mutation.
+
+
+@pytest.mark.parametrize("tags", TAG_SETS, ids=range(len(TAG_SETS)))
+def test_every_tag_set_survives_on_its_own(tags: list[str]) -> None:
+    note = _note("Tagged note", "a body with no interesting markdown", tags, [], 0)
+    parsed = parse_note_md(render_note_md(note))
+    assert sorted(parsed.get("tags") or []) == sorted(tags)
+
+
+@pytest.mark.parametrize("tasks", TASK_SETS, ids=range(len(TASK_SETS)))
+def test_every_task_set_survives_on_its_own(tasks: list[dict]) -> None:
+    note = _note("Tasked note", "a body", [], tasks, 0)
+    parsed = parse_note_md(render_note_md(note))
+    got = [
+        {"text": a.get("text"), "done": bool(a.get("done")), "priority": a.get("priority")}
+        for a in (parsed.get("action_items") or [])
+    ]
+    want = [
+        {"text": a.get("text"), "done": bool(a.get("done")), "priority": a.get("priority")}
+        for a in tasks
+    ]
+    assert got == want

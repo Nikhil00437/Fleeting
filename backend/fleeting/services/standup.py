@@ -14,7 +14,7 @@ from typing import Any
 
 from ..config import Config, expand_path
 from ..db import Database, _row_to_task
-from .calendar_svc import date_tag
+from .calendar_svc import date_tag, now
 from .dailylog import fmt_secs, generate_with_llm
 from .files_activity import collect_git_subjects
 from .whatnow import _blocked_ids
@@ -45,7 +45,12 @@ def collect_standup_data(
     day: str | None = None,
 ) -> dict[str, Any]:
     """Gather all raw material for a daily standup."""
-    target_day = day or date_tag()
+    # `date_tag` takes the timestamp to convert; it is not a "today" helper.
+    # Calling it bare raised TypeError and made `GET /api/activity/standup` and
+    # `POST /api/activity/standup/generate` return 500 — a route nobody had
+    # called. Routed through `calendar_svc.now()` so the day is the user's, not
+    # the box's (#443).
+    target_day = day or date_tag(now().isoformat())
     prev_day = _previous_workday(target_day, db)
 
     # 1. Yesterday's completed tasks

@@ -13,8 +13,8 @@ cd frontend && bun run dev    # vite on :5173, proxies /api
 Three gates, all local, all fast:
 
 ```bash
-cd backend && uv run pytest -q                       # ~5.8k, ~70s
-cd frontend && bun run test                          # ~535, ~10s
+cd backend && uv run pytest -q                       # 632, ~7s
+cd frontend && bun run test                          # 188, ~1s
 cd frontend && bun run build                         # tsc -b && vite build
 
 cd frontend && bun run test:e2e                      # 14 browser tests
@@ -24,17 +24,43 @@ cd frontend && bun run test:e2e                      # 14 browser tests
 :7427. It is hermetic — no model, no activity collector, no vault writes — so it
 needs nothing but the repo.
 
+## The test suite is a floor, not a ceiling
+
+820 tests, deliberately, and the shape matters more than the count.
+
+- **`tests/test_routes_smoke.py` holds 233 of them** — one assertion for each of
+  the 233 API operations, proving every route is wired, guarded by the bearer
+  token and the origin check, and not returning 500. The table is generated from
+  the OpenAPI spec by `tests/_gen_route_table.py` and **committed**, so a route
+  that disappears fails the suite instead of quietly shrinking it.
+- **Security, isolation and doc guards are kept whole** — `test_auth`,
+  `test_csrf`, `test_no_real_writes`, `test_no_remote_assets`,
+  `test_readme_roadmap`, `test_architecture_doc`, `test_contributing_guide`.
+  These have caught real drift repeatedly and are the cheapest insurance here.
+- **`test_markdown_properties.py` is a sampled corpus**, not the full
+  cross-product. Every fragment still appears; the axes that do not interact are
+  exhausted separately.
+
+What was cut, and what it costs: roughly 200 granular tests per feature. The
+floor suite found two real 500s within a minute of being written
+(`/api/activity/standup` and `GET /api/prompt-templates/{target}`), both of which
+had been broken in the shipped app. But it cannot tell you *what* a route
+returns — only that it is wired. **A regression in a response body shape, a
+failure path, or a UI component will not be caught here.** If you change a route
+and something downstream looks wrong, the route smoke test will stay green. Add
+a test when you fix something, and expect to be the only one.
+
 ## Before you open a PR
 
 **Write the test first, and watch it fail.** Not as ritual — because a test
 written after the code tends to assert what the code happens to do, and passes
-against a broken implementation. Several tests here were written, mutated the
-implementation, and turned out to be rubber stamps.
+against a broken implementation.
 
 **Then check the test has teeth by breaking the code on purpose.** Delete the
 guard, rename the event, replace the median with a mean. If the suite stays
-green, the test was not testing anything. This has found more real bugs this
-session than reading the diff ever did.
+green, the test was not testing anything. This has found more real bugs than
+reading the diff ever did, and it matters more here than it used to: with a
+floor suite, an unmarked test is the *only* test.
 
 **One logical change per commit.** Conventional commits: `feat(inbox):`,
 `fix(processes):`, `refactor(ui):`, `chore:`, `docs:`.

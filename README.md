@@ -389,8 +389,8 @@ writes. No API key, no network: it reads the same SQLite file the app does.
 ## Tests
 
 ```bash
-cd backend && uv run pytest                  # ~5.8k tests
-cd frontend && bun run test                  # ~535 tests
+cd backend && uv run pytest                  # 632 tests, ~7s (a floor suite: 233 are one-per-route)
+cd frontend && bun run test                  # 188 tests, ~1s
 cd frontend && bun run test:e2e              # 14 browser tests, needs the seeded demo
 ```
 

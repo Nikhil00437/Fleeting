@@ -53,11 +53,18 @@ def test_the_test_counts_are_roughly_right() -> None:
 
     The README claimed 235 backend tests for a long time against a real 5.8k,
     which is the kind of number a reader trusts without checking.
+
+    Accepts both shapes the claim has taken: `~5.8k` while the count was
+    approximate, and a plain `632 tests` once it was small enough to state
+    exactly.
     """
     readme = README.read_text(encoding="utf-8")
-    match = re.search(r"# ~([\d.]+)k tests", readme)
-    assert match, "the README no longer states a backend test count"
-    claimed = float(match.group(1)) * 1000
+    thousands = re.search(r"# ~([\d.]+)k tests", readme)
+    exact = re.search(r"# ([\d,]+) tests", readme)
+    assert thousands or exact, "the README no longer states a backend test count"
+    claimed = (
+        float(thousands.group(1)) * 1000 if thousands else float(exact.group(1).replace(",", ""))
+    )
     files = len(list((BACKEND / "tests").glob("test_*.py")))
     assert files, "no test files found at all"
     # Asserted as tests-per-file, because a file count alone says nothing.

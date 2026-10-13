@@ -55,7 +55,13 @@ def all_templates(request: Request) -> list[dict]:
 @templates_router.get("/{target}")
 def one_template(target: str, request: Request) -> dict:
     db = request.app.state.st.db
-    text, meta = get_template(db, target)  # raises ValueError for a bad target
+    # The PUT and DELETE siblings below already translate this into a 404. GET
+    # did not, so an unknown target was a 500 — a client mistake reported as a
+    # server fault, which is the one thing a status code should never do.
+    try:
+        text, meta = get_template(db, target)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
     return {
         "target": target,
         "body": text,
