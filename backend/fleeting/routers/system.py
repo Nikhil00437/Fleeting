@@ -92,6 +92,15 @@ def preflight(request: Request) -> dict:
     return check_all(probe)
 
 
+@router.get("/audit")
+def audit_log(request: Request, limit: int = 50, action: str | None = None) -> dict:
+    """#140: what changed and what was destroyed, newest first.
+
+    Read-only by construction — an audit log you can write through is not one.
+    """
+    return {"entries": request.app.state.st.db.audit_log(limit=limit, action=action)}
+
+
 @router.get("/offline")
 def offline_status(request: Request) -> dict:
     """#460: what this machine would reach for, and whether it leaves.

@@ -383,6 +383,8 @@ def trash_empty(request: Request, body: TrashEmptyIn | None = None) -> dict:
     st = request.app.state.st
     detail = _trash_preview(st)
     require_confirm(body, bool(body and body.confirm), detail)
+    # #140: recorded *after* it happened and only if it did, so the log cannot
+    # claim a purge that never ran. Count, not titles — see `record_audit`.
     purged = 0
     for note in st.db.trashed_notes(limit=1000):
         st.db.delete_note(
@@ -391,6 +393,8 @@ def trash_empty(request: Request, body: TrashEmptyIn | None = None) -> dict:
         markdown.remove_note(st.cfg.paths, note)
         st.bus.publish("note.deleted", {"id": note["id"]})
         purged += 1
+    if purged:
+        st.db.record_audit("notes.purge", "trash", {"count": purged})
     return {"ok": True, "purged": purged}
 
 

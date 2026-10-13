@@ -111,6 +111,23 @@ def _check_vault_writable(vault_dir: str) -> bool:
         return False
 
 
+def _diff_settings(before: dict, after: dict) -> dict:
+    """What actually changed: `{api_field: {from, to}}`.
+
+    Diffing the *payload* rather than the request body is deliberate. The API
+    uses flat names (`llm_api_key`) that are not attributes of the config, and
+    `_settings_payload` is the one place that already knows the mapping. It also
+    gives the diff the effective value, so a no-op save produces no row — a log
+    full of "setting changed to what it already was" answers nothing.
+    """
+    out = {
+        key: {"from": before.get(key), "to": value}
+        for key, value in after.items()
+        if key in before and before[key] != value
+    }
+    return out
+
+
 @router.get("")
 def get_settings(request: Request) -> dict:
     return _settings_payload(request)
@@ -120,6 +137,7 @@ def get_settings(request: Request) -> dict:
 async def update_settings(body: SettingsIn, request: Request) -> dict:
     st = request.app.state.st
     cfg = st.cfg
+    before = _settings_payload(request)  # #140: diffed against the result below
     if body.host is not None:
         cfg.server.host = body.host.strip() or cfg.server.host
     if body.port is not None:
@@ -216,8 +234,15 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
     if body.activity_retention_days is not None:
         cfg.activity.retention_days = body.activity_retention_days
 
+    # #140: audit the *diff*, not the request. This endpoint receives every
+    # field the caller sent, so auditing the body would record values that did
+    # not change and, for a credential, record a secret at all.
+    after = _settings_payload(request)
+    changed = _diff_settings(before, after)
     save_config(cfg)
-    return _settings_payload(request)
+    for field, delta in changed.items():
+        st.db.record_audit("settings.update", field, delta)
+    return after
 
 
 @router.post("/test-llm")

@@ -15,6 +15,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from .services.query_parser import (
     ParsedQuery,
@@ -467,6 +468,24 @@ MIGRATIONS: list[str] = [
       at TEXT NOT NULL
     );
     """,
+    # v29 — #140 audit log of settings changes and destructive actions. A new
+    # standalone table, so plain SQL: no ALTER, and nothing here can trip the
+    # "a bare ALTER aborts the whole chain" trap an older database would hit.
+    #
+    # `detail` is a JSON object whose values are already redacted at write time.
+    # It is deliberately *not* a copy of the affected rows — an audit log that
+    # stored what it acted on would be a second copy of the user's notes in a
+    # place nobody expects to find one.
+    """
+    CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT NOT NULL DEFAULT '',
+        detail TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log(at DESC);
+    """,
 ]
 
 
@@ -551,6 +570,8 @@ _ACTIVITY_FTS_TRIGGERS: tuple[tuple[str, str], ...] = (
 )
 
 
+
+
 NOTE_COLUMNS = frozenset({
     "type", "title", "summary", "raw_text", "tags", "action_items", "source",
     "audio_path", "status", "error", "pinned", "archived",
@@ -562,6 +583,41 @@ NOTE_COLUMNS = frozenset({
 
 # query_log LRU cap (v18) — a local single-user inbox never needs more.
 QUERY_LOG_CAP = 500
+# A config field whose name contains one of these is treated as a credential.
+# Matching on a substring rather than an exact list catches `api_key`,
+# `llm.api_token`, `hf_token` and whatever the next one is called, without a
+# code change — and the cost of a false positive is one redacted log line.
+_SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "credential")
+
+
+def _is_secret(target: str) -> bool:
+    leaf = target.rsplit(".", 1)[-1].lower()
+    return any(hint in leaf for hint in _SECRET_HINTS)
+
+
+def _redact_audit_detail(target: str, detail: Any) -> Any:
+    """Replace credential values with a marker, keeping the shape.
+
+    The value is the only thing removed. Dropping the whole entry instead would
+    erase the record that the key *changed*, which is the part someone reads an
+    audit log for.
+    """
+    if isinstance(detail, dict) and _is_secret(target):
+        return {k: ("<set>" if v not in (None, "", []) else v) for k, v in detail.items()}
+    if not isinstance(detail, dict):
+        # Never let an unexpected shape stop the write; a log line that records
+        # the action is worth more than one that records the payload.
+        return {"value": str(detail)[:200]} if detail is not None else {}
+    return detail
+
+
+# #140: enough history to answer "what happened at 3am", not an archive. The
+# oldest go first, because the question that brings someone to an audit log is
+# almost always about something recent.
+AUDIT_CAP = 500
+# What one read may return. Lower than the storage cap on purpose — see
+# `audit_log`.
+AUDIT_QUERY_CAP = 200
 # llm_traces cap (#112) — enough history to audit a bad answer, not enough to
 # grow without bound. Each row carries the full prompt context, so this is the
 # one table where size actually matters.
@@ -1631,6 +1687,58 @@ class Database:
             {"limit": max(1, min(int(limit), 100))},
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- audit log (#140) ------------------------------------------------
+
+    def record_audit(
+        self, action: str, target: str = "", detail: dict | None = None
+    ) -> None:
+        """Append one entry. Never raises — an audit log that can stop you
+        deleting a note has inverted its own priority.
+
+        Values are redacted *by shape of the target*, not by a list of key
+        names: `settings.update` writes whatever the caller changed, and a
+        denylist is a race against the next secret someone adds to the config.
+        A field whose name looks like a credential keeps the fact that it
+        changed and loses the value, which is the part anyone actually needs.
+        """
+        payload = _redact_audit_detail(target, detail)
+        self.execute(
+            "INSERT INTO audit_log (at, action, target, detail) VALUES (?, ?, ?, ?)",
+            (now_iso(), str(action)[:64], str(target)[:120], json.dumps(payload, default=str)),
+        )
+        self.execute(
+            """
+            DELETE FROM audit_log WHERE id IN (
+              SELECT id FROM audit_log ORDER BY id DESC LIMIT -1 OFFSET :cap
+            )
+            """,
+            {"cap": AUDIT_CAP},
+        )
+        self.commit()
+
+    def audit_log(self, limit: int = 50, action: str | None = None) -> list[dict]:
+        sql = "SELECT at, action, target, detail FROM audit_log"
+        params: dict = {}
+        if action:
+            sql += " WHERE action = :action"
+            params["action"] = action
+        # `id DESC`, not `at DESC`: several entries can share a timestamp to the
+        # second, and ordering by `at` alone interleaves them unpredictably.
+        sql += " ORDER BY id DESC LIMIT :limit"
+        # Deliberately *lower* than AUDIT_CAP. At the same value the two are
+        # indistinguishable — the storage cap already trims to 500, so a query
+        # clamp of 500 could not be tested and would be untested code.
+        params["limit"] = max(1, min(int(limit), AUDIT_QUERY_CAP))
+        out = []
+        for row in self.execute(sql, params).fetchall():
+            item = dict(row)
+            try:
+                item["detail"] = json.loads(item["detail"])
+            except (ValueError, TypeError):
+                pass  # a malformed row is still worth showing
+            out.append(item)
+        return out
 
     # ---- entity aliases (#414/#417) ----------------------------------
     # User-stated, never inferred: a wrong merge of two real people is

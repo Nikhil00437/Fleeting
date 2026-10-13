@@ -197,6 +197,9 @@ def delete_tag(body: TagDeleteIn, request: Request) -> dict:
     updated = st.db.delete_tag(body.tag)
     for note in updated:
         st.bus.publish("note.updated", note)
+    if updated:
+        # #140: the tag name and the count, never the notes it came from.
+        st.db.record_audit("tags.delete", body.tag, {"updated": len(updated)})
     return {"ok": True, "updated": len(updated)}
 
 
