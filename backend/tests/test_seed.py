@@ -123,10 +123,23 @@ def test_tasks_have_priorities_and_due_dates(db: Database) -> None:
 
 
 def test_two_fresh_databases_get_byte_identical_rows(tmp_path) -> None:
+    """Seeding is separated by more than a second on purpose.
+
+    Every wall-clock default in the seeding path — `insert_note`'s `updated_at`,
+    `insert_task`'s parent re-sync, and the `created_at` of a task promoted out
+    of a note's action_items — has second resolution. Two seeds that happen to
+    land in the same second produced identical databases, which is why this
+    test passed for as long as it did while `scripts/demo.sh` quietly wrote a
+    different database on every run. Sleeping past the boundary makes the
+    flakiness a failure instead of a coin flip.
+    """
+    import time
+
     a, b = Database(str(tmp_path / "a.db")), Database(str(tmp_path / "b.db"))
     for d in (a, b):
         d.migrate()
     seed_demo(a)
+    time.sleep(1.1)
     seed_demo(b)
     for table in ("notes", "tasks", "activity"):
         rows_a = a.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()

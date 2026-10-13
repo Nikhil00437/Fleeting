@@ -859,7 +859,7 @@ class Database:
         self.commit()
         if note.get("action_items"):
             self._sync_tasks_from_note(note["id"], note["action_items"])
-            self._sync_note_action_items(note["id"])
+            self._sync_note_action_items(note["id"], note.get("updated_at"))
         return self.get_note(note["id"])  # type: ignore[return-value]
 
     # Version history keeps the last N content snapshots per note; edits are
@@ -2218,8 +2218,15 @@ class Database:
                 )
         self.commit()
 
-    def _sync_note_action_items(self, note_id: str) -> None:
-        """Keep parent note's action_items JSON column in sync with tasks table."""
+    def _sync_note_action_items(self, note_id: str, ts: str | None = None) -> None:
+        """Keep parent note's action_items JSON column in sync with tasks table.
+
+        `ts` is the caller's `updated_at` when there is one. Bumping to
+        wall-clock here discarded whatever the caller had set, which made
+        `seed_demo()` produce a different database on every run — two seeds a
+        second apart differed in every note, so the seeded demo could not be
+        diffed against the last one.
+        """
         rows = self.execute(
             """
             SELECT id, text, done, priority, due_date, repo, completed_at
@@ -2245,7 +2252,7 @@ class Database:
             "UPDATE notes SET action_items = :items, updated_at = :ts WHERE id = :id",
             {
                 "items": json.dumps(items, ensure_ascii=False),
-                "ts": now_iso(),
+                "ts": ts or now_iso(),
                 "id": note_id,
             },
         )
@@ -2266,6 +2273,13 @@ class Database:
             for r in self.execute("SELECT * FROM tasks WHERE note_id = ?", (note_id,)).fetchall()
         }
         seen_ids = set()
+        # A task promoted out of a note's action_items is as old as the note.
+        # Defaulting it to wall-clock made re-syncing a months-old note mint
+        # tasks stamped "now", and made the seeded demo differ on every run.
+        parent = self.execute(
+            "SELECT created_at FROM notes WHERE id = ?", (note_id,)
+        ).fetchone()
+        parent_created = (parent["created_at"] if parent else None) or now_iso()
 
         for it in items:
             if isinstance(it, str):
@@ -2293,7 +2307,9 @@ class Database:
             repo = (it.get("repo") or "").strip().lower() or None
             completed_at = it.get("completed_at")
             if done and not completed_at:
-                completed_at = existing.get(full_id, {}).get("completed_at") or now_iso()
+                completed_at = existing.get(full_id, {}).get("completed_at") or (
+                    parent_created if done else None
+                )
             elif not done:
                 completed_at = None
 
@@ -2329,7 +2345,7 @@ class Database:
                         "priority": priority,
                         "due_date": due_date,
                         "repo": repo,
-                        "created_at": it.get("created_at") or now_iso(),
+                        "created_at": it.get("created_at") or parent_created,
                         "completed_at": completed_at,
                     },
                 )
@@ -2436,7 +2452,13 @@ class Database:
                 if row and row["blocked_by"]:
                     frontier.extend(p.strip() for p in row["blocked_by"].split(",") if p.strip())
 
-    def insert_task(self, task: dict) -> dict:
+    def insert_task(self, task: dict, sync_ts: str | None = None) -> dict:
+        """`sync_ts` is stamped on the parent note when its action_items are
+        re-synced. Left unset it is wall-clock, which is right in production —
+        adding a task genuinely changed the note. The demo seeder passes the
+        note's own `updated_at` so two seeded databases are byte-identical
+        instead of differing by however long the seeding took.
+        """
         task_id = task.get("id") or new_id()
         note_id = task.get("note_id")
         if not note_id:
@@ -2494,7 +2516,7 @@ class Database:
             },
         )
         self.commit()
-        self._sync_note_action_items(note_id)
+        self._sync_note_action_items(note_id, sync_ts)
         return self.get_task(task_id)  # type: ignore[return-value]
 
     def get_task(self, task_id: str) -> dict | None:

@@ -105,6 +105,12 @@ TAG_SETS = (
     ["homelab"],
     ["homelab", "network", "router"],
     ["has space", "hash#inside", "dash-inside"],
+    # Mixed case, because people write `#Router`. Every tag above was already
+    # lowercase, so a renderer that lowercased them was invisible: mutating
+    # `f"  - {t}"` to `f"  - {t.lower()}"` passed the whole file. Verified by
+    # mutation, not assumed.
+    ["Router", "NeedsReview"],
+    ["MiXeD CaSe", "UPPER"],
 )
 
 TASK_SETS = (
@@ -173,9 +179,9 @@ def _expected_body(body: str) -> str:
 def _cases():
     """Every combination of the small sets — exhaustive, not sampled.
 
-    8 x 8 x 4 x 4 = 1024 cases, which runs in under a second and leaves no
-    gap a random draw could miss. Randomness is then only used to build the
-    adversarial *fragment* cases below.
+    Runs in well under a second and leaves no gap a random draw could miss.
+    Randomness is then only used to build the adversarial *fragment* cases
+    below.
     """
     for i, (title, body, tags, tasks) in enumerate(
         itertools.product(TITLES, BODIES, TAG_SETS, TASK_SETS)
@@ -183,31 +189,35 @@ def _cases():
         yield _note(title, body, tags, tasks, i)
 
 
+# Built once and reused. The generator used to be called per test, and the id
+# list was hardcoded to 1024 — so adding a tag set broke collection instead of
+# adding coverage.
+CASES = list(_cases())
+
+
 # ---- the property ---------------------------------------------------------
 
 
-@pytest.mark.parametrize("note", list(_cases()), ids=range(1024))
+@pytest.mark.parametrize("note", CASES, ids=range(len(CASES)))
 def test_a_note_survives_the_round_trip(note: dict) -> None:
+    """Every field, checked against the same 1024 notes.
+
+    These were four tests over one identical corpus — 4096 cases to assert four
+    properties of the same inputs. Merged, so each case runs the whole
+    round-trip once and asserts everything about it. Same coverage, and a
+    failure now names the case *and* the field rather than only the field.
+    """
     parsed = parse_note_md(render_note_md(note))
+
+    # The title. Whitespace at its edges is normalised away on purpose.
     assert (parsed.get("title") or "").strip() == _expected_title(note["title"])
 
-
-@pytest.mark.parametrize("note", list(_cases()), ids=range(1024))
-def test_the_body_survives_the_round_trip(note: dict) -> None:
-    """The body is the thing that would be silently lost."""
-    parsed = parse_note_md(render_note_md(note))
+    # The body is the thing that would be silently lost. Its interior is
+    # load-bearing and survives exactly.
     assert parsed.get("raw_text") == _expected_body(note["raw_text"])
 
-
-@pytest.mark.parametrize("note", list(_cases()), ids=range(1024))
-def test_tags_survive_the_round_trip(note: dict) -> None:
-    parsed = parse_note_md(render_note_md(note))
     assert sorted(parsed.get("tags") or []) == sorted(note["tags"])
 
-
-@pytest.mark.parametrize("note", list(_cases()), ids=range(1024))
-def test_action_items_survive_the_round_trip(note: dict) -> None:
-    parsed = parse_note_md(render_note_md(note))
     got = [
         {"text": a.get("text"), "done": bool(a.get("done")), "priority": a.get("priority")}
         for a in (parsed.get("action_items") or [])

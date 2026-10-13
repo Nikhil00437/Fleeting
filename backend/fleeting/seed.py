@@ -41,6 +41,7 @@ _PROJECTS = (
 
 def _capture(i: int, day: date, hour: int) -> dict:
     """One note. The index is part of the id, so ordering never shifts."""
+    created = f"{day.isoformat()}T{hour:02d}:{(i * 7) % 60:02d}:00+00:00"
     return {
         "id": f"demo-note-{i:03d}",
         "type": ("text", "voice", "text", "youtube")[i % 4],
@@ -48,6 +49,14 @@ def _capture(i: int, day: date, hour: int) -> dict:
         "raw_text": _BODIES[i % len(_BODIES)],
         "summary": _SUMMARIES[i % len(_SUMMARIES)],
         "tags": list(_TAGS[i % len(_TAGS)]),
+        # `insert_note` fills `updated_at` with wall-clock `now_iso()` when the
+        # caller omits it, and that is second-resolution — so two seeds that
+        # straddle a second boundary produce different bytes. The demo database
+        # is supposed to be reproducible (that is why every id here is pinned),
+        # and a demo that differs on every run cannot be diffed or eyeballed
+        # against the last one.
+        "created_at": created,
+        "updated_at": created,
         # Pinned per note. `insert_note` promotes each item to a task row and
         # `new_id()`s it unless it carries an id, which would make two seeded
         # databases differ in both `tasks.id` and the JSON embedded here.
@@ -56,7 +65,6 @@ def _capture(i: int, day: date, hour: int) -> dict:
             for n, item in enumerate(_ACTIONS[i % len(_ACTIONS)])
         ],
         "confidence": 0.8,
-        "created_at": f"{day.isoformat()}T{hour:02d}:{(i * 7) % 60:02d}:00+00:00",
         "pinned": 1 if i % 7 == 0 else 0,
         # Already enriched. A note left at the default `pending` is re-queued
         # on every boot by `Processor.recover_unfinished`, and with no LLM the
@@ -209,7 +217,11 @@ def seed_demo(
             # its start whenever the offset wraps; +3h never does.
             "completed_at": f"{day.isoformat()}T12:00:00+00:00" if done else None,
         }
-        db.insert_task(task)
+        # The note's own `updated_at`, not wall-clock: `insert_task` re-syncs the
+        # parent's action_items and would otherwise stamp "now" onto every
+        # seeded note, so two seeded databases a second apart differ.
+        parent = db.execute("SELECT updated_at FROM notes WHERE id = ?", (task["note_id"],)).fetchone()
+        db.insert_task(task, sync_ts=parent["updated_at"] if parent else None)
         task_rows.append(task_id)
 
     # `upsert_activity` only updates when handed an existing `id`, and
