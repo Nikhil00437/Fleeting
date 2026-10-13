@@ -250,11 +250,19 @@ The answer for a default install is **not zero**, and the page says so:
 | LLM & embeddings | only if you point them somewhere other than `127.0.0.1` |
 | Transcription | no — the model downloads once, then runs locally |
 | **YouTube capture** | **yes, and it is on by default** — `yt-dlp` fetches the video |
-| **Web fonts** | **yes, on every page load** — Inter and IBM Plex Mono come from `fonts.googleapis.com` |
+| Web fonts | no — Inter, Inter Tight and IBM Plex Mono are vendored in `frontend/src/fonts/` |
 
-So "local-first" is accurate; "no network" is not. Turning YouTube capture off
-(`youtube.max_duration_min = 0`) removes one row. The fonts are the remaining
-one, and vendoring two woff2 files is what would close it.
+So "local-first" is accurate. The only remaining row is YouTube capture, which
+is a real feature rather than an accident — turning it off
+(`youtube.max_duration_min = 0`) makes the report say nothing leaves the
+machine.
+
+The web fonts used to be the second row: they were fetched from
+`fonts.googleapis.com` on every page load, which is why `tests/test_no_remote_assets.py`
+exists. It reads the **source** rather than the build, because the build is an
+artifact that gets regenerated, cleaned and served from somewhere else — a guard
+that depends on it stops running the moment `dist` is deleted. It has no
+allowlist: the app is local-first and has no origin it legitimately needs.
 
 A loopback or `.local` address counts as local — Ollama on `127.0.0.1` is a
 socket, not a phone home — but a LAN address like `192.168.x.x` does leave the
