@@ -288,6 +288,30 @@ Sending an empty key through Settings clears it. "Revoke the key I no longer
 want lying around" is a thing people need to do, so leaving the old one behind
 was not an option.
 
+## Backups you can move
+
+`POST /api/backups` writes an encrypted backup: one self-contained file holding
+the salt, the KDF parameters and the ciphertext. `POST /api/backups/{name}/restore`
+puts it back.
+
+**The passphrase is supplied per call and never stored**, and the response says so.
+Deriving the key from the keyring's content key would have been less to explain, but
+it would mean a backup could only be restored on the machine that made it — and the
+machine that needs a backup is often the one that died. The cost is that you have to
+keep the passphrase, which is better learned now than during a restore.
+
+Restore replaces the database wholesale rather than merging. Anything clever enough
+to reconcile two histories is a data-corruption risk dressed as a feature.
+
+The decrypted file is checked before anything is replaced: a valid SQLite header,
+`PRAGMA integrity_check` reporting `ok`, and a `notes` table. Every wrong-passphrase,
+corrupt-file and wrong-database test asserts the live database is **byte-identical**
+afterwards — "it raised an error" and "your data is still there" are different claims,
+and only one is the one you care about at 2am.
+
+`GET /api/backups` keeps the hash-chained index from #457, so an encrypted backup
+appears alongside the pre-migration ones.
+
 ## Encryption at rest
 
 Notes marked **sensitive** have their content encrypted with Fernet

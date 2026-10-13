@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -130,6 +131,76 @@ def encryption_status() -> dict:
     from ..services.crypto import status as _status
 
     return _status()
+
+
+class BackupIn(BaseModel):
+    """#97. The passphrase is per-call and never stored — that is what lets a
+    backup restore on a machine that has never seen this keyring."""
+
+    passphrase: str
+
+
+class RestoreIn(BackupIn):
+    confirm: bool = False
+
+
+def _backups_dir() -> Path:
+    return Path(_db_path()).parent / "backups"
+
+
+@router.post("/backups")
+def create_backup(request: Request, body: BackupIn) -> dict:
+    """Write an encrypted backup and record it in the hash-chained index."""
+    from ..db import _backup_index_path
+    from ..services.backup_crypto import BackupError, create
+    from ..services.backup_index import append as _append_index
+
+    if not body.passphrase:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "passphrase_required",
+                "message": "A backup is encrypted with this passphrase. Without one "
+                "the file would be readable by anyone who gets hold of it.",
+            },
+        )
+    out = _backups_dir() / f"fleeting-{int(time.time())}.backup"
+    try:
+        entry = create(_db_path(), out, body.passphrase)
+    except BackupError as exc:
+        raise HTTPException(status_code=400, detail={"error": "backup_failed", "message": str(exc)}) from exc
+    try:
+        # `append` hashes the file itself; passing a hash in is not its signature.
+        _append_index(_backup_index_path(_db_path()), out, kind="encrypted")
+    except Exception:  # noqa: BLE001
+        log.warning("could not index %s", out.name, exc_info=True)
+    return entry
+
+
+@router.post("/backups/{name}/restore")
+def restore_backup(request: Request, name: str, body: RestoreIn) -> dict:
+    """Replace the live database with a backup. Wholesale, not a merge.
+
+    Guarded by the same confirmation every other bulk destructive call uses,
+    because the original is gone the moment this succeeds — and there is no
+    "undo" that is not another restore.
+    """
+    from ..services.backup_crypto import BackupError, restore
+    from ..services.bulk import preview, require_confirm
+
+    path = (_backups_dir() / name).resolve()
+    # `name` comes from the URL, so it is not trusted to stay inside our own
+    # directory. Resolving and checking containment is what stops `../../` from
+    # turning a restore into an arbitrary file write.
+    if not path.is_relative_to(_backups_dir().resolve()) or not path.exists():
+        raise HTTPException(status_code=404, detail={"error": "no_such_backup", "file": name})
+    require_confirm(body, body.confirm, preview(1, [name], operation="restore over the live database"))
+    try:
+        return restore(path, _db_path(), body.passphrase)
+    except BackupError as exc:
+        raise HTTPException(
+            status_code=400, detail={"error": "restore_failed", "message": str(exc)}
+        ) from exc
 
 
 @router.get("/keyring")
