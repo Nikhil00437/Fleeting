@@ -11,7 +11,8 @@ import { api, type RuntimeMetrics } from "../../api";
 import { errorMessage } from "../settingsState";
 import { backfillProgress, describeBackfill } from "../backfill";
 import ChartPalettePicker from "../ChartPalettePicker";
-import type { HealthStatus, Settings } from "../../types";
+import type { HealthStatus, PreflightReport, Settings } from "../../types";
+import PreflightCard from "../PreflightCard";
 
 /** Diagnostics tab: /api/health telemetry and where the config lives. */
 export default function SystemTab({
@@ -39,6 +40,30 @@ export default function SystemTab({
   // #390: fetched on mount rather than on click, unlike the diagnostics
   // bundle — unlike a bug report, this is a thing you glance at.
   const [metrics, setMetrics] = useState<RuntimeMetrics | null>(null);
+  // #100. Fetched with the other mount-time probes rather than on click: the
+  // question "what is missing?" is the first thing anyone opens Settings with.
+  // `loadAll` is the refresh button's handle, so preflight re-runs with it.
+  const [preflight, setPreflight] = useState<PreflightReport | null>(null);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api
+      .preflight()
+      .then((p) => {
+        if (live) {
+          setPreflight(p);
+          setPreflightError(null);
+        }
+      })
+      .catch((e: unknown) => {
+        // A silent failure here reads as "everything is fine", which is the
+        // one reading that is never right.
+        if (live) setPreflightError(errorMessage(e));
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
   useEffect(() => {
     let live = true;
     api.runtimeMetrics(24).then((m) => {
@@ -76,7 +101,11 @@ export default function SystemTab({
                   <h2 className="text-sm font-semibold text-ink-100">
                     Runtime Telemetry & Health
                   </h2>
-                  <p className="text-xs text-ink-400">Live backend diagnostics from /api/health</p>
+                  <p className="text-xs text-ink-400">
+                    {/* #100 preflight sits first: if something is missing, the
+                        telemetry below is a description of a broken app. */}
+                    Missing dependencies, then live diagnostics from /api/health
+                  </p>
                 </div>
               </div>
               <button
@@ -86,6 +115,8 @@ export default function SystemTab({
                 <RefreshIcon className="h-3 w-3" /> Refresh
               </button>
             </div>
+
+            <PreflightCard checks={preflight?.checks ?? null} error={preflightError ?? undefined} />
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-ink-800 bg-ink-950/60 p-3">

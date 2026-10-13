@@ -1149,3 +1149,18 @@ export interface WritingResult {
 }
 
 export type RewriteStyle = "shorter" | "clearer" | "friendlier" | "more formal";
+
+/** #100 preflight: one dependency and whether it is usable. */
+export interface PreflightCheck {
+  name: string;
+  ok: boolean;
+  /** Required means "the app cannot work without it", not "nice to have". */
+  required: boolean;
+  detail: string;
+  fix: string;
+}
+
+export interface PreflightReport {
+  ok: boolean;
+  checks: PreflightCheck[];
+}

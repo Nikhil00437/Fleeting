@@ -37,7 +37,7 @@ import type {
   AssistantSuggestionsOut,
   ContextPreview,
   LlmTrace,
-  HealthPanel,
+  PreflightReport,HealthPanel,
   ProcessApp,
   ProcessInfo,
   ProcessDetails,
@@ -850,6 +850,9 @@ export const api = {
 
   /** #94: latency, queue depth and embedding status in one read. */
   healthPanel: () => req<HealthPanel>("/health-panel"),
+
+  /** #100: which dependencies are missing, and how to fix each one. */
+  preflight: () => req<PreflightReport>("/preflight"),
 
   /** #94: re-probe the provider. Always resolves — a failure is the answer. */
   healthPanelRetry: () =>

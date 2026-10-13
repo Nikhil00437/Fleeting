@@ -224,6 +224,21 @@ deploy/                systemd user unit, .desktop entry, app icon
 bin/                   flee (CLI capture), fleeting-app (desktop launcher)
 ```
 
+## What it needs
+
+`GET /api/preflight` — also in **Settings → System** — checks the vault, the
+LLM provider, `ffmpeg`, `yt-dlp` and `hyprctl`, and tells you what to install for
+whatever is missing. Each probe runs the tool rather than checking `PATH`, because
+a stale PATH entry points at a file that cannot execute.
+
+Only the vault is marked required: without it captures have nowhere to go.
+A missing `ffmpeg` costs you voice memos, not the app, and reporting optional
+gaps as failures just teaches you to ignore the panel.
+
+Model selection lives in Settings → AI (`enrich_model` and friends). An existing
+Obsidian vault needs no importer — point `paths.vault_dir` at it, since the vault
+watcher already traverses the directory recursively for `.md`.
+
 ## Other local AI clients (MCP)
 
 An MCP server so another local AI client can search the same notes, over stdio:

@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from .. import __version__
 from ..events import sse_format
 from ..models import BenchmarkIn
+from ..services.preflight import Probe, check_all
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -45,6 +46,49 @@ def _embedding_status(st) -> tuple[str, int]:
         log.warning("could not count stale embeddings", exc_info=True)
         stale = 0
     return model, stale
+
+
+def _preflight_probe(st) -> "Probe":
+    """Build the live probe. The note count is here rather than in the service
+    because only the router holds a database handle — and it is wrapped by the
+    caller, because the thing being checked is the sort of thing that throws."""
+    return Probe(
+        vault_dir=str(st.cfg.paths.vault_dir or ""),
+        note_count=st.db.count_notes(),
+        config=st.cfg,
+    )
+
+
+@router.get("/preflight")
+def preflight(request: Request) -> dict:
+    """#100: what is missing, and what to do about it.
+
+    Not gated behind anything experimental. This is the first thing someone
+    runs before anything is configured, so requiring a config change to see it
+    would be the wrong order of operations.
+    """
+    st = request.app.state.st
+    try:
+        probe = _preflight_probe(st)
+    except Exception as exc:  # noqa: BLE001 - a broken database is a *result*
+        log.warning("preflight: could not read state", exc_info=True)
+        probe = Probe(
+            vault_dir=str(st.cfg.paths.vault_dir or ""), config=st.cfg
+        )
+        return {
+            "ok": False,
+            "checks": [
+                {
+                    "name": "vault",
+                    "ok": False,
+                    "required": True,
+                    "detail": f"database unavailable: {exc}",
+                    "fix": "check the database path and permissions, then restart",
+                },
+                *check_all(probe)["checks"],
+            ],
+        }
+    return check_all(probe)
 
 
 @router.get("/health")
