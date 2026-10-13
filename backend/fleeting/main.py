@@ -515,6 +515,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         collections,
         entities,
         notes,
+        forget,
         packs,
         plugins,
         processes,
@@ -527,6 +528,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     )
 
     app.state.hooks = hooks
+    app.include_router(forget.router)
     app.include_router(packs.router)
     app.include_router(plugins.router)
     app.include_router(notes.router)

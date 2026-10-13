@@ -268,6 +268,21 @@ A loopback or `.local` address counts as local — Ollama on `127.0.0.1` is a
 socket, not a phone home — but a LAN address like `192.168.x.x` does leave the
 machine, so the classifier reads the address rather than the scheme.
 
+## Forgetting
+
+`POST /api/forget {"minutes": 15, "confirm": true}` deletes the last fifteen
+minutes: notes, tasks and activity created inside the window. Without
+`confirm` it answers 409 with a preview of titles — you cannot confirm "3 rows",
+but you can confirm three things you recognise.
+
+It only deletes what was **created** in the window. A note you had for six
+months and edited five minutes ago is not "the last fifteen minutes", and a
+panic button that could destroy it will eventually do it. Tasks attached to
+older notes do go, because they were created recently.
+
+Every call is audited (`GET /api/audit`). An empty window is not a prompt —
+there is nothing to confirm, so it succeeds and writes nothing.
+
 ## Hooks
 
 `~/.config/fleeting/hooks/*.py`, each defining `on_<event>(payload)` functions.
