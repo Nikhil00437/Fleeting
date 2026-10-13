@@ -18,7 +18,19 @@ import fleeting.config as fcfg
 
 # Paths that point at the user's real data. Captured before anything moves
 # them, so tests can prove they are no longer reachable.
-REAL_PATHS = ("DB_PATH", "CONFIG_PATH", "AUDIO_DIR", "ATTACHMENTS_DIR", "LOG_PATH", "VAULT_DIR")
+REAL_PATHS = (
+    "DB_PATH",
+    "CONFIG_PATH",
+    "AUDIO_DIR",
+    "ATTACHMENTS_DIR",
+    "LOG_PATH",
+    "VAULT_DIR",
+    # #495/#497: not user *data*, but a test run that discovered the real
+    # packs dir would read your files, and one that discovered the real
+    # hooks dir would *run your code* on every event.
+    "PACKS_DIR",
+    "HOOKS_DIR",
+)
 _REAL = {name: fcfg.__dict__[name] for name in REAL_PATHS}
 
 

@@ -36,9 +36,22 @@ DB_PATH = DATA_DIR / "fleeting.db"
 AUDIO_DIR = DATA_DIR / "audio"
 ATTACHMENTS_DIR = DATA_DIR / "attachments"
 LOG_PATH = DATA_DIR / "fleeting.log"
-# #495: packs are files, not settings, so they live beside the config that
-# points at them rather than inside it.
-PACKS_DIR = CONFIG_DIR / "packs"
+# #495: packs and #497: hooks are files, not settings, so they live beside the
+# config rather than inside it. Derived from CONFIG_PATH, not CONFIG_DIR: the
+# test sandbox redirects CONFIG_PATH, so anything derived from CONFIG_DIR would
+# still point at the user's real ~/.config during a test run.
+PACKS_DIR = CONFIG_PATH.parent / "packs"
+HOOKS_DIR = CONFIG_PATH.parent / "hooks"
+
+
+def packs_dir() -> Path:
+    """Read the module attribute at call time, never a copy taken at import —
+    the same rule `PathsConfig.vault_dir` follows, and for the same reason."""
+    return Path(PACKS_DIR)
+
+
+def hooks_dir() -> Path:
+    return Path(HOOKS_DIR)
 
 
 @dataclass

@@ -224,6 +224,26 @@ deploy/                systemd user unit, .desktop entry, app icon
 bin/                   flee (CLI capture), fleeting-app (desktop launcher)
 ```
 
+## Hooks
+
+`~/.config/fleeting/hooks/*.py`, each defining `on_<event>(payload)` functions.
+App runs them as subprocesses on note writes, task changes and daily-log rewrites.
+
+```python
+# ~/.config/fleeting/hooks/desk_log.py
+def on_note_created(payload):
+    ...  # payload is the note dict
+```
+
+A hook that raises is logged and skipped — a note never fails to save because a
+script has a typo — and one that hangs is killed after 10 seconds. The payload
+arrives as JSON on stdin, never as a shell string. Return values are ignored: to
+change something, edit the database. See `hooks/README.md` for the event table
+and `hooks/example_desk_log.py` for a working one.
+
+These are your own code with your own permissions. Theme packs cannot install
+them.
+
 ## Themes & prompt packs
 
 A pack is one JSON file — a `theme` of CSS custom properties and a `prompts`

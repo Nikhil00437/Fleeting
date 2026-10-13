@@ -32,7 +32,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from ..config import PACKS_DIR, Config
+from ..config import Config, packs_dir
 
 # Packs shipped in the repo, so there is something to install on a fresh clone.
 # None when installed as a package with no repo alongside — `search_dirs`
@@ -188,7 +188,7 @@ def search_dirs(directory: Path | None = None) -> list[Path]:
     so editing a bundled pack by dropping your own copy into
     `~/.config/fleeting/packs/` is the supported way to change one.
     """
-    dirs = [Path(directory) if directory is not None else Path(PACKS_DIR)]
+    dirs = [Path(directory) if directory is not None else packs_dir()]
     if BUNDLED_DIR.is_dir():
         dirs.append(BUNDLED_DIR)
     return dirs

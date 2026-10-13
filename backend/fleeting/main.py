@@ -24,11 +24,12 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .activity import ActivityCollector
-from .config import Config, LoggingConfig, ensure_dirs
+from .config import Config, LoggingConfig, ensure_dirs, hooks_dir
 from .db import Database
 from .events import EventBus
 from .process import Processor
 from .services import nudges, schedules
+from .services.hooks import HookRunner
 from .services.transcribe import Transcriber
 from .state import AppState
 
@@ -206,6 +207,10 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     db = Database(_db_path())
     db.migrate()
     bus = EventBus()
+    # #497: hooks are discovered from the redirected config directory, so a
+    # test run cannot execute whatever the user has installed.
+    hooks = HookRunner(hooks_dir(), bus)
+    hooks.start()
     transcriber = Transcriber(
         cfg.transcribe,
         on_progress=lambda p: bus.publish("whisper.progress", p),
@@ -520,6 +525,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         writing,
     )
 
+    app.state.hooks = hooks
     app.include_router(packs.router)
     app.include_router(notes.router)
     app.include_router(notes.trash_router)
