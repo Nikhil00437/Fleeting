@@ -203,6 +203,19 @@ def restore_backup(request: Request, name: str, body: RestoreIn) -> dict:
         ) from exc
 
 
+@router.get("/egress")
+def egress_self_check(request: Request) -> dict:
+    """#141: does anything actually answer, as distinct from what is configured.
+
+    Opens a TCP connection to each configured remote endpoint and reports whether
+    something responded. Sends no request and no payload — see the service
+    docstring for why that is stated rather than assumed.
+    """
+    from ..services.egress import self_check
+
+    return self_check(request.app.state.st.cfg)
+
+
 @router.get("/keyring")
 def keyring_status() -> dict:
     """#139: where secrets are stored, and whether that store is a real one.

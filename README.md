@@ -288,6 +288,19 @@ Sending an empty key through Settings clears it. "Revoke the key I no longer
 want lying around" is a thing people need to do, so leaving the old one behind
 was not an option.
 
+## Egress self-check
+
+`GET /api/offline` reads your config and reports what is *configured* to reach the
+network. `GET /api/egress` does the harder thing: it opens a TCP connection to each
+configured remote endpoint and reports whether something actually answered. A config
+report can be confidently wrong; a connection cannot.
+
+It sends a TCP connection and nothing else — no request, no headers, no payload. That
+is stated in the response rather than left in a docstring, because a "does this leave
+the house?" tool that itself makes an outbound connection is a poor joke. Every
+connect has a short timeout and they all run at once, so a firewall that blackholes
+packets cannot turn a status page into a hang.
+
 ## Backups you can move
 
 `POST /api/backups` writes an encrypted backup: one self-contained file holding
