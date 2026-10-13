@@ -268,6 +268,26 @@ A loopback or `.local` address counts as local — Ollama on `127.0.0.1` is a
 socket, not a phone home — but a LAN address like `192.168.x.x` does leave the
 machine, so the classifier reads the address rather than the scheme.
 
+## Redacted export
+
+```json
+POST /api/export  {"redact": true, "names": ["Alice", "Bob"]}
+```
+
+Returns every note as one markdown bundle with emails, phone numbers, card
+numbers, API keys and URLs replaced by placeholders, plus a count of what was
+found. Nothing is written back — the export renders from the database and
+redacts that string.
+
+**Person names are not pattern-matched.** `Alice`, `Prof. Ng` and "my brother
+Raj" are not separable from ordinary words by regex, and a guessing pass mangles
+notes while giving the comfortable impression that names were handled. You pass
+the names you know; they become stable `[person-1]` / `[person-2]` placeholders so
+a sentence still reads.
+
+Short digit runs are left alone on purpose: versions, percentages, years and PR
+numbers are what notes are *for*, and the addresses that matter are longer.
+
 ## Forgetting
 
 `POST /api/forget {"minutes": 15, "confirm": true}` deletes the last fifteen
