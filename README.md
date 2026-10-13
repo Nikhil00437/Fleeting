@@ -224,6 +224,22 @@ deploy/                systemd user unit, .desktop entry, app icon
 bin/                   flee (CLI capture), fleeting-app (desktop launcher)
 ```
 
+## Other local AI clients (MCP)
+
+An MCP server so another local AI client can search the same notes, over stdio:
+
+```jsonc
+// e.g. ~/.config/your-client/mcp.json
+{
+  "mcpServers": {
+    "fleeting": { "command": "uv", "args": ["run", "--project", "/path/to/fleeting/backend", "fleeting-mcp"] }
+  }
+}
+```
+
+Three tools — `search_notes`, `search_tasks`, `get_note` — and nothing that
+writes. No API key, no network: it reads the same SQLite file the app does.
+
 ## Tests
 
 ```bash
