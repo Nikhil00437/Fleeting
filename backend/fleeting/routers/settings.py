@@ -48,6 +48,7 @@ def _settings_payload(request: Request) -> dict:
         # fields, flattened so the settings UI reads one shape.
         "llm_fallback_models": cfg.llm.fallback_models,
         "llm_preferred_tags": cfg.llm.preferred_tags,
+        "llm_never_use_ai_types": cfg.llm.never_use_ai_types,
         # Separate from llm_model on purpose: asking a chat model for
         # embeddings returns nothing usable and silently degrades the index.
         "llm_embedding_model": cfg.llm.embedding_model,
@@ -162,6 +163,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.llm.fallback_models = body.llm_fallback_models.strip()
     if body.llm_preferred_tags is not None:
         cfg.llm.preferred_tags = body.llm_preferred_tags.strip()
+    if body.llm_never_use_ai_types is not None:
+        cfg.llm.never_use_ai_types = body.llm_never_use_ai_types.strip()
     if body.llm_embedding_model is not None:
         cfg.llm.embedding_model = body.llm_embedding_model.strip()
     if body.llm_embedding_base_url is not None:

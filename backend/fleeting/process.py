@@ -22,6 +22,7 @@ from .services import clarify, llm, markdown, reminders
 from .services.language import detect_language, language_instruction
 from .services.claims import unverified, verify_claims
 from .services.embeddings import embed_note
+from .services.llm_policy import is_blocked
 from .services.fewshot import build_few_shot
 from .services.prompt_templates import template_for
 from .services.tags_vocab import apply_preferred_tags, preferred_tags, tag_prompt, merge_tags
@@ -190,12 +191,21 @@ class Processor:
 
             # 2) enrichment
             await self._set_stage(note_id, "enriching")
+            # #26: sensitive content never reaches any model — not the local
+            # LLM, not a remote one behind a custom provider, and not the
+            # embedding index either (below). #459 is the same promise by
+            # capture kind, decided here once and reused at every site below:
+            # four separate calls means four chances for the pipeline to
+            # disagree with itself about whether a note was blocked.
             if note.get("sensitive"):
-                # #26: sensitive content never reaches any model — not the
-                # local LLM, not a remote one behind a custom provider, and
-                # not the embedding index either (below).
+                blocked_reason = "heuristic-sensitive"
+            elif is_blocked(self.cfg, note.get("type")):
+                blocked_reason = "heuristic-source-blocked"
+            else:
+                blocked_reason = ""
+            if blocked_reason:
                 enriched = llm.heuristic_enrich(note["raw_text"])
-                source["enrichment"] = "heuristic-sensitive"
+                source["enrichment"] = blocked_reason
             else:
                 try:
                     template_prompt = (note.get("source") or {}).get("template", {}).get("prompt")
@@ -236,7 +246,7 @@ class Processor:
             enriched = {**enriched, "tags": merge_tags(note.get("tags") or [], enriched["tags"])}
 
             vocab = preferred_tags(self.cfg)
-            if vocab and source.get("enrichment") != "heuristic-sensitive":
+            if vocab and not blocked_reason:
                 enriched = {**enriched, "tags": apply_preferred_tags(enriched["tags"], vocab)}
 
             # 3) persist structured fields
@@ -267,7 +277,11 @@ class Processor:
             # the note into the review queue instead of claiming it is done.
             # A real LLM pass starts at 'enriched'; human PATCHes move it to
             # 'reviewed'/'final'. #263 adds a third reason to hold a note back.
-            if source.get("enrichment") in ("heuristic", "heuristic-sensitive"):
+            if source.get("enrichment") in (
+                "heuristic",
+                "heuristic-sensitive",
+                "heuristic-source-blocked",
+            ):
                 changes["review_state"] = "raw"
             elif unverified(claims):
                 log.info(
@@ -373,11 +387,13 @@ class Processor:
             # 4) embedding + vault mirror + notify
             await self._set_stage(note_id, "syncing")
             if note:
-                if note.get("sensitive"):
-                    # #26: no embedding vectors for sensitive notes — the
-                    # configured embedding backend may be a remote provider.
-                    # Drop any vector made before the flag was set, or the
-                    # note would stay findable in semantic search.
+                # #26/#459: no embedding vectors for sensitive notes, or for a
+                # capture kind configured to never reach a model — the embedding
+                # backend may be a remote provider, and the vector index is the
+                # quieter route to the same text. Dropping any vector made before
+                # the flag was set matters too: otherwise the note stays findable
+                # in semantic search.
+                if note.get("sensitive") or is_blocked(self.cfg, note.get("type")):
                     self.db.delete_note_embedding(note_id)
                 else:
                     try:

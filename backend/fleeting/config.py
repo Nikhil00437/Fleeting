@@ -94,6 +94,10 @@ class LLMConfig:
     # #257: comma-separated tags the user already uses. The enricher is told
     # about them and its output is snapped onto them.
     preferred_tags: str = ""
+    # #459: capture kinds whose text must never reach a model. Comma-separated,
+    # like `preferred_tags`, because hand-editing TOML is how settings get
+    # changed and a list of tables would be a worse way to type one.
+    never_use_ai_types: str = ""
     # The model used for embeddings, which is very often *not* the chat model:
     # asking a chat model for vectors returns nothing usable. Empty means
     # "use `model`", which preserves every existing config unchanged.

@@ -462,6 +462,8 @@ class SettingsIn(BaseModel):
     llm_fallback_models: str | None = None
     # #257: comma-separated tags the user already uses.
     llm_preferred_tags: str | None = None
+    # #459: capture kinds whose text must never reach a model.
+    llm_never_use_ai_types: str | None = None
     # #451: house style applied to every rewrite and title suggestion.
     writing_style_guide: str | None = None
     # #257/#266/#416 companion fields, same block as the llm_* ones above.

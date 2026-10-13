@@ -269,6 +269,28 @@ misreporting: notes come from a capture, and the database file does not shrink
 because you deleted a note. Trashed notes are counted separately — they are
 still on disk.
 
+## Capture kinds that never reach a model
+
+Settings → AI, or `llm.never_use_ai_types` in `config.toml`:
+
+```toml
+[llm]
+never_use_ai_types = "youtube, voice"
+```
+
+Captures of those kinds are enriched by **heuristics only** — no chat model, no
+embedding vector, and the preferred-tag vocabulary is not applied either, because
+those tags came from keywords and rewriting them would misdescribe where they
+came from.
+
+It is a configuration switch rather than a guess. A heuristic that decides "this
+looks private" misses the source you forgot about and flags things you did not
+mean to hide, and both failures are worse than not guessing. Empty by default.
+
+A blocked note is still enriched — a note with no tags and no summary is one you
+will not recognise in your own inbox, and *that* would be the real leak. See
+`notes.sensitive` (#26) for the per-note version.
+
 ## What leaves your machine
 
 Settings → **System → Diagnostics** shows it, and `GET /api/offline` returns it.
