@@ -185,6 +185,10 @@ def suggestions(request: Request) -> AssistantSuggestionsOut:
 @router.get("/chats/{chat_id}/context")
 def pinned_context(chat_id: str, request: Request) -> dict:
     """#101 the notes pinned into this thread, so the panel can render them."""
+    from . import require_experimental  # #195
+
+    require_experimental(request.app.state.st.cfg, "pinned_context")
+
     from ..services.pinned_context import pinned_notes
 
     notes = pinned_notes(request.app.state.st.db, chat_id)

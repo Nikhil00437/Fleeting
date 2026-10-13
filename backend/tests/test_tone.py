@@ -121,7 +121,16 @@ def test_a_notes_flags_are_computable_without_its_tasks(db: Database) -> None:
 # ---- the endpoint --------------------------------------------------------
 
 
-def test_the_tone_endpoint_sorts_by_urgency(client) -> None:
+@pytest.fixture()
+def tone_on(client):
+    """#195: the endpoint is behind `[experimental].tone`. These tests are about
+    the endpoint's behaviour; the gate has its own in test_experimental_flags."""
+    client.app.state.st.cfg.experimental.tone = True
+    return client
+
+
+def test_the_tone_endpoint_sorts_by_urgency(tone_on) -> None:
+    client = tone_on
     db = client.app.state.st.db
     db.insert_note({"title": "calm", "raw_text": "bought milk", "status": "done"})
     db.insert_note({"title": "shouty", "raw_text": "urgent asap", "status": "done"})
@@ -135,7 +144,8 @@ def test_the_tone_endpoint_sorts_by_urgency(client) -> None:
     assert "urgency_reasons" in items[0]
 
 
-def test_the_tone_endpoint_can_filter_to_one_sentiment(client) -> None:
+def test_the_tone_endpoint_can_filter_to_one_sentiment(tone_on) -> None:
+    client = tone_on
     db = client.app.state.st.db
     db.insert_note({"title": "happy", "raw_text": "wonderful lovely great", "status": "done"})
     db.insert_note({"title": "sad", "raw_text": "broken awful terrible", "status": "done"})

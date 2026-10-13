@@ -79,6 +79,11 @@ def health(request: Request) -> dict:
         "embedding_model": embedding_model,
         "semantic_search": "semantic" if semantic else "lexical",
         "stale_embeddings": stale,
+        # #195: a flag you cannot read is a flag you cannot remember you set.
+        "experimental": {
+            name: bool(getattr(st.cfg.experimental, name))
+            for name in ("tone", "benchmark", "pinned_context")
+        },
         "degradations": degradations,
     }
 
@@ -189,6 +194,10 @@ async def run_benchmark(body: BenchmarkIn, request: Request) -> dict:
     sample is small and the caller should not hold the tab open on 50 notes.
     """
     st = request.app.state.st
+    from . import require_experimental  # #195
+
+    require_experimental(st.cfg, "benchmark")
+
     from ..services.benchmark import benchmark_models
 
     if body.models and not [m for m in body.models if m.strip()]:

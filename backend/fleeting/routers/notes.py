@@ -112,6 +112,10 @@ def list_notes_by_tone(
     `urgency` and `sentiment` are filters, so the sort is over what is left.
     """
     st = request.app.state.st
+    from . import require_experimental  # #195
+
+    require_experimental(st.cfg, "tone")
+
     from datetime import datetime
 
     from ..services.tone import tone_of

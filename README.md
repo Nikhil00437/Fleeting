@@ -133,6 +133,21 @@ echo "check the invoice" | flee             # from a pipe
 flee --youtube https://youtu.be/aircAruvnKk # send a video
 ```
 
+### Experimental endpoints
+
+Three things shipped before anything was built to reach them. They are **off** by
+default; turn one on in `~/.config/fleeting/config.toml`:
+
+```toml
+[experimental]
+tone = true            # GET  /api/notes/tone          urgency/sentiment ordering
+benchmark = true       # POST /api/benchmark/run      score models on your own notes
+pinned_context = true  # notes pinned into an assistant thread
+```
+
+`GET /api/health` reports which are on. They are gated with a **404** rather than
+a 403, so an off flag looks exactly like a route that was never written.
+
 ## Configuration
 
 `~/.config/fleeting/config.toml` (also editable in the Settings UI):

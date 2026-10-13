@@ -255,7 +255,16 @@ async def test_the_models_default_to_the_ones_already_configured(env, monkeypatc
 # ---- the endpoint --------------------------------------------------------
 
 
-def test_the_endpoint_runs_the_configured_models(client) -> None:
+@pytest.fixture()
+def benchmark_on(client):
+    """#195: behind `[experimental].benchmark`. These cover the endpoint's
+    behaviour; the gate has its own tests."""
+    client.app.state.st.cfg.experimental.benchmark = True
+    return client
+
+
+def test_the_endpoint_runs_the_configured_models(benchmark_on) -> None:
+    client = benchmark_on
     r = client.post("/api/benchmark/run", json={"sample": 1})
     assert r.status_code in (200, 502)
     body = r.json()
@@ -268,6 +277,7 @@ def test_the_endpoint_runs_the_configured_models(client) -> None:
         assert "llm" in body["error"].lower()
 
 
-def test_the_endpoint_refuses_without_a_model(client) -> None:
+def test_the_endpoint_refuses_without_a_model(benchmark_on) -> None:
+    client = benchmark_on
     r = client.post("/api/benchmark/run", json={"models": ["", "  "]})
     assert r.status_code == 422

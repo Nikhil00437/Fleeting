@@ -182,6 +182,28 @@ class LoggingConfig:
 
 
 @dataclass
+class ExperimentalConfig:
+    """#195: endpoints that shipped before anything was built to reach them.
+
+    Not a flag *framework* — config.toml already has per-section toggles
+    (`[llm] provider`, `[activity] enabled`, `[paths] vault_sync`) and a second
+    system for the same job is worse than none. What was missing was one
+    consistent gate for endpoints that exist and are unreachable from the UI.
+
+    All off by default. An endpoint with nothing wired to it should not be
+    silently live in someone's install; opting in is one line of config.
+
+    This is for taste, not access control. These routes inherit the host guard,
+    the bearer token and the origin check like every other `/api` route —
+    turning one off must never be what keeps someone out.
+    """
+
+    tone: bool = False  # GET /api/notes/tone — #259 urgency/sentiment ordering
+    benchmark: bool = False  # POST /api/benchmark/run — #264 model scoring
+    pinned_context: bool = False  # #101 notes pinned into an assistant thread
+
+
+@dataclass
 class NotesConfig:
     # #274: notes sit in the trash this long before the boot purge hard-deletes
     # them. 0 disables the purge entirely (trash grows forever).
@@ -226,6 +248,7 @@ class Config:
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     activity: ActivityConfig = field(default_factory=ActivityConfig)
     notes: NotesConfig = field(default_factory=NotesConfig)
+    experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
     tasks: TasksConfig = field(default_factory=TasksConfig)
     entities: EntitiesConfig = field(default_factory=EntitiesConfig)
     writing: WritingConfig = field(default_factory=WritingConfig)
@@ -242,6 +265,7 @@ _SECTIONS: dict[str, type] = {
     "notifications": NotificationsConfig,
     "activity": ActivityConfig,
     "notes": NotesConfig,
+    "experimental": ExperimentalConfig,
     "logging": LoggingConfig,
     "tasks": TasksConfig,
     "entities": EntitiesConfig,
