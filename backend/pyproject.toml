@@ -12,6 +12,10 @@ dependencies = [
     "psutil>=7.0",
     "watchdog>=4.0",
     "pyyaml>=6.0",
+    # #99/#97: authenticated encryption for content at rest and for exported
+    # backups. There is no stdlib cipher — hand-rolling one is never the answer,
+    # and an external openssl subprocess is a worse dependency than this.
+    "cryptography>=43.0",
     "evdev>=2.0.0",
 ]
 

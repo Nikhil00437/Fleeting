@@ -29,6 +29,7 @@ from .db import Database
 from .events import EventBus
 from .process import Processor
 from .services import nudges, schedules
+from .db import set_content_encryption
 from .services.hooks import HookRunner
 from .services.transcribe import Transcriber
 from .state import AppState
@@ -209,6 +210,9 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     bus = EventBus()
     # #497: hooks are discovered from the redirected config directory, so a
     # test run cannot execute whatever the user has installed.
+    # #99: the write/read funnels need to know whether to encrypt, and they are
+    # module-level functions with no handle on `cfg`.
+    set_content_encryption(cfg.notes.encrypt_sensitive)
     hooks = HookRunner(hooks_dir(), bus)
     hooks.start()
     transcriber = Transcriber(

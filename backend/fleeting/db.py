@@ -3169,13 +3169,39 @@ class Database:
 # ---- serialization helpers -------------------------------------------
 
 
+# #99. Set once at startup from config. A module flag rather than threading a
+# config through every write path, because `_note_to_sql` and `_row_to_note` are
+# module-level funnels with no access to `cfg` — and funnels are the only place
+# this can be applied without missing a path.
+_ENCRYPT_CONTENT = False
+
+
+def set_content_encryption(on: bool) -> None:
+    global _ENCRYPT_CONTENT
+    _ENCRYPT_CONTENT = bool(on)
+
+
+def _encrypt_content(text: str) -> str:
+    from .services.crypto import encrypt_text, get_key
+
+    return encrypt_text(text, get_key())
+
+
+def _decrypt_content(stored: str) -> str:
+    from .services.crypto import decrypt_text, get_key
+
+    return decrypt_text(stored, get_key())
+
+
 def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
     note = {
         "id": row["id"],
         "type": row["type"],
         "title": row["title"],
         "summary": row["summary"],
-        "raw_text": row["raw_text"],
+        # Always attempted, always a no-op for plaintext — encryption is off by
+        # default, so most rows were never ciphertext.
+        "raw_text": _decrypt_content(row["raw_text"]),
         "tags": json.loads(row["tags"] or "[]"),
         "action_items": json.loads(row["action_items"] or "[]"),
         "source": json.loads(row["source"] or "{}"),
@@ -3217,6 +3243,11 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
 
 def _note_to_sql(note: dict) -> dict:
     out = dict(note)
+    # #99: symmetric with `_row_to_note`. Only for notes flagged sensitive, and
+    # only while the setting is on — turning it off must not make previously
+    # encrypted rows undecryptable, and decrypt() handles both forms anyway.
+    if _ENCRYPT_CONTENT and out.get("sensitive"):
+        out["raw_text"] = _encrypt_content(str(out.get("raw_text") or ""))
     defaults: dict[str, object] = {"tags": [], "action_items": [], "source": {}, "fields": {}}
     for key in ("tags", "action_items", "source", "fields"):
         val = out.get(key)

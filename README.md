@@ -288,6 +288,25 @@ Sending an empty key through Settings clears it. "Revoke the key I no longer
 want lying around" is a thing people need to do, so leaving the old one behind
 was not an option.
 
+## Encryption at rest
+
+Notes marked **sensitive** have their content encrypted with Fernet
+(AES-128-CBC + HMAC-SHA256) before it reaches the database, and the key lives in
+the OS keyring. `GET /api/encryption` reports the status and the algorithm.
+
+Turning it on is `notes.encrypt_sensitive = true`. It does **not** rewrite what is
+already stored — existing plaintext keeps reading back unchanged, because a decryptor
+that assumed otherwise would make the whole database unreadable the moment you
+switched. Authenticated encryption means a wrong key or an edited row fails loudly
+and returns the ciphertext rather than empty text, which would read as "a note with
+no content" and get filed as one.
+
+**What it does not cover: the SQLite file itself.** Whole-file encryption needs
+SQLCipher, which is a custom SQLite build and a packaging change rather than a
+dependency. The status endpoint says this in plain words, because "is my database
+encrypted?" answered with a bare "yes" would be the wrong answer. Exported backups
+are encrypted separately.
+
 ## Capture kinds that never reach a model
 
 Settings → AI, or `llm.never_use_ai_types` in `config.toml`:

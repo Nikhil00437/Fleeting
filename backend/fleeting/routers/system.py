@@ -120,6 +120,18 @@ def backups_endpoint(request: Request) -> dict:
     }
 
 
+@router.get("/encryption")
+def encryption_status() -> dict:
+    """#99: what content encryption covers, and what it does not.
+
+    Ungated. The honest answer — including the part that is *not* encrypted — is
+    the reason to expose it.
+    """
+    from ..services.crypto import status as _status
+
+    return _status()
+
+
 @router.get("/keyring")
 def keyring_status() -> dict:
     """#139: where secrets are stored, and whether that store is a real one.

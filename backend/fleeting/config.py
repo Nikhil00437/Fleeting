@@ -247,6 +247,10 @@ class NotesConfig:
     # #274: notes sit in the trash this long before the boot purge hard-deletes
     # them. 0 disables the purge entirely (trash grows forever).
     trash_retention_days: int = 30
+    # #99: encrypt the *content* of notes marked sensitive, key in the keyring.
+    # Off by default: turning it on does not rewrite what is already stored, so
+    # existing plaintext keeps reading back unchanged.
+    encrypt_sensitive: bool = False
 
 
 @dataclass
