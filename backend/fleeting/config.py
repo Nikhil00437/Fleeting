@@ -36,6 +36,9 @@ DB_PATH = DATA_DIR / "fleeting.db"
 AUDIO_DIR = DATA_DIR / "audio"
 ATTACHMENTS_DIR = DATA_DIR / "attachments"
 LOG_PATH = DATA_DIR / "fleeting.log"
+# #495: packs are files, not settings, so they live beside the config that
+# points at them rather than inside it.
+PACKS_DIR = CONFIG_DIR / "packs"
 
 
 @dataclass
@@ -160,6 +163,15 @@ class ActivityConfig:
 
 
 @dataclass
+class ThemeConfig:
+    """#495. Which pack is active, if any. The tokens themselves stay in the pack
+    file rather than being copied into config.toml, so re-applying an updated
+    pack is one click instead of a merge."""
+
+    active: str = ""
+
+
+@dataclass
 class LoggingConfig:
     """#389.
 
@@ -256,6 +268,7 @@ class Config:
     tasks: TasksConfig = field(default_factory=TasksConfig)
     entities: EntitiesConfig = field(default_factory=EntitiesConfig)
     writing: WritingConfig = field(default_factory=WritingConfig)
+    theme: ThemeConfig = field(default_factory=ThemeConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
@@ -274,6 +287,7 @@ _SECTIONS: dict[str, type] = {
     "tasks": TasksConfig,
     "entities": EntitiesConfig,
     "writing": WritingConfig,
+    "theme": ThemeConfig,
 }
 
 
