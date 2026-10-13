@@ -101,6 +101,18 @@ def audit_log(request: Request, limit: int = 50, action: str | None = None) -> d
     return {"entries": request.app.state.st.db.audit_log(limit=limit, action=action)}
 
 
+@router.get("/inventory")
+def inventory_endpoint(request: Request) -> dict:
+    """#137: what is stored per category, and how big.
+
+    Ungated, like `/api/offline`. It is the answer to "how much of this do I
+    actually have", and that question should not require a config change to ask.
+    """
+    from ..services.inventory import inventory
+
+    return inventory(request.app.state.st.db, request.app.state.st.cfg)
+
+
 @router.get("/offline")
 def offline_status(request: Request) -> dict:
     """#460: what this machine would reach for, and whether it leaves.

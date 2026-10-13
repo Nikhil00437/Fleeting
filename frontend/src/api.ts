@@ -38,6 +38,7 @@ import type {
   ContextPreview,
   LlmTrace,
   BulkPreview,
+  InventoryReport,
   OfflineReport,
   PackListResponse,
   PreflightReport,HealthPanel,
@@ -879,6 +880,9 @@ export const api = {
    * The SPA adds its own half — it is the only thing that can see the web font
    * the page fetches from itself. */
   offline: () => req<OfflineReport>("/offline"),
+
+  /** #137: what is stored per category, and how big. */
+  inventory: () => req<InventoryReport>("/inventory"),
 
   preflight: () => req<PreflightReport>("/preflight"),
 

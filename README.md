@@ -239,6 +239,22 @@ without being read — a plugin folder someone sent you is data, not code.
 See `plugins/README.md` for the format and `plugins/notion-sync/` for a worked
 example.
 
+## What it stores
+
+`GET /api/inventory`, and Settings → **System** under Storage. Every category
+with its size, largest first — notes, tasks, activity, the database file, audio,
+attachments, the vault export and the log.
+
+Bytes come from the filesystem, not from summing column lengths: a blob, an
+audio file and a row of text are not comparable, and `length()` under-reports by
+the page overhead SQLite actually spends. The database is `page_count *
+page_size`, which is the number disk-usage tools show.
+
+`deletable` is on every row, because that is the field that stops it
+misreporting: notes come from a capture, and the database file does not shrink
+because you deleted a note. Trashed notes are counted separately — they are
+still on disk.
+
 ## What leaves your machine
 
 Settings → **System → Diagnostics** shows it, and `GET /api/offline` returns it.

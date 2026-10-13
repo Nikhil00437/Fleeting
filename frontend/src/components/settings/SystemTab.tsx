@@ -11,9 +11,16 @@ import { api, type RuntimeMetrics } from "../../api";
 import { errorMessage } from "../settingsState";
 import { backfillProgress, describeBackfill } from "../backfill";
 import ChartPalettePicker from "../ChartPalettePicker";
-import type { HealthStatus, OfflineReport, PreflightReport, Settings } from "../../types";
+import type {
+  HealthStatus,
+  InventoryReport,
+  OfflineReport,
+  PreflightReport,
+  Settings,
+} from "../../types";
 import PreflightCard from "../PreflightCard";
 import { combine, describeOffline, remoteStylesheets } from "../offline";
+import { describeInventory, formatBytes } from "../inventory";
 
 /** Diagnostics tab: /api/health telemetry and where the config lives. */
 export default function SystemTab({
@@ -49,9 +56,11 @@ export default function SystemTab({
   // then, and reading it during render would miss it every time.
   const [remoteHrefs, setRemoteHrefs] = useState<string[]>([]);
   const [offlineReport, setOfflineReport] = useState<OfflineReport | null>(null);
+  const [inventory, setInventory] = useState<InventoryReport | null>(null);
   useEffect(() => {
     setRemoteHrefs(remoteStylesheets());
     api.offline().then(setOfflineReport).catch(() => {});
+    api.inventory().then(setInventory).catch(() => {});
   }, []);
   const [preflightError, setPreflightError] = useState<string | null>(null);
   useEffect(() => {
@@ -124,6 +133,26 @@ export default function SystemTab({
                 <RefreshIcon className="h-3 w-3" /> Refresh
               </button>
             </div>
+
+            {inventory && (
+              <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+                <p className="micro-label !text-[9px]">Storage — {formatBytes(inventory.total_bytes)}</p>
+                <p className="text-[11px] text-ink-200">
+                  {describeInventory(inventory.categories)}
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {inventory.categories.map((c) => (
+                    <li key={c.name} className="text-[10px] text-ink-500">
+                      <span className="text-ink-300">{c.name}</span>
+                      {" — "}
+                      {formatBytes(c.bytes)}
+                      {c.count ? ` · ${c.count} ${c.kind === "table" ? "rows" : "files"}` : ""}
+                      {!c.deletable && " · not removable from here"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
               <p className="micro-label !text-[9px]">Network</p>

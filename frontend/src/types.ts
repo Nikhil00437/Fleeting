@@ -1205,3 +1205,20 @@ export interface OfflineReport {
   offline: boolean;
   features: OfflineFeature[];
 }
+
+/** #137 one storage category, largest first. */
+export interface InventoryCategory {
+  name: string;
+  kind: "table" | "files" | "file";
+  count: number;
+  count_deleted: number | null;
+  bytes: number;
+  /** False for the database file and the log: deleting a note does not shrink them. */
+  deletable: boolean;
+  where: string;
+}
+
+export interface InventoryReport {
+  categories: InventoryCategory[];
+  total_bytes: number;
+}
