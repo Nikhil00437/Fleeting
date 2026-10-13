@@ -59,3 +59,48 @@ def test_audio_dir_is_redirected_for_actions(monkeypatch) -> None:
 
     monkeypatch.setattr(fcfg, "AUDIO_DIR", Path("/tmp/fleeting-test-audio"))
     assert actions.cfg_audio_dir() == Path("/tmp/fleeting-test-audio")
+
+def test_no_module_holds_a_copy_of_the_real_config_path() -> None:
+    """`from ..config import CONFIG_PATH` freezes the real path at import time.
+
+    The session redirect only moves `fcfg.CONFIG_PATH`, so anything that copied
+    it still holds — and can write to — the user's real config.toml. That is
+    how the file ended up holding a pytest temp directory as `vault_dir`: a
+    value no human would ever type, written atomically and valid.
+
+    Checked by scanning loaded modules rather than grepping, because a grep
+    finds the source but not which names survived into a closure or a default
+    argument.
+    """
+    import sys
+
+    # Import every router and service first, or the scan sees almost nothing and
+    # passes vacuously — this test was green against a live copy in settings.py
+    # simply because nothing had imported it.
+    import importlib
+    import pkgutil
+
+    import fleeting
+
+    for info in pkgutil.walk_packages(fleeting.__path__, "fleeting."):
+        try:
+            importlib.import_module(info.name)
+        except Exception:  # noqa: BLE001 - a module needing live state is not the point
+            continue
+
+    # No `attr != "CONFIG_PATH"` exemption here: `fleeting.config` is already
+    # excluded by module name, and CONFIG_PATH is the one name this would ever
+    # catch — exempting it made the guard silently vacuous.
+    real = str(_REAL["CONFIG_PATH"])
+    sandboxed = str(fcfg.CONFIG_PATH)
+    offenders: list[str] = []
+    for mod_name, mod in list(sys.modules.items()):
+        if not mod_name.startswith("fleeting") or mod is None or mod_name == "fleeting.config":
+            continue
+        for attr, value in list(vars(mod).items()):
+            if isinstance(value, (str, Path)) and str(value) == real:
+                offenders.append(f"{mod_name}.{attr}")
+    assert not offenders, (
+        f"these hold the real config path by value: {offenders} "
+        f"(sandboxed: {sandboxed})"
+    )
