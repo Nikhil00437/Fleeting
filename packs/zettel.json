@@ -1,0 +1,9 @@
+{
+  "name": "Zettelkasten",
+  "description": "Prompts only: one idea per note, and a tag vocabulary that keeps captures sortable.",
+  "version": 1,
+  "prompts": {
+    "style_guide": "One idea per note. Write in the first person and keep the present tense. Prefer a concrete noun over an abstraction. Never restate the note back as a summary — if a sentence could apply to any other note, cut it.\n\nKeep headings short. Use a dash list for anything with an order. Link related notes by title rather than by describing them.",
+    "preferred_tags": "inbox, idea, reference, question, person, project, meeting, log"
+  }
+}

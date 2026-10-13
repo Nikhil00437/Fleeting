@@ -5,9 +5,10 @@ import ActivityTab from "./settings/ActivityTab";
 import AiTab from "./settings/AiTab";
 import AppsTab from "./settings/AppsTab";
 import SystemTab from "./settings/SystemTab";
+import PacksTab from "./settings/PacksTab";
 import VaultTab from "./settings/VaultTab";
 import { prettyAppName } from "../apps";
-import { BotIcon, CopyIcon, FolderIcon, ShieldIcon, SlidersIcon, TerminalIcon } from "./Icons";
+import { BotIcon, CopyIcon, FolderIcon, ShieldIcon, SlidersIcon, SparkIcon, TerminalIcon } from "./Icons";
 import type { AppRule, HealthStatus, Settings, WhisperProgress, VaultSyncResult } from "../types";
 
 export interface Props {
@@ -22,7 +23,7 @@ export interface Props {
   initialResyncResult?: string | null;
 }
 
-type SettingsTab = "ai" | "activity" | "apps" | "vault" | "system";
+type SettingsTab = "ai" | "activity" | "apps" | "vault" | "system" | "packs";
 
 
 
@@ -218,6 +219,12 @@ export default function SettingsView({
       label: "Vault & Ingestion",
       icon: <FolderIcon className="h-3.5 w-3.5" />,
       badge: s.vault_sync ? "sync" : "local",
+    },
+    {
+      id: "packs",
+      label: "Themes & Packs",
+      icon: <SparkIcon className="h-3.5 w-3.5" />,
+      badge: s.theme_active || undefined,
     },
     {
       id: "system",
@@ -447,6 +454,10 @@ export default function SettingsView({
               handleForceResync={handleForceResync}
               onToast={onToast}
             />
+          )}
+
+          {tab === "packs" && (
+            <PacksTab active={s.theme_active} onToast={onToast} />
           )}
 
           {tab === "system" && (

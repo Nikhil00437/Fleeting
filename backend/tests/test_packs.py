@@ -15,12 +15,13 @@ because it is the only thing between a downloaded file and your entire UI.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from fleeting.config import Config
-from fleeting.services.packs import install_pack, list_packs, load_packs
+from fleeting.services.packs import BUNDLED_DIR, install_pack, list_packs, load_pack_set, load_packs
 
 
 def write_pack(d: Path, filename: str, payload: dict) -> None:
@@ -279,3 +280,62 @@ def test_a_name_that_is_not_a_usable_string_falls_back_to_the_filename(
     the pack nobody clicks. The filename is always there and always sensible."""
     write_pack(sandbox, "Blank.json", {"name": json.loads(declared), "theme": {"--ink-100": "#fff"}})
     assert list_packs(sandbox, Config())[0]["name"] == expected
+
+
+# ---- bundled packs (#400) -------------------------------------------------
+
+
+def test_the_bundled_packs_are_valid_packs() -> None:
+    """Every file we ship has to pass our own parser. A broken example pack is
+    the worst possible first impression of the format."""
+    from fleeting.services.packs import BUNDLED_DIR
+
+    packs, errors = load_packs(BUNDLED_DIR, Config())
+    assert errors == [], f"a bundled pack does not load: {errors}"
+    assert {p["name"] for p in packs} == {"Midnight", "Daylight", "Zettelkasten"}
+
+
+def test_a_bundled_theme_only_names_tokens_that_exist() -> None:
+    """A pack setting `--color-ink-100` typo'd as `--color-ink-1o0` applies
+    cleanly and silently does nothing."""
+    from fleeting.services.packs import BUNDLED_DIR
+
+    known = set(re.findall(r"^\s*(--[a-z0-9-]+):", _index_css(), re.M))
+    assert known, "could not read the token list out of index.css"
+    for pack in list_packs(BUNDLED_DIR, Config()):
+        unknown = set(pack["theme"]) - known
+        assert not unknown, f"{pack['name']} sets tokens that do not exist: {unknown}"
+
+
+def _index_css() -> str:
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parents[2] / "frontend" / "src" / "index.css").read_text()
+
+
+def test_a_user_pack_shadows_a_bundled_one_of_the_same_name(sandbox: Path) -> None:
+    """Your own copy of Midnight must win, or editing it does nothing — which is
+    the most likely thing anyone does with a bundled pack."""
+    user = sandbox
+    write_pack(user, "midnight.json", full_pack(name="Midnight", description="mine"))
+    found, _ = load_pack_set([user, BUNDLED_DIR], Config())
+    names = {p["name"]: p for p in found}
+    assert names["Midnight"]["description"] == "mine"
+
+
+def test_the_search_order_puts_the_users_folder_first(tmp_path) -> None:
+    import fleeting.config as fcfg
+
+    from fleeting.services.packs import search_dirs
+
+    assert search_dirs(Path("/nowhere/at/all"))[0] == Path("/nowhere/at/all")
+    assert search_dirs(None)[0] == Path(fcfg.PACKS_DIR)
+
+
+def test_a_missing_user_folder_is_not_an_error(tmp_path) -> None:
+    """First run has no packs folder. That must not hide the bundled ones."""
+    from fleeting.services.packs import load_pack_set
+
+    packs, errors = load_pack_set([tmp_path / "gone", BUNDLED_DIR], Config())
+    assert errors == []
+    assert {p["name"] for p in packs} == {"Midnight", "Daylight", "Zettelkasten"}

@@ -37,6 +37,7 @@ import type {
   AssistantSuggestionsOut,
   ContextPreview,
   LlmTrace,
+  PackListResponse,
   PreflightReport,HealthPanel,
   ProcessApp,
   ProcessInfo,
@@ -850,6 +851,17 @@ export const api = {
 
   /** #94: latency, queue depth and embedding status in one read. */
   healthPanel: () => req<HealthPanel>("/health-panel"),
+
+  /** #495: packs are files on disk, not settings. `dir` points at any folder —
+   * a USB stick, a checkout — because that is where they come from. */
+  packs: (dir?: string) =>
+    req<PackListResponse>(`/packs${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`),
+
+  installPack: (name: string, dir?: string) =>
+    req<{ installed: string; theme: Record<string, string>; prompts: string[] }>(
+      `/packs/${encodeURIComponent(name)}/install${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`,
+      { method: "POST" }
+    ),
 
   /** #100: which dependencies are missing, and how to fix each one. */
   preflight: () => req<PreflightReport>("/preflight"),

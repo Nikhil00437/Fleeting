@@ -33,6 +33,9 @@ def _settings_payload(request: Request) -> dict:
     return {
         "host": cfg.server.host,
         "port": cfg.server.port,
+        # #495: the Settings tab shows which pack is installed, so the name has
+        # to be in the payload rather than fetched separately.
+        "theme_active": cfg.theme.active,
         "vault_dir": cfg.paths.vault_dir,
         "vault_sync": cfg.paths.vault_sync,
         "vault_writable": _check_vault_writable(cfg.paths.vault_dir),

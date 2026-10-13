@@ -549,6 +549,8 @@ export interface HealthPanel {
 }
 
 export interface Settings {
+  /** #495 which pack is installed, if any. */
+  theme_active: string;
   host: string;
   port: number;
   vault_dir: string;
@@ -1163,4 +1165,19 @@ export interface PreflightCheck {
 export interface PreflightReport {
   ok: boolean;
   checks: PreflightCheck[];
+}
+
+/** #495 a theme + prompt pack. `name` falls back to the filename when the file
+ * omits one, so it is always safe to show and to install by. */
+export interface Pack {
+  name: string;
+  description: string;
+  theme: Record<string, string>;
+  prompts: Record<string, string>;
+  active: boolean;
+}
+
+export interface PackListResponse {
+  packs: Pack[];
+  errors: string[];
 }

@@ -32,7 +32,12 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from ..config import Config
+from ..config import PACKS_DIR, Config
+
+# Packs shipped in the repo, so there is something to install on a fresh clone.
+# None when installed as a package with no repo alongside — `search_dirs`
+# drops it rather than reporting a folder that does not exist.
+BUNDLED_DIR = Path(__file__).resolve().parents[3] / "packs"
 
 # CSS custom property: --name, no spaces, no braces.
 _TOKEN_NAME = re.compile(r"^--[a-zA-Z0-9_-]+$")
@@ -146,16 +151,23 @@ def list_packs(directory: Path, cfg: Config) -> list[dict[str, Any]]:
 
 
 def install_pack(
-    directory: Path, name: str, cfg: Config, save: Callable[[Config], None]
+    directories: "Path | list[Path]", name: str, cfg: Config, save: Callable[[Config], None]
 ) -> dict[str, Any]:
     """Apply a pack's theme and prompts, then persist.
 
     Tokens are not copied into config.toml — only the active name is, so an
     updated pack is re-applied by installing again rather than by merging two
     half-stale copies of its colours.
+
+    Takes one folder or a search order, so the router can hand it
+    `search_dirs()` without this function caring where the pack came from.
     """
-    packs = list_packs(directory, cfg)
-    match = next((p for p in packs if p["name"] == name or name == _stem_for(directory, name)), None)
+    dirs = [directories] if isinstance(directories, Path) else list(directories)
+    packs, _ = load_pack_set(dirs, cfg)
+    match = next(
+        (p for p in packs if p["name"] == name or any(_stem_for(d, name) == name for d in dirs)),
+        None,
+    )
     if match is None:
         raise KeyError(name)
     cfg.theme.active = match["name"]
@@ -168,3 +180,32 @@ def _stem_for(directory: Path, name: str) -> str:
     """A pack's filename stem, so `/api/packs/<stem>/install` works for a pack
     that declares no `name` of its own."""
     return name if (Path(directory) / f"{name}.json").exists() else "\0no-such-pack\0"
+
+def search_dirs(directory: Path | None = None) -> list[Path]:
+    """Where to look: the user's folder first, then the bundled one.
+
+    Order matters — `load_pack_set` lets the first folder win on a name clash,
+    so editing a bundled pack by dropping your own copy into
+    `~/.config/fleeting/packs/` is the supported way to change one.
+    """
+    dirs = [Path(directory) if directory is not None else Path(PACKS_DIR)]
+    if BUNDLED_DIR.is_dir():
+        dirs.append(BUNDLED_DIR)
+    return dirs
+
+
+def load_pack_set(directories: list[Path], cfg: Config) -> tuple[list[dict[str, Any]], list[str]]:
+    """`load_packs` across several folders, first folder winning on a clash."""
+    packs: list[dict[str, Any]] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for directory in directories:
+        found, problems = load_packs(directory, cfg)
+        errors.extend(problems)
+        for pack in found:
+            if pack["name"] in seen:
+                continue
+            seen.add(pack["name"])
+            packs.append(pack)
+    packs.sort(key=lambda p: p["name"].lower())
+    return packs, errors

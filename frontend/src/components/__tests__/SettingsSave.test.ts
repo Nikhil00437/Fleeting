@@ -7,6 +7,7 @@ import {
 import type { Settings } from "../../types";
 
 const base: Settings = {
+  theme_active: "",
   host: "127.0.0.1",
   port: 7425,
   vault_dir: "/home/user/Vault",

@@ -224,6 +224,26 @@ deploy/                systemd user unit, .desktop entry, app icon
 bin/                   flee (CLI capture), fleeting-app (desktop launcher)
 ```
 
+## Themes & prompt packs
+
+A pack is one JSON file — a `theme` of CSS custom properties and a `prompts`
+object. Settings → **Themes & Packs** lists what it finds and installs it in one
+click; nothing is downloaded, and no pack can write anything except
+`writing.style_guide` and `llm.preferred_tags`.
+
+Three ship in `packs/`: **Midnight** (dark), **Daylight** (a cool accent), and
+**Zettelkasten** (prompts only). They load automatically from the repo, and your
+own copy of one in `~/.config/fleeting/packs/` shadows it by name — which is the
+supported way to edit a bundled pack.
+
+A pack is untrusted input, so two gates hold: theme keys must be CSS custom
+properties with simple values (a `}` would close the rule and rewrite the rest of
+the sheet), and prompt keys must be in a two-entry whitelist. A malformed file is
+reported next to the packs that did load rather than dropped silently.
+
+Copy `packs/midnight.json` to `~/.config/fleeting/packs/` and edit it to see the
+whole format in one file.
+
 ## What it needs
 
 `GET /api/preflight` — also in **Settings → System** — checks the vault, the

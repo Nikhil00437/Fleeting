@@ -1,0 +1,14 @@
+{
+  "name": "Daylight",
+  "description": "Light with a cool blue accent. Accent-only, so it changes the mood without touching contrast.",
+  "version": 1,
+  "theme": {
+    "--color-ember-200": "#075985",
+    "--color-ember-300": "#0369a1",
+    "--color-ember-400": "#0284c7",
+    "--color-ember-500": "#0369a1",
+    "--color-ember-600": "#075985",
+    "--color-iris-300": "#4f46e5",
+    "--color-iris-400": "#6366f1"
+  }
+}

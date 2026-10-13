@@ -17,18 +17,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..config import save_config
-from ..services.packs import install_pack, load_packs
+from ..services.packs import install_pack, load_pack_set, search_dirs
 
 router = APIRouter(prefix="/api", tags=["packs"])
 log = logging.getLogger("fleeting.packs")
-
-
-def _packs_dir(request: Request) -> Path:
-    """Where packs live by default. Overridable per request for a folder
-    outside it — see the module docstring on why that is acceptable."""
-    import fleeting.config as fcfg
-
-    return Path(fcfg.PACKS_DIR)
 
 
 @router.get("/packs")
@@ -36,20 +28,23 @@ def list_packs_endpoint(
     request: Request, dir: str | None = Query(default=None)
 ) -> dict:
     st = request.app.state.st
-    packs, errors = load_packs(Path(dir) if dir else _packs_dir(request), st.cfg)
+    # `dir` restricts to exactly that folder; otherwise the user's own packs
+    # come first and the bundled ones fill in behind them (#400).
+    dirs = [Path(dir)] if dir else search_dirs()
+    packs, errors = load_pack_set(dirs, st.cfg)
     return {"packs": packs, "errors": errors}
 
 
 @router.post("/packs/{name}/install")
 def install_pack_endpoint(request: Request, name: str, dir: str | None = Query(default=None)) -> dict:
     st = request.app.state.st
-    target = Path(dir) if dir else _packs_dir(request)
+    dirs = [Path(dir)] if dir else search_dirs()
     try:
-        pack = install_pack(target, name, st.cfg, save_config)
+        pack = install_pack(dirs, name, st.cfg, save_config)
     except KeyError:
         # Listing the folder is more useful than "not found": the file is
         # probably there under a different name.
-        available = [p["name"] for p in load_packs(target, st.cfg)[0]]
-        log.info("pack install: %r not found in %s", name, target)
+        available = [p["name"] for p in load_pack_set(dirs, st.cfg)[0]]
+        log.info("pack install: %r not found in %s", name, ", ".join(str(d) for d in dirs))
         raise HTTPException(404, f"no pack named {name!r}; available: {', '.join(available) or 'none'}")
     return {"installed": pack["name"], "theme": pack["theme"], "prompts": sorted(pack["prompts"])}

@@ -1,0 +1,25 @@
+{
+  "name": "Midnight",
+  "description": "Dark. Inverts the ink ramp and warms the accent — the light theme is the default, so this is the one to try first.",
+  "version": 1,
+  "theme": {
+    "--color-ink-950": "#0b0e14",
+    "--color-ink-900": "#11151d",
+    "--color-ink-850": "#161b25",
+    "--color-ink-800": "#1e242f",
+    "--color-ink-700": "#2b323f",
+    "--color-ink-600": "#4a5464",
+    "--color-ink-500": "#6b7688",
+    "--color-ink-400": "#98a2b3",
+    "--color-ink-300": "#c3cad6",
+    "--color-ink-200": "#dfe4ec",
+    "--color-ink-100": "#f2f5f9",
+    "--color-ember-200": "#7c2d12",
+    "--color-ember-300": "#c2410c",
+    "--color-ember-400": "#f97316",
+    "--color-ember-500": "#ea580c",
+    "--color-ember-600": "#c2410c",
+    "--color-iris-300": "#a78bfa",
+    "--color-iris-400": "#8b5cf6"
+  }
+}
