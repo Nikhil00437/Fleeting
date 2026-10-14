@@ -65,6 +65,17 @@ class ServerConfig:
     host: str = "127.0.0.1"
     port: int = 7425
 
+    # #458: a read-only demo, for screenshots, talks and trying the app on
+    # someone else's machine. Every mutating `/api` call is refused with a 403
+    # naming the mode, rather than succeeding against a database the demo will
+    # be judged on.
+    #
+    # Enforced in middleware, not per-route: a guard every route has to remember
+    # to opt into is a guard the next endpoint forgets. The database is seeded
+    # on startup only if it is empty, so switching this on over real data does
+    # not quietly add a fortnight of fake notes next to your own.
+    demo_mode: bool = False
+
 
 @dataclass
 class PathsConfig:

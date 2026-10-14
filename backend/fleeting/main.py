@@ -30,6 +30,7 @@ from .events import EventBus
 from .process import Processor
 from .services import nudges, schedules
 from .db import set_content_encryption
+from .seed import seed_demo
 from .services.hooks import HookRunner
 from .services.transcribe import Transcriber
 from .state import AppState
@@ -228,6 +229,17 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     # #99: the write/read funnels need to know whether to encrypt, and they are
     # module-level functions with no handle on `cfg`.
     set_content_encryption(cfg.notes.encrypt_sensitive)
+
+    # #458: a demo with an empty inbox demonstrates nothing. Only when the
+    # database is empty — seeding over real data would leave a fortnight of fake
+    # notes sitting next to your own, which is the one thing a demo must never do.
+    if cfg.server.demo_mode and not db.execute("SELECT 1 FROM notes LIMIT 1").fetchone():
+        try:
+            written = seed_demo(db)
+            db.commit()
+            log.info("demo mode: seeded %s", written)
+        except Exception:  # noqa: BLE001
+            log.warning("demo mode: could not seed the database", exc_info=True)
     hooks = HookRunner(hooks_dir(), bus)
     hooks.start()
     transcriber = Transcriber(
@@ -499,6 +511,34 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
                 log.warning("blocked unauthenticated %s %s", request.method, path)
                 return JSONResponse({"detail": "authentication required"}, status_code=401)
 
+        return await call_next(request)
+
+    @app.middleware("http")
+    async def guard_demo_mode(request: Request, call_next):
+        """#458: in demo mode, `/api` is read-only.
+
+        Middleware rather than a per-route flag. An endpoint that forgets to
+        check is a demo that quietly writes to the data it is demonstrating, and
+        the failure is invisible until someone notices the fake note among their
+        real ones.
+        """
+        if (
+            cfg.server.demo_mode
+            and request.url.path.startswith("/api")
+            and request.method not in _SAFE_METHODS
+        ):
+            return JSONResponse(
+                {
+                    "detail": {
+                        "error": "read_only_demo",
+                        "message": (
+                            "This is a read-only demo. Turn off "
+                            "`server.demo_mode` to make changes."
+                        ),
+                    }
+                },
+                status_code=403,
+            )
         return await call_next(request)
 
     @app.middleware("http")

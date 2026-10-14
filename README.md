@@ -306,6 +306,23 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## Demo mode
+
+Set `server.demo_mode = true` for a read-only instance — for screenshots, a talk,
+or trying the app on someone else's machine. Every mutating `/api` call is refused
+with a 403 naming the setting, and the UI shows a banner rather than letting
+someone discover read-only-ness by failing to save.
+
+**The guard is middleware, not a per-route flag.** A guard each endpoint has to
+remember to check is a guard the next endpoint forgets, and the failure is
+invisible: a demo that quietly wrote to the data it is demonstrating looks
+exactly like a demo that worked.
+
+**Seeding only touches an empty database.** A demo with an empty inbox
+demonstrates nothing, so startup fills one — but only if there is nothing there.
+Switching the flag on over real data leaves your notes alone, which is the one
+thing a demo must never do.
+
 ## Long pastes
 
 A long paste is enriched in chunks rather than sent as one prompt. Sent whole it

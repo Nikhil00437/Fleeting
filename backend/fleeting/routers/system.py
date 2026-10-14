@@ -216,6 +216,21 @@ def egress_self_check(request: Request) -> dict:
     return self_check(request.app.state.st.cfg)
 
 
+@router.get("/demo")
+def demo_status(request: Request) -> dict:
+    """#458: whether this instance is a read-only demo.
+
+    Ungated, and readable in demo mode — the UI needs to know so it can show a
+    banner, rather than letting someone discover read-only-ness by failing to
+    save a note.
+    """
+    return {
+        "demo_mode": bool(request.app.state.st.cfg.server.demo_mode),
+        "reads_only": True,
+        "turn_off": "set `server.demo_mode = false` in config.toml",
+    }
+
+
 @router.get("/keyring")
 def keyring_status() -> dict:
     """#139: where secrets are stored, and whether that store is a real one.

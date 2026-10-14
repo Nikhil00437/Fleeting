@@ -42,6 +42,7 @@ import {
 } from "./components/Icons";
 import type { EntityNote, EntityRow, Note, Stats, WhisperProgress } from "./types";
 import { connectStream, type EventSourceLike } from "./sseReconnect"
+import { DemoBanner, type DemoStatus } from "./components/DemoBanner"
 
 type View =
   | "inbox"
@@ -95,6 +96,15 @@ export default function App() {
  const [liveApp, setLiveApp] = useState<string | null>(null);
  // True while the SSE stream is disconnected, so the UI can say so.
  const [streamDown, setStreamDown] = useState(false);
+ // #458: null means "not known yet", which is different from false. Showing a
+ // demo banner because the status fetch failed would be worse than showing none.
+ const [demo, setDemo] = useState<DemoStatus | null>(null);
+ useEffect(() => {
+  fetch("/api/demo")
+   .then((r) => (r.ok ? r.json() : null))
+   .then(setDemo)
+   .catch(() => setDemo(null));
+ }, []);
  // Latest embedding-migration progress, from the SSE reducer.
  const [embedding, setEmbedding] = useState<Record<string, unknown> | null>(null);
  const [backfillBusy, setBackfillBusy] = useState(false);
@@ -652,6 +662,7 @@ export default function App() {
  return (
   <div data-view={view} className="app-root relative z-10 flex h-screen w-screen flex-col overflow-hidden bg-ink-950">
    {/* ==================== NATIVE ELECTRON TITLEBAR ==================== */}
+   <DemoBanner status={demo} />
    <header className="titlebar-drag flex h-14 shrink-0 items-center border-b border-ink-800 bg-ink-950 select-none">
     {/* Left App Identity & Sidebar Collapse Button */}
     <div
