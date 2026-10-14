@@ -38,7 +38,26 @@ def _clean_task_text(text: str) -> str:
     return re.sub(r"[ \t]+", " ", cleaned).strip()
 
 
-def render_note_md(note: dict) -> str:
+def _schema_of(cfg: PathsConfig) -> list[str]:
+    """The configured frontmatter schema, parsed. Empty until one is set."""
+    from .vault_layout import parse_schema
+
+    return parse_schema(getattr(cfg, "vault_frontmatter_schema", "") or "")
+
+
+def extra_frontmatter(note: dict, schema: list[str] | None) -> list[str]:
+    """#114's schema-driven lines, if the caller configured any.
+
+    Passed in rather than read from config: `render_note_md` is a pure function of
+    the note, and a pure function that reaches for global config stops being
+    testable and starts depending on when it was called.
+    """
+    from .vault_layout import frontmatter_lines
+
+    return frontmatter_lines(note, schema or [])
+
+
+def render_note_md(note: dict, schema: list[str] | None = None) -> str:
     """Note dict -> Markdown string with YAML frontmatter."""
     source = note.get("source") or {}
     tags = note.get("tags") or []
@@ -60,6 +79,7 @@ def render_note_md(note: dict) -> str:
         fm_lines.append(f"source: {source['url']}")
     if source.get("channel"):
         fm_lines.append(f"channel: {source['channel']}")
+    fm_lines.extend(extra_frontmatter(note, schema))
     fm_lines.append("---")
 
     parts = ["\n".join(fm_lines), f"# {note.get('title') or 'Untitled capture'}"]
@@ -311,7 +331,18 @@ def parse_note_md(content: str) -> dict[str, Any]:
 
 
 def vault_path_for(cfg: PathsConfig, note: dict) -> Path:
+    """Where this note's file lives.
+
+    The folder comes from `#115`'s template when one is configured, and from the
+    year as before when one is not — so an existing vault does not move the first
+    time the setting is opened.
+    """
     vault = expand_path(cfg.vault_dir)
+    template = getattr(cfg, "vault_folder_template", "") or ""
+    if template:
+        from .vault_layout import folder_for
+
+        return vault / folder_for(template, note) / note_filename(note)
     from .calendar_svc import date_tag
 
     date = date_tag(note.get("created_at") or note.get("created")) or "undated"
@@ -333,7 +364,7 @@ def sync_note(cfg: PathsConfig, note: dict, db: Any = None) -> Path | None:
     path = vault_path_for(cfg, note)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        rendered = render_note_md(note)
+        rendered = render_note_md(note, _schema_of(cfg))
         # #113: what the file held before we touched it. Recorded *before* the
         # write, and only when it differs from the hash of our last write, so
         # the log says "the user edited this" rather than "we wrote it again".

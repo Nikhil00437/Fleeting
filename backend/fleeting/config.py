@@ -91,6 +91,13 @@ class PathsConfig:
     # user's real vault and imported back by the running app.
     vault_dir: str = field(default_factory=lambda: str(VAULT_DIR))
     vault_sync: bool = True
+    # #115. `{{year}}` is the default and stays the default: silently
+    # relocating five years of notes is not a decision to make on someone's
+    # behalf. Supported tokens: year, month, type, first_tag.
+    vault_folder_template: str = ""
+    # #114. Comma-separated field names, rendered in this order. Empty means the
+    # built-in frontmatter only.
+    vault_frontmatter_schema: str = ""
 
 
 @dataclass

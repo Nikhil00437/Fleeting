@@ -544,6 +544,15 @@ _GUARDED_COLUMNS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     # 0.9 enrichment quality: #96 self-reported confidence, #255 thumb verdict,
     # #263 per-claim source spans.
     ("notes", (
+        # #114: user-defined frontmatter for this note, as a JSON object of
+        # field name -> value. A column rather than free text so the schema
+        # editor can render it and so a round-trip through the vault does not
+        # depend on parsing YAML back into something queryable.
+        ("frontmatter", "TEXT"),
+        # #473: a single filterable "where did this come from" string. Separate
+        # from `source` (a JSON blob, not queryable) precisely so it can be
+        # filtered on.
+        ("provenance", "TEXT"),
         ("enrich_confidence", "REAL"),
         ("enrich_feedback", "INTEGER NOT NULL DEFAULT 0"),
         # #390: how long enrichment took, so "median enrichment time" is a
@@ -607,6 +616,9 @@ NOTE_COLUMNS = frozenset({
     "audio_path", "status", "error", "pinned", "archived",
     "created_at", "updated_at", "processed_at", "capture_id", "source_title",
     "starred", "trashed_at", "color", "fields", "sensitive", "review_state",
+    # #114/#473. Whitelisted like every other column: a key missing from this
+    # tuple is dropped silently, and the PATCH looks like it did nothing.
+    "frontmatter", "provenance",
     "snoozed_until", "enrich_confidence", "enrich_feedback", "claims", "enrich_ms",
     "generated",
 })
@@ -895,12 +907,14 @@ class Database:
                                source, audio_path, status, error, pinned, archived,
                                created_at, updated_at, processed_at, capture_id, source_title,
                                starred, trashed_at, color, fields, sensitive, review_state,
-                               snoozed_until, generated, enrich_ms)
+                               snoozed_until, generated, enrich_ms,
+                               frontmatter, provenance)
             VALUES (:id, :type, :title, :summary, :raw_text, :tags, :action_items,
                     :source, :audio_path, :status, :error, :pinned, :archived,
                     :created_at, :updated_at, :processed_at, :capture_id, :source_title,
                     :starred, :trashed_at, :color, :fields, :sensitive, :review_state,
-                    :snoozed_until, :generated, :enrich_ms)
+                    :snoozed_until, :generated, :enrich_ms,
+                    :frontmatter, :provenance)
             """,
             _note_to_sql(note),
         )
@@ -929,7 +943,7 @@ class Database:
         sets = ", ".join(f"{key} = :{key}" for key in changes)
         changes_sql = dict(changes)
         # JSON-encode list/dict fields
-        for key in ("tags", "action_items", "source", "fields", "claims"):
+        for key in ("tags", "action_items", "source", "fields", "frontmatter", "claims"):
             if key in changes_sql and not isinstance(changes_sql[key], str):
                 changes_sql[key] = json.dumps(
                     changes_sql[key],
@@ -3237,6 +3251,21 @@ def _decrypt_content(stored: str) -> str:
     return decrypt_text(stored, get_key())
 
 
+def _as_object(raw: object) -> dict:
+    """A JSON object, or an empty dict. Never raises."""
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    try:
+        value = json.loads(str(raw))
+    except (TypeError, ValueError):
+        # A bare word where JSON was expected. Losing the field is right;
+        # raising would take out every read of the row, not just this field.
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
     note = {
         "id": row["id"],
@@ -3263,6 +3292,12 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
         "trashed_at": row["trashed_at"] if "trashed_at" in row.keys() else None,
         "color": row["color"] if "color" in row.keys() else None,
         "fields": json.loads(row["fields"] or "{}") if "fields" in row.keys() else {},
+        # #114/#473. Read as JSON with a fallback rather than `json.loads` on a
+        # raw string: a column holding a bare word (an older hand-edited row, or
+        # one written before the JSON convention) must not raise out of
+        # `_row_to_note`, which every read path goes through.
+        "frontmatter": _as_object(row["frontmatter"]) if "frontmatter" in row.keys() else {},
+        "provenance": row["provenance"] if "provenance" in row.keys() else "",
         "sensitive": bool(row["sensitive"]) if "sensitive" in row.keys() else False,
         "review_state": row["review_state"] if "review_state" in row.keys() else "enriched",
         "snoozed_until": row["snoozed_until"] if "snoozed_until" in row.keys() else None,
@@ -3287,13 +3322,30 @@ def _row_to_note(row: sqlite3.Row, extra: tuple[str, ...] = ()) -> dict:
 
 def _note_to_sql(note: dict) -> dict:
     out = dict(note)
+    # A bare string, so no JSON encoding — but it *does* need to be present, or
+    # every insert that omits it fails to bind.
+    out.setdefault("provenance", "")
     # #99: symmetric with `_row_to_note`. Only for notes flagged sensitive, and
     # only while the setting is on — turning it off must not make previously
     # encrypted rows undecryptable, and decrypt() handles both forms anyway.
     if _ENCRYPT_CONTENT and out.get("sensitive"):
         out["raw_text"] = _encrypt_content(str(out.get("raw_text") or ""))
-    defaults: dict[str, object] = {"tags": [], "action_items": [], "source": {}, "fields": {}}
-    for key in ("tags", "action_items", "source", "fields"):
+    # #114's `frontmatter` joins the JSON-encoded set. It is a dict, and
+    # `update_note` binds parameters straight through — without this a PATCH
+    # with a frontmatter object raises "type 'dict' is not supported", which
+    # looks like a validation error and is a missing encoder.
+    # Every column in the INSERT has to appear here or be present in the note:
+    # sqlite3 binds named parameters strictly, so a column added to the statement
+    # without a default makes *every* insert that omits it raise. #114 and #473
+    # both landed that way, and the tests caught it before any user did.
+    defaults: dict[str, object] = {
+        "tags": [],
+        "action_items": [],
+        "source": {},
+        "fields": {},
+        "frontmatter": {},
+    }
+    for key in ("tags", "action_items", "source", "fields", "frontmatter"):
         val = out.get(key)
         if val is None or (isinstance(val, str) and not val.strip()):
             val = defaults[key]

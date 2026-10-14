@@ -62,3 +62,81 @@ def vault_conflicts_resolve(note_id: str, body: ResolveIn, request: Request) -> 
         raise HTTPException(404, {"error": "no_conflict", "message": str(exc)}) from exc
     except ValueError as exc:
         raise HTTPException(400, {"error": "unknown_resolution", "message": str(exc)}) from exc
+
+
+class SchemaIn(BaseModel):
+    """#114."""
+
+    schema: str = ""
+
+
+class FolderTemplateIn(BaseModel):
+    """#115."""
+
+    template: str = ""
+
+
+@router.get("/frontmatter")
+def vault_frontmatter(request: Request) -> dict:
+    """The configured schema, what was rejected from it, and how many notes
+    actually carry each field.
+
+    The counts are the point of an editor: a field nothing has ever been filled
+    in for is a field the user is maintaining for nothing.
+    """
+    from ..services.vault_layout import validate_schema
+
+    st = request.app.state.st
+    described = validate_schema(st.cfg.paths.vault_frontmatter_schema)
+    populated: dict[str, int] = {name: 0 for name in described["fields"]}
+    for note in st.db.list_notes(limit=2000):
+        values = note.get("frontmatter") or {}
+        if not isinstance(values, dict):
+            continue
+        for name in populated:
+            if values.get(name):
+                populated[name] += 1
+    return {"schema": described, "populated": populated}
+
+
+@router.put("/frontmatter")
+def set_vault_frontmatter(body: SchemaIn, request: Request) -> dict:
+    st = request.app.state.st
+    st.cfg.paths.vault_frontmatter_schema = body.schema.strip()
+    return vault_frontmatter(request)
+
+
+@router.get("/folder/{note_id}")
+def vault_folder_for(note_id: str, request: Request) -> dict:
+    """Where this note's file lives, and which rule put it there."""
+    from ..services.vault_layout import folder_for
+    from ..services.markdown import vault_path_for
+
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, {"error": "no_such_note", "note_id": note_id})
+    template = st.cfg.paths.vault_folder_template or ""
+    return {
+        "template": template or "{{year}}",
+        "configured": bool(template),
+        "folder": folder_for(template or "{{year}}", note),
+        "year": str(note.get("created_at") or "")[:4] or "undated",
+        "path": str(vault_path_for(st.cfg.paths, note)),
+    }
+
+
+@router.put("/folder-template")
+def set_vault_folder_template(body: FolderTemplateIn, request: Request) -> dict:
+    """Reject a template that would escape the vault, rather than sanitising it
+    into something the user did not write."""
+    from ..services.vault_layout import validate_template
+
+    problem = validate_template(body.template)
+    if problem:
+        raise HTTPException(
+            400, {"error": "unsafe_template", "message": problem, "template": body.template}
+        )
+    st = request.app.state.st
+    st.cfg.paths.vault_folder_template = body.template.strip()
+    return {"ok": True, "template": st.cfg.paths.vault_folder_template}
