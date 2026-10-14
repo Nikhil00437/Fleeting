@@ -810,3 +810,177 @@ async def stream_chat(
                         yield delta
     except Exception as exc:
         raise LLMUnavailable(f"request failed: {type(exc).__name__}: {exc}") from exc
+
+
+# ---- #492: long pastes -----------------------------------------------------
+#
+# A 40,000-character paste sent as one prompt either blows the context window
+# (a hard failure that silently drops to heuristics, so the note looks like it
+# was never enriched) or gets truncated by the provider (worse: a confident
+# summary of the first tenth presented as if it covered everything).
+#
+# Chunks split on paragraph boundaries rather than at an arbitrary offset,
+# because a chunk that ends mid-sentence produces a summary of a sentence that
+# does not exist.
+
+ENRICH_CHUNK_CHARS = 4000
+
+# A hard ceiling on how many chunks one note may become. Without it, pasting a
+# book is fifty sequential model calls on the processing queue — and #459's
+# `Processor.WORKERS = 2` means everything else waits for it. Truncation is
+# reported rather than hidden: a summary of the first five chunks is a useful
+# answer, provided the user is told that is what it is.
+
+ENRICH_MAX_CHUNKS = 5
+
+_PARAGRAPH = re.compile(r"\n\s*\n")
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+
+def chunk_text(
+    text: str,
+    limit: int = ENRICH_CHUNK_CHARS,
+    max_chunks: int = ENRICH_MAX_CHUNKS,
+) -> list[str]:
+    """Split `text` into at most `max_chunks` pieces of roughly `limit` chars."""
+    return _chunk(text, limit, max_chunks)[0]
+
+
+def _chunk(
+    text: str,
+    limit: int = ENRICH_CHUNK_CHARS,
+    max_chunks: int = ENRICH_MAX_CHUNKS,
+) -> tuple[list[str], bool]:
+    """`(chunks, truncated)`.
+
+    `truncated` is decided here, from the loop that actually stopped, rather than
+    inferred downstream by comparing byte counts. Chunk boundaries fall between
+    paragraphs, and the separators between them are dropped and rejoined — so
+    `sum(len(c) for c in chunks)` is legitimately a little shorter than the
+    original even when every word was covered. Inferring truncation from that
+    arithmetic tells the user their note was only partly read when it was read
+    in full, which is worse than not reporting coverage at all.
+
+    Paragraphs are never split across a boundary unless a single paragraph is
+    itself over the limit, because a chunk ending mid-sentence produces a
+    summary of a sentence that does not exist.
+    """
+    if len(text) <= limit:
+        return ([text] if text.strip() else []), False
+    paragraphs = [p for p in _PARAGRAPH.split(text) if p.strip()]
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    truncated = False
+    for para in paragraphs:
+        if len(chunks) >= max_chunks:
+            truncated = True
+            break
+        if len(para) > limit:
+            # Flush what we have; an oversized paragraph gets its own chunks.
+            if current:
+                chunks.append("\n\n".join(current))
+                current, size = [], 0
+            for piece in _split_oversized(para, limit):
+                if len(chunks) < max_chunks:
+                    chunks.append(piece)
+                else:
+                    truncated = True
+            continue
+        if size + len(para) > limit and current:
+            chunks.append("\n\n".join(current))
+            current, size = [], 0
+        current.append(para)
+        size += len(para) + 2
+    if current:
+        if len(chunks) < max_chunks:
+            chunks.append("\n\n".join(current))
+        else:
+            truncated = True
+    return chunks, truncated
+
+
+def _split_oversized(para: str, limit: int) -> list[str]:
+    """Break one very long paragraph into limit-sized pieces on sentences."""
+    pieces: list[str] = []
+    current = ""
+    for sentence in _SENTENCE.split(para):
+        while len(sentence) > limit:
+            if current:
+                pieces.append(current)
+                current = ""
+            pieces.append(sentence[:limit])
+            sentence = sentence[limit:]
+        if len(current) + len(sentence) + 1 > limit:
+            if current:
+                pieces.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip()
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def merge_enrichment(parts: list[dict]) -> dict:
+    """Combine per-chunk enrichments into one.
+
+    Tags and action items are unioned in first-seen order — dropping a tag
+    because it appeared in the fourth chunk rather than the first would lose
+    information for no reason. Title and summary come from the first chunk that
+    produced one, because later chunks are about later parts of the text and a
+    summary of them would describe the wrong half.
+    """
+    if not parts:
+        return {"title": "", "summary": "", "tags": [], "action_items": []}
+    merged: dict = {"title": "", "summary": "", "tags": [], "action_items": []}
+    for key in ("tags", "action_items"):
+        seen: list[str] = []
+        for part in parts:
+            for item in part.get(key) or []:
+                label = str(item)
+                if label and label not in seen:
+                    seen.append(label)
+        merged[key] = seen
+    for key in ("title", "summary"):
+        merged[key] = next((p[key] for p in parts if (p.get(key) or "").strip()), "")
+    return merged
+
+
+async def enrich_long_text(text: str, cfg: LLMConfig, **kwargs) -> tuple[dict, dict]:
+    """Enrich `text`, chunking it when it is long.
+
+    Returns `(enrichment, coverage)`. `coverage` says whether chunking happened
+    and how much of the text the result actually covers, because a summary of
+    the first five chunks presented without that caveat is a confident answer to
+    a question nobody asked.
+
+    An `LLMUnavailable` from any chunk propagates, so the caller falls back to
+    heuristics for the *whole* note. Partially enriching a note and reporting
+    success would be the worst of the three outcomes.
+    """
+    # Every branch returns the *same* coverage keys. A report whose shape depends
+    # on how long the text happened to be is a report every caller has to guard,
+    # and the one that is not guarded raises `KeyError` at the worst moment.
+    chunks, truncated = _chunk(text)
+    if not chunks:
+        return (
+            {"title": "", "summary": "", "tags": [], "action_items": []},
+            {"chunked": False, "chunks": 0, "covered": 0, "total": len(text), "truncated": False},
+        )
+    if len(chunks) == 1:
+        return await enrich_chain(text, cfg, **kwargs), {
+            "chunked": False,
+            "chunks": 1,
+            "covered": len(text),
+            "total": len(text),
+            "truncated": False,
+        }
+    parts = [await enrich_chain(chunk, cfg, **kwargs) for chunk in chunks]
+    return merge_enrichment(parts), {
+        "chunked": True,
+        "chunks": len(chunks),
+        "covered": sum(len(c) for c in chunks),
+        "total": len(text),
+        "truncated": truncated,
+    }

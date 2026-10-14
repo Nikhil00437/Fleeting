@@ -306,6 +306,23 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## Long pastes
+
+A long paste is enriched in chunks rather than sent as one prompt. Sent whole it
+either blows the context window — dropping to heuristics, so the note looks like it was
+never enriched — or gets truncated by the provider, which is worse: a confident summary
+of the first tenth presented as though it covered everything.
+
+Chunks break on paragraph boundaries, because a chunk ending mid-sentence produces a
+summary of a sentence that does not exist. Tags and action items from every chunk are
+unioned; the title and summary come from the *first* chunk that produced one, since a
+summary of chunk four describes the wrong half of the text.
+
+At most five chunks per note. Pasting a book is fifty sequential model calls on a queue
+with two workers. **Truncation is reported rather than hidden** — the note carries an
+`enrichment_warning` and a toast says how much was actually read. A summary of the first
+five chunks is a useful answer provided you know that is what it is.
+
 ## Egress self-check
 
 `GET /api/offline` reads your config and reports what is *configured* to reach the

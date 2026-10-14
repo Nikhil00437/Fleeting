@@ -213,7 +213,13 @@ class Processor:
                     # model, so one unreachable model does not silently drop
                     # every capture to heuristics. #256: corrected enrichments
                     # become few-shot examples for the next capture.
-                    enriched = await llm.enrich_chain(
+                    # #492: a long paste is chunked rather than sent whole.
+                    # Sent whole it either blows the context window — dropping
+                    # to heuristics, so the note looks like it was never
+                    # enriched — or gets truncated by the provider, which is
+                    # worse: a confident summary of the first tenth presented as
+                    # though it covered everything.
+                    enriched, coverage = await llm.enrich_long_text(
                         note["raw_text"],
                         self.cfg.llm,
                         prompt=template_prompt,
@@ -232,6 +238,20 @@ class Processor:
                         ),
                     )
                     source["enrichment"] = "local-llm"
+                    # Surfaced, not just recorded: an enrichment that only read
+                    # part of the note has to say so where the user sees it.
+                    if coverage.get("truncated"):
+                        source["enrichment_warning"] = (
+                            f"enriched the first {coverage['chunks']} sections of a long note "
+                            f"({coverage['covered']} of {coverage['total']} characters)"
+                        )
+                        self.bus.publish(
+                            "toast",
+                            {
+                                "level": "info",
+                                "message": source["enrichment_warning"],
+                            },
+                        )
                 except llm.LLMUnavailable as exc:
                     log.info("LLM unavailable (%s) — heuristic fallback for %s", exc, note_id)
                     enriched = llm.heuristic_enrich(note["raw_text"])
