@@ -41,6 +41,7 @@ import {
  XIcon,
 } from "./components/Icons";
 import type { EntityNote, EntityRow, Note, Stats, WhisperProgress } from "./types";
+import { connectStream, type EventSourceLike } from "./sseReconnect"
 
 type View =
   | "inbox"
@@ -253,45 +254,42 @@ export default function App() {
  }, [view, entityPeople]);
 
  useEffect(() => {
-  const es = new EventSource("/api/events");
-  es.onmessage = (e) => {
-   let parsed: { type?: string; data?: unknown };
-   try {
-    parsed = JSON.parse(e.data);
-   } catch {
-    return; // malformed frame — ignore
-   }
-   const before = serverState.current;
-   const next = applyServerEvent(before, parsed);
-   serverState.current = next;
-   if (next.notes !== before.notes) setNotes(next.notes as Note[]);
-   if (next.liveApp !== before.liveApp) setLiveApp(next.liveApp);
-   if (next.whisper !== before.whisper)
-    setWhisperProgress(next.whisper as WhisperProgress | null);
-   if (next.timelineKey !== before.timelineKey) setTimelineKey(next.timelineKey);
-   if (next.tasksKey !== before.tasksKey) setTasksKey(next.tasksKey);
-   if (next.collectionsKey !== before.collectionsKey) setCollectionsKey(next.collectionsKey);
-   if (next.embedding !== before.embedding) {
-    setEmbedding(next.embedding);
-    // the finished marker means the button should re-enable and health is stale
-    const done = next.embedding?.finished === true;
-    if (done) {
-     setBackfillBusy(false);
-     void refreshStats();
-    } else if (next.embedding?.started === true) {
-     setBackfillBusy(true);
+  // #187: reconnect with backoff we control. `EventSource`'s own retry is
+  // uncapped, un-jittered and blind to a half-open connection; the policy and
+  // its reasoning live in `sseReconnect.ts` so it can be tested without a
+  // browser.
+  const stream = connectStream<{ type?: string; data?: unknown }>({
+   create: () => new EventSource("/api/events") as unknown as EventSourceLike,
+   onOpen: () => setStreamDown(false),
+   onDown: () => setStreamDown(true),
+   onMessage: (parsed) => {
+    const before = serverState.current;
+    const next = applyServerEvent(before, parsed);
+    serverState.current = next;
+    if (next.notes !== before.notes) setNotes(next.notes as Note[]);
+    if (next.liveApp !== before.liveApp) setLiveApp(next.liveApp);
+    if (next.whisper !== before.whisper)
+     setWhisperProgress(next.whisper as WhisperProgress | null);
+    if (next.timelineKey !== before.timelineKey) setTimelineKey(next.timelineKey);
+    if (next.tasksKey !== before.tasksKey) setTasksKey(next.tasksKey);
+    if (next.collectionsKey !== before.collectionsKey)
+     setCollectionsKey(next.collectionsKey);
+    if (next.embedding !== before.embedding) {
+     setEmbedding(next.embedding);
+     // the finished marker means the button should re-enable and health is stale
+     const done = next.embedding?.finished === true;
+     if (done) {
+      setBackfillBusy(false);
+      void refreshStats();
+     } else if (next.embedding?.started === true) {
+      setBackfillBusy(true);
+     }
     }
-   }
-   if (next.refreshStats) refreshStats();
-   if (next.toast) toast(next.toast);
-  };
-  es.onerror = () => {
-   // EventSource reconnects on its own, but silently — surface it, or a
-   // restarted backend leaves the inbox stale with no indication why.
-   setStreamDown(true);
-  };
-  es.onopen = () => setStreamDown(false);
-  return () => es.close();
+    if (next.refreshStats) refreshStats();
+    if (next.toast) toast(next.toast);
+   },
+  });
+  return () => stream.close();
  }, [refreshStats, toast]);
 
  // Global Desktop Keyboard Shortcuts
