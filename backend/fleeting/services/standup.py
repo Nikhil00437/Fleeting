@@ -12,11 +12,11 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from ..config import Config, expand_path
+from ..config import Config
 from ..db import Database, _row_to_task
 from .calendar_svc import date_tag, now
 from .dailylog import fmt_secs, generate_with_llm
-from .files_activity import collect_git_subjects
+from .files_activity import collect_git_subjects, resolve_allowlist
 from .whatnow import _blocked_ids
 
 log = logging.getLogger("fleeting.standup")
@@ -73,11 +73,13 @@ def collect_standup_data(
 
     # 3. Yesterday's git commits
     yesterday_commits: list[dict[str, Any]] = []
-    if cfg.activity.watch_dirs:
+    if cfg.activity.watch_allowlist:
         try:
-            dirs = [expand_path(p.strip()) for p in cfg.activity.watch_dirs.split(",") if p.strip()]
+            dirs, _rejected = resolve_allowlist(cfg.activity.watch_allowlist)
             start = datetime.fromisoformat(f"{prev_day}T00:00:00").astimezone()
-            yesterday_commits = collect_git_subjects(dirs, since=start, until=start + timedelta(days=1))
+            yesterday_commits = collect_git_subjects(
+                [str(d) for d in dirs], since=start, until=start + timedelta(days=1)
+            )
         except Exception:
             log.warning("standup: commit collection failed", exc_info=True)
 

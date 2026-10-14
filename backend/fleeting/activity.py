@@ -312,7 +312,13 @@ class ActivityCollector:
         self._last_block: dict | None = None
         self._block_seq = 0
         self._redact: list[str] = [p.strip() for p in cfg.redact_patterns.split(",") if p.strip()]
-        self._watch_dirs: list[str] = [w.strip() for w in cfg.watch_dirs.split(",") if w.strip()]
+        # #454: resolved through the same allow-list the file scan uses, so the
+        # activity collector's notion of "a project root" cannot name a directory
+        # the scan is forbidden to read.
+        from .services.files_activity import resolve_allowlist
+
+        _allowed, _rejected = resolve_allowlist(cfg.watch_allowlist)
+        self._watch_dirs: list[str] = [str(d) for d in _allowed]
 
     # ---- public ----------------------------------------------------------
 

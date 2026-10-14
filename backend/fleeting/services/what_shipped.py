@@ -14,9 +14,9 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from ..config import Config, expand_path
+from ..config import Config
 from ..db import Database, _row_to_task
-from .files_activity import collect_git_subjects
+from .files_activity import collect_git_subjects, resolve_allowlist
 from .weeklylog import current_week_start, week_start_for
 
 
@@ -45,15 +45,12 @@ def get_what_shipped(
     commits: list[dict[str, Any]] = []
     seen_commits: set[tuple[str, str]] = set()
 
-    # From watched directories
-    dirs = [
-        expand_path(p.strip())
-        for p in (cfg.activity.watch_dirs or "").split(",")
-        if p.strip()
-    ]
+    # From the allow-listed directories only (#454) — same gate as every other
+    # report path, so none of them can read a directory the user did not name.
+    dirs, _rejected = resolve_allowlist(cfg.activity.watch_allowlist)
     if dirs:
         try:
-            git_subjects = collect_git_subjects(dirs, since=start_dt, until=end_dt)
+            git_subjects = collect_git_subjects([str(d) for d in dirs], since=start_dt, until=end_dt)
             for repo_entry in git_subjects:
                 repo_name = repo_entry.get("repo", "repo")
                 for subj in repo_entry.get("subjects", []):

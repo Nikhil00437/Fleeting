@@ -180,7 +180,14 @@ class ActivityConfig:
     auto_daily_log: bool = True
     # Monday-morning summary of the finished week, on top of the daily report.
     auto_weekly_log: bool = True
-    watch_dirs: str = "~/Projects, ~/Documents, ~/Downloads"
+    # #454: the directories file-activity scanning is *allowed* to read.
+    #
+    # Empty by default, and that is the point: the old default scanned
+    # ~/Projects, ~/Documents and ~/Downloads without asking. An allow-list that
+    # ships full is not an allow-list, it is a default with extra steps. Anything
+    # not named here is never scanned, and `GET /api/activity/files/preview`
+    # shows what each entry would contribute before you rely on it.
+    watch_allowlist: str = ""
     # #335 minutes of silence before a run of sessions becomes a new work
     # block. 10 keeps "read docs, answer a Slack thread" as one block.
     block_gap_min: int = 10

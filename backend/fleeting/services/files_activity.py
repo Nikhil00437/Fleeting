@@ -30,6 +30,76 @@ MAX_GIT_REPOS = 12
 MAX_SUBJECTS_PER_REPO = 8
 
 
+# #454: paths that must never be scanned, whatever the allow-list says. A
+# typo — a leading slash missing, a `..` that escapes home — turns a scan of
+# your projects into a scan of the whole filesystem, and the result is a daily
+# report built from `/etc`.
+NEVER_SCAN = frozenset(
+    {"/", "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/opt", "/proc",
+     "/root", "/run", "/sbin", "/srv", "/sys", "/usr", "/var"}
+)
+
+
+def resolve_allowlist(spec: str) -> tuple[list[Path], list[dict]]:
+    """`(allowed, rejected)` for a comma-separated allow-list.
+
+    Rejections carry a reason rather than being dropped silently: a path that
+    does not appear in a preview is a path the user cannot tell apart from one
+    that was ignored because of a typo.
+
+    Returns an empty `allowed` for an empty spec. Failing closed is the whole
+    safety property — a default that scans a folder nobody named is not a
+    default anyone consented to.
+    """
+    allowed: list[Path] = []
+    rejected: list[dict] = []
+    seen: set[str] = set()
+    for raw in (spec or "").split(","):
+        entry = raw.strip()
+        if not entry:
+            continue
+        from ..config import expand_path
+
+        path = expand_path(entry)
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if key in NEVER_SCAN:
+            rejected.append({"path": entry, "resolved": key, "reason": "system directory — never scanned"})
+            continue
+        if not path.exists():
+            rejected.append({"path": entry, "resolved": key, "reason": "does not exist"})
+            continue
+        if not path.is_dir():
+            rejected.append({"path": entry, "resolved": key, "reason": "not a directory"})
+            continue
+        allowed.append(path)
+    return allowed, rejected
+
+
+def preview_allowlist(dirs: list[Path], since: datetime) -> dict:
+    """What each allowed directory would contribute, before relying on it.
+
+    Counts files by project folder only — no names of individual files, and no
+    contents. A preview that listed filenames would leak the very thing the
+    allow-list is there to gate.
+    """
+    rows = []
+    total = 0
+    for directory in dirs:
+        result = scan_recent_files([directory], since=since)
+        total += result["total"]
+        rows.append(
+            {
+                "dir": str(directory),
+                "files": result["total"],
+                "projects": [g["label"] for g in result["groups"][:8]],
+            }
+        )
+    return {"total": total, "dirs": rows, "since": since.isoformat(timespec="seconds")}
+
+
 def scan_recent_files(watch_dirs: list[Path], since: datetime, until: datetime | None = None) -> dict:
     """Find files modified inside [since, until]. Metadata only.
 

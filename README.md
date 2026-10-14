@@ -306,6 +306,28 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## What file-activity scanning may read
+
+`activity.watch_allowlist` names the directories that save-file scanning is allowed
+to read. **It ships empty**, which is the point: the previous default scanned
+`~/Projects`, `~/Documents` and `~/Downloads` without asking. An allow-list that
+ships full is not an allow-list, it is a default with extra steps.
+
+Anything not named is never scanned, including by the daily report, the weekly log,
+the standup, periodic reviews, "what shipped", repo discovery and the activity
+collector itself — there were seven call sites, and a guard the ticket named is not
+a guard the other six obey.
+
+System paths (`/etc`, `/usr`, `/`, `/proc`…) are refused whatever the allow-list
+says. A missing leading slash in `Projects` turns a scan of your work into a walk of
+the root filesystem, and the result is a daily report built from `/etc`.
+
+`GET /api/activity/files/preview` shows what each directory would contribute before
+you rely on it — counts per project folder, never a filename. Rejections carry a
+reason, because a directory missing from the preview is otherwise indistinguishable
+from one ignored by a typo, and "I typed it and nothing happened" is the report you
+cannot act on.
+
 ## Demo mode
 
 Set `server.demo_mode = true` for a read-only instance — for screenshots, a talk,

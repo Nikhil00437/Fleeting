@@ -694,6 +694,7 @@ async def generate_daily_log(
     from ..services.files_activity import (
         collect_git_subjects,
         render_files_activity,
+        resolve_allowlist,
         scan_recent_files,
     )
 
@@ -737,7 +738,7 @@ async def generate_daily_log(
         except Exception:
             pass
 
-    watch_dirs = [expand_path(p.strip()) for p in cfg.activity.watch_dirs.split(",") if p.strip()]
+    watch_dirs, _rejected = resolve_allowlist(cfg.activity.watch_allowlist)
     scan = scan_recent_files(watch_dirs, since=since, until=until)
     git = collect_git_subjects(watch_dirs, since=since, until=until)
     notes = collect_notes_context(db, since, until)
@@ -858,6 +859,7 @@ async def preview_daily_log_playground(
     from ..services.files_activity import (
         collect_git_subjects,
         render_files_activity,
+        resolve_allowlist,
         scan_recent_files,
     )
 
@@ -867,7 +869,7 @@ async def preview_daily_log_playground(
         s for s in db.activity_sessions(day)
         if not app_blocked(cfg.activity, db, s["app_class"])
     ]
-    watch_dirs = [expand_path(p.strip()) for p in cfg.activity.watch_dirs.split(",") if p.strip()]
+    watch_dirs, _rejected = resolve_allowlist(cfg.activity.watch_allowlist)
     scan = scan_recent_files(watch_dirs, since=since, until=until)
     git = collect_git_subjects(watch_dirs, since=since, until=until)
     notes = collect_notes_context(db, since, until)

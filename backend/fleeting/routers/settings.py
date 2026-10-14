@@ -92,7 +92,7 @@ def _settings_payload(request: Request) -> dict:
         "activity_idle_available": _idle_hint_readable(),
         "activity_excluded_apps": cfg.activity.excluded_apps,
         "activity_auto_daily_log": cfg.activity.auto_daily_log,
-        "activity_watch_dirs": cfg.activity.watch_dirs,
+        "activity_watch_allowlist": cfg.activity.watch_allowlist,
         "activity_mirror_daily_log": cfg.activity.mirror_daily_log,
         "activity_auto_weekly_log": cfg.activity.auto_weekly_log,
         "activity_retention_days": cfg.activity.retention_days,
@@ -251,8 +251,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.activity.excluded_apps = body.activity_excluded_apps.strip()
     if body.activity_auto_daily_log is not None:
         cfg.activity.auto_daily_log = body.activity_auto_daily_log
-    if body.activity_watch_dirs is not None:
-        cfg.activity.watch_dirs = body.activity_watch_dirs.strip()
+    if body.activity_watch_allowlist is not None:
+        cfg.activity.watch_allowlist = body.activity_watch_allowlist.strip()
     if body.activity_mirror_daily_log is not None:
         cfg.activity.mirror_daily_log = body.activity_mirror_daily_log
     if body.activity_auto_weekly_log is not None:

@@ -338,8 +338,13 @@ def get_task_repos(request: Request) -> list[dict]:
             "count": count,
         }
 
-    watch_dirs = getattr(st.cfg.activity, "watch_dirs", None)
-    local_repos = discover_git_repos(watch_dirs)
+    # #454: the same allow-list the file scan uses. Defaulting to the old
+    # unvalidated `watch_dirs` here would let repo discovery read directories
+    # the scan is forbidden to touch.
+    from ..services.files_activity import resolve_allowlist
+
+    watch_dirs, _ = resolve_allowlist(st.cfg.activity.watch_allowlist)
+    local_repos = discover_git_repos([str(d) for d in watch_dirs])
     for lr in local_repos:
         name = str(lr.get("name") or "").strip().lower()
         if not name:

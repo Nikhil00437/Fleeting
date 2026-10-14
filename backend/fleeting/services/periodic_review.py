@@ -14,10 +14,10 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from ..config import Config, expand_path
+from ..config import Config
 from ..db import Database, _row_to_task
 from .dailylog import fmt_secs, generate_with_llm
-from .files_activity import collect_git_subjects
+from .files_activity import collect_git_subjects, resolve_allowlist
 
 log = logging.getLogger("fleeting.periodic_review")
 
@@ -108,12 +108,14 @@ def aggregate_review_period(
 
     # Commits
     commits: list[dict[str, Any]] = []
-    if cfg.activity.watch_dirs:
+    if cfg.activity.watch_allowlist:
         try:
-            dirs = [expand_path(p.strip()) for p in cfg.activity.watch_dirs.split(",") if p.strip()]
+            dirs, _rejected = resolve_allowlist(cfg.activity.watch_allowlist)
             start_dt = datetime.fromisoformat(f"{start_date}T00:00:00").astimezone()
             end_dt = datetime.fromisoformat(f"{end_date}T23:59:59").astimezone()
-            commits = collect_git_subjects(dirs, since=start_dt, until=end_dt)
+            commits = collect_git_subjects(
+                [str(d) for d in dirs], since=start_dt, until=end_dt
+            )
         except Exception:
             log.warning("review: commit collection failed", exc_info=True)
 

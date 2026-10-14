@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from ..models import ReminderIn
 
 from ..activity import aggregate_day, app_blocked
-from ..config import expand_path
 from ..services import dailylog, periodic_review, standup, unfinished_threads, weeklylog, what_shipped
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
@@ -570,14 +569,36 @@ def files_activity(request: Request, hours: float = 24.0) -> dict:
     st = request.app.state.st
     hours = min(max(hours, 1.0), 168.0)
     since = datetime.now().astimezone() - timedelta(hours=hours)
-    watch_dirs = [
-        expand_path(p.strip()) for p in st.cfg.activity.watch_dirs.split(",") if p.strip()
-    ]
+    from ..services.files_activity import resolve_allowlist
+
+    watch_dirs, rejected = resolve_allowlist(st.cfg.activity.watch_allowlist)
     return {
         "since": since.isoformat(timespec="seconds"),
+        "watching": [str(d) for d in watch_dirs],
+        # Carried in the response rather than dropped: a directory missing from
+        # the preview is otherwise indistinguishable from one ignored by a typo.
+        "rejected": rejected,
         **scan_recent_files(watch_dirs, since=since),
         "git": collect_git_subjects(watch_dirs, since=since),
     }
+
+
+@router.get("/files/preview")
+def files_preview(request: Request, hours: float = 24.0) -> dict:
+    """#454: what each allow-listed directory would contribute, before relying on it.
+
+    Counts only. No filenames and no contents — a preview that listed filenames
+    would leak the very thing the allow-list exists to gate.
+    """
+    from datetime import timedelta
+
+    from ..services.files_activity import preview_allowlist, resolve_allowlist
+
+    st = request.app.state.st
+    hours = min(max(hours, 1.0), 168.0)
+    since = datetime.now().astimezone() - timedelta(hours=hours)
+    dirs, rejected = resolve_allowlist(st.cfg.activity.watch_allowlist)
+    return {**preview_allowlist(dirs, since), "rejected": rejected, "scanning": bool(dirs)}
 
 
 @router.get("/daily-log")

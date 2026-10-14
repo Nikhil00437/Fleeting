@@ -17,11 +17,11 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from ..config import Config, expand_path
+from ..config import Config
 from ..db import Database
 from ..events import EventBus
 from .dailylog import fmt_secs, generate_with_llm
-from .files_activity import collect_git_subjects
+from .files_activity import collect_git_subjects, resolve_allowlist
 
 log = logging.getLogger("fleeting.weeklylog")
 
@@ -376,15 +376,13 @@ async def generate_weekly_log(
     week_start = week_start or previous_week_start()
     agg = aggregate_week(db, week_start)
 
-    if include_commits and cfg.activity.watch_dirs:
+    if include_commits:
         try:
-            dirs = [
-                expand_path(p.strip())
-                for p in cfg.activity.watch_dirs.split(",")
-                if p.strip()
-            ]
+            dirs, _rejected = resolve_allowlist(cfg.activity.watch_allowlist)
             start = datetime.fromisoformat(f"{agg['week_start']}T00:00:00").astimezone()
-            agg["commits"] = collect_git_subjects(dirs, since=start, until=start + timedelta(days=7))
+            agg["commits"] = collect_git_subjects(
+                [str(d) for d in dirs], since=start, until=start + timedelta(days=7)
+            )
         except Exception:
             # Commits are a bonus; the rest of the report is still useful.
             log.warning("weekly log: commit collection failed", exc_info=True)
