@@ -140,3 +140,17 @@ def set_vault_folder_template(body: FolderTemplateIn, request: Request) -> dict:
     st = request.app.state.st
     st.cfg.paths.vault_folder_template = body.template.strip()
     return {"ok": True, "template": st.cfg.paths.vault_folder_template}
+
+
+@router.get("/health")
+def vault_health(request: Request) -> dict:
+    """#118: is the vault in the state the app thinks it is?
+
+    Read-only, and it repairs nothing. A health check that silently deleted
+    orphans would be a second, un-audited destructive path — and "clean up my
+    vault" is exactly the request that goes wrong while nobody is looking.
+    """
+    from ..services.vault_health import scan
+
+    st = request.app.state.st
+    return scan(st.cfg.paths, st.db)
