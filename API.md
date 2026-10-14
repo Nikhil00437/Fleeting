@@ -2,7 +2,7 @@
 
 Generated from the OpenAPI spec by `scripts/gen_api_docs.py`. Do not edit — `tests/test_api_docs.py` regenerates and compares.
 
-Fleeting 0.1.0 · 218 paths · server `http://127.0.0.1:7425`
+Fleeting 0.1.0 · 220 paths · server `http://127.0.0.1:7425`
 
 The [spec itself](backend/fleeting/api_docs.py) is the source of truth for what the
 guards do; this file is an index of what exists.
@@ -436,6 +436,8 @@ Action items, including those extracted from notes.
 
 | Method | Path | Summary | Codes |
 | --- | --- | --- | --- |
+| GET | `/api/vault/conflicts` | Vault Conflicts List | 200 — OK, 421 — foreign Host, 423 — app is locked |
+| POST | `/api/vault/conflicts/{note_id}` | Vault Conflicts Resolve | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 422, 423 — app is locked |
 | POST | `/api/vault/dry-run` | Vault Dry Run | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 423 — app is locked |
 
 ### `writing`
