@@ -306,6 +306,34 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## Signed releases
+
+`scripts/sign_release.py` signs the built artifacts and verifies them before they ship.
+
+```bash
+python scripts/sign_release.py keygen                    # key into the OS keyring
+python scripts/sign_release.py sign dist/*.AppImage dist/*.deb
+python scripts/sign_release.py verify dist/fleeting.AppImage
+```
+
+It writes `SHA256SUMS` (standard `sha256sum` format, so a coreutils box can check the
+digests alone) and one `SHA256SUMS.sig`. **The signature covers the digest file, not
+each artifact** — signing artifacts individually would let one file be swapped while
+every other signature stayed valid. Verification checks both: the digest is compared
+against the bytes on disk right now, and the digest file against the signature. Anyone
+can edit `SHA256SUMS` to match a modified binary; that is what the second check is for.
+
+Ed25519 from `cryptography`, already a dependency. The private key goes to the OS
+keyring — a signing key stored beside the artifacts it signs protects nothing — and
+`keygen` reports honestly when there is no real keyring and it fell back to a file.
+
+**What a signature here does not prove.** That these bytes came from whoever holds
+the private key. Not that they are safe to run, and not that the build machine was
+honest: the key signs what it is given, so a compromised builder with the key
+produces a valid signature of a compromised binary. True of every signature that
+does not also record provenance, and worth writing down rather than letting "signed"
+imply more than it means.
+
 ## The HTTP API
 
 [`API.md`](API.md) is the generated reference: every endpoint, its method, its
