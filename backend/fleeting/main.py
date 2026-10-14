@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__
+from . import __version__, api_docs
 from .activity import ActivityCollector
 from .config import Config, LoggingConfig, ensure_dirs, hooks_dir
 from .db import Database
@@ -471,7 +471,17 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             st.vault_watcher.stop()
         processor.stop()
 
-    app = FastAPI(title="Fleeting", version=__version__, lifespan=lifespan)
+    # #293: the description *is* the documentation, for anything generating from
+    # the spec. A client built from a spec that says nothing about the token, the
+    # Host guard or the Origin check discovers all three in production.
+    app = FastAPI(
+        title="Fleeting",
+        version=__version__,
+        lifespan=lifespan,
+        description=api_docs.DESCRIPTION,
+        openapi_tags=api_docs.TAGS,
+        servers=[{"url": "http://127.0.0.1:7425", "description": "the local instance"}],
+    )
     app.state.st = st
 
     # #135. `lock_passphrase_hash` is read from config rather than a new setting
@@ -667,6 +677,17 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app.include_router(templates.profiles_router)
 
     _mount_frontend(app)
+    components = app.openapi()
+    components.setdefault("components", {}).setdefault("securitySchemes", {})["bearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "description": (
+            "Optional. Required for mutating /api calls when a token is configured, "
+            "and for reads when `activity.reads_require_token` is on."
+        ),
+    }
+    app.openapi_schema = components
+
     return app
 
 

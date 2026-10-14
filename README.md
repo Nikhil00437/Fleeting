@@ -306,6 +306,23 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## The HTTP API
+
+[`API.md`](API.md) is the generated reference: every endpoint, its method, its
+status codes and what each code means. It is generated from the OpenAPI spec by
+`scripts/gen_api_docs.py` and committed, and a test regenerates and compares it —
+so it cannot drift.
+
+The spec itself carries the parts a code generator actually needs: a declared
+`bearerAuth` scheme (marked **optional**, because saying "you need a token" to
+someone who has none is worse than saying nothing), the local server URL, and
+prose covering the three guards. Each claim in that prose is tested against the
+running application, because documentation of a security control that has
+drifted is the exact failure it exists to prevent.
+
+`/api` is additive: new endpoints and optional fields may appear in any release,
+and a removal takes a `/api/v2` prefix rather than happening silently.
+
 ## Locking the app
 
 `POST /api/lock/set` with a passphrase locks the app until it is given. Everything
