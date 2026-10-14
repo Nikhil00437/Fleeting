@@ -725,18 +725,17 @@ ones because tooling and tests unblock everything after them.
 | 0.7 | Timeline & activity depth |
 | 0.8 | Reports, insights & charts |
 | 0.9 | Assistant & AI quality |
+| 0.11 | Privacy, security & portability |
 | 0.18 | DX, testing, ops & ecosystem |
 
-**In progress — 0.11:** privacy, security and portability — keyring-backed API
-keys, a panic button, per-source retention, an audit log, a network-egress
-self-check, encrypted backup and restore.
+**In progress — 0.12:** the desktop and CLI bundle — the Electron shell finished
+as far as packaging, the `flee` CLI, and the installer story around both.
 
-**Still to come**, in no particular order: the desktop and CLI bundle (0.12),
-vault and sharing (0.10), UI polish, theming,
-a11y and i18n (0.13), capture-pipeline reliability (0.14), knowledge work and
-writing (0.15), habits and notifications (0.16), cross-device and mobile sync
-(0.17), a public contributor guide, a query console over the SQLite schema, an
-MCP server so other local AI clients can search notes read-only, and a first-run
-setup check.
+**Still to come**, in no particular order: vault and sharing (0.10), UI polish,
+theming, a11y and i18n (0.13), capture-pipeline reliability (0.14), knowledge
+work and writing (0.15), habits and notifications (0.16), cross-device and
+mobile sync (0.17), a public contributor guide, a query console over the SQLite
+schema, an MCP server so other local AI clients can search notes read-only, and
+a first-run setup check.
 
 Everything above is a plan, not a promise.
