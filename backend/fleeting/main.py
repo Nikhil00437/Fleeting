@@ -30,6 +30,7 @@ from .events import EventBus
 from .process import Processor
 from .services import nudges, schedules
 from .db import set_content_encryption
+from .services.lock import EXEMPT as _LOCK_EXEMPT, Lock
 from .seed import seed_demo
 from .services.hooks import HookRunner
 from .services.transcribe import Transcriber
@@ -473,6 +474,13 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app = FastAPI(title="Fleeting", version=__version__, lifespan=lifespan)
     app.state.st = st
 
+    # #135. `lock_passphrase_hash` is read from config rather than a new setting
+    # so the hash can live beside the flag that enables it.
+    app.state.lock = Lock(
+        enabled=cfg.server.lock_enabled,
+        stored=getattr(cfg.server, "lock_passphrase_hash", "") or "",
+    )
+
     allowed_origins = _allowed_origins(cfg)
     allowed_hosts = {h.lower() for h in {cfg.server.host, "127.0.0.1", "localhost"}}
     st.api_token = cfg.activity.api_token.strip() or None
@@ -551,6 +559,29 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
                     }
                 },
                 status_code=403,
+            )
+        return await call_next(request)
+
+    @app.middleware("http")
+    async def guard_locked(request: Request, call_next):
+        """#135: nothing readable until the passphrase is given.
+
+        A separate header from the API token on purpose — the two are different
+        secrets with different lifetimes, and a client that has one does not have
+        the other.
+        """
+        path = request.url.path
+        if not path.startswith("/api") or path in _LOCK_EXEMPT:
+            return await call_next(request)
+        if not app.state.lock.check(request.headers.get("x-fleeting-lock")):
+            return JSONResponse(
+                {
+                    "detail": {
+                        "error": "locked",
+                        "message": "This app is locked. Unlock it to continue.",
+                    }
+                },
+                status_code=423,
             )
         return await call_next(request)
 

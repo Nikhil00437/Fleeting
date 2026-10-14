@@ -306,6 +306,28 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## Locking the app
+
+`POST /api/lock/set` with a passphrase locks the app until it is given. Everything
+under `/api` answers `423` except `/api/health`, `/api/lock/status` and
+`/api/lock/unlock` — a lock you can read data through is not a lock.
+
+**The passphrase is never stored.** Only a scrypt hash with a per-install salt.
+`config.toml` is world-readable in most installs, ends up in dotfile repos and goes
+into backups; a config containing the thing it protects is a note about where to look.
+
+**Guessing is throttled** after three failures, doubling each time and capped at 30
+seconds. Three guesses a second turns a 32-character passphrase into a few hours of
+offline cracking; an *uncapped* delay would turn the lockout into an outage, and the
+app has to stay openable by the person who owns it.
+
+Unlocking is per-process, so restarting relocks — the right default for a laptop you
+closed and handed to someone. The token travels in `X-Fleeting-Lock`, separate from
+the API token: different secrets, different lifetimes.
+
+`/api/lock/set` is deliberately **not** exempt. Being able to change the passphrase
+while locked is being able to turn the lock off, which is the thing it prevents.
+
 ## Nothing is deleted without a window
 
 Every delete in the app is a trash first. `notes.trash_retention_days` is what turns

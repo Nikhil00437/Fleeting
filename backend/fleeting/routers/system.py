@@ -231,6 +231,50 @@ def demo_status(request: Request) -> dict:
     }
 
 
+class UnlockIn(BaseModel):
+    """#135."""
+
+    passphrase: str
+
+
+@router.get("/lock/status")
+def lock_status(request: Request) -> dict:
+    """Whether the app is locked, and how long to wait before guessing again."""
+    lock = request.app.state.lock
+    return {
+        "enabled": lock.enabled,
+        "configured": lock.is_configured(),
+        "locked": lock.locked(),
+        "retry_in": round(lock.delay_for_next_attempt(), 1),
+    }
+
+
+@router.post("/lock/unlock")
+def lock_unlock(body: UnlockIn, request: Request) -> dict:
+    """Try a passphrase. The returned token goes back in `X-Fleeting-Lock`."""
+    lock = request.app.state.lock
+    if not lock.is_configured():
+        raise HTTPException(400, {"error": "not_configured", "message": "No passphrase is set."})
+    result = lock.unlock(body.passphrase)
+    if not result["ok"]:
+        raise HTTPException(401, result)
+    return result
+
+
+@router.post("/lock/lock")
+def lock_lock(request: Request) -> dict:
+    """Lock again without restarting."""
+    request.app.state.lock.relock()
+    return {"ok": True, "locked": True}
+
+
+@router.post("/lock/set")
+def lock_set(body: UnlockIn, request: Request) -> dict:
+    """Set, change or clear the passphrase. Clearing turns the lock off."""
+    request.app.state.lock.configure(body.passphrase or None)
+    return {"ok": True, "configured": request.app.state.lock.is_configured()}
+
+
 @router.get("/keyring")
 def keyring_status() -> dict:
     """#139: where secrets are stored, and whether that store is a real one.

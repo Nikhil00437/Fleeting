@@ -76,6 +76,12 @@ class ServerConfig:
     # not quietly add a fortnight of fake notes next to your own.
     demo_mode: bool = False
 
+    # #135: lock the app until a passphrase is given. The passphrase is never
+    # stored — only a scrypt hash, because a config file that contains the thing
+    # it is meant to protect is not a lock.
+    lock_enabled: bool = False
+    lock_passphrase_hash: str = ""
+
 
 @dataclass
 class PathsConfig:

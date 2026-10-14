@@ -43,6 +43,7 @@ import {
 import type { EntityNote, EntityRow, Note, Stats, WhisperProgress } from "./types";
 import { connectStream, type EventSourceLike } from "./sseReconnect"
 import { DemoBanner, type DemoStatus } from "./components/DemoBanner"
+import { LockScreen, type LockStatus } from "./components/LockScreen"
 
 type View =
   | "inbox"
@@ -96,6 +97,28 @@ export default function App() {
  const [liveApp, setLiveApp] = useState<string | null>(null);
  // True while the SSE stream is disconnected, so the UI can say so.
  const [streamDown, setStreamDown] = useState(false);
+ // #135. `null` is "not known yet", which is not the same as "not locked" —
+ // rendering the app first and swapping to the lock screen a moment later would
+ // flash the user's notes at someone who has no business seeing them.
+ const [lock, setLock] = useState<LockStatus | null>(null);
+ useEffect(() => {
+  fetch("/api/lock/status")
+   .then((r) => (r.ok ? r.json() : null))
+   .then((s) => setLock(s ?? { enabled: false, configured: false, locked: false, retry_in: 0 }))
+   .catch(() => setLock({ enabled: false, configured: false, locked: false, retry_in: 0 }));
+ }, []);
+ async function unlock(passphrase: string): Promise<string> {
+  const r = await fetch("/api/lock/unlock", {
+   method: "POST",
+   headers: { "content-type": "application/json" },
+   body: JSON.stringify({ passphrase }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body?.detail?.message ?? "wrong passphrase");
+  const next = await fetch("/api/lock/status").then((x) => x.json());
+  setLock(next);
+  return body.token as string;
+ }
  // #458: null means "not known yet", which is different from false. Showing a
  // demo banner because the status fetch failed would be worse than showing none.
  const [demo, setDemo] = useState<DemoStatus | null>(null);
@@ -658,6 +681,9 @@ export default function App() {
   }
   return node;
  };
+
+ // #135: gate the whole tree, and only once the state is actually known.
+ if (lock?.locked) return <LockScreen status={lock} onUnlock={unlock} />;
 
  return (
   <div data-view={view} className="app-root relative z-10 flex h-screen w-screen flex-col overflow-hidden bg-ink-950">
