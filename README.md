@@ -306,6 +306,26 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## Keeping less
+
+`notes.retention_by_source` sets how long each capture source stays in the database
+at all — `"youtube:7, file:30"`, in days, keyed on `notes.type`. A YouTube
+transcript and a note you wrote are not the same kind of thing, and a single
+global age treats them as though they were.
+
+**There is no catch-all.** A source not named is never aged out. A policy that
+quietly applied to everything would age out the notes you wrote in favour of the
+ones you were dictated — the exact inverse of what the feature is for.
+
+**Retention trashes; it does not delete.** `notes.trash_retention_days` is what
+turns that permanent. Both stages matter — the first is the recoverable one. A
+policy that hard-deleted would be a slow-motion version of the panic button: data
+gone on a timer you set once and forgot, with no window in which to notice.
+
+`GET /api/retention` reports the policies, what was ignored (a typo is dropped
+rather than stopping the app from starting, but it is not swallowed), and what is
+currently due. Policies run on boot, with the rest of the maintenance.
+
 ## What file-activity scanning may read
 
 `activity.watch_allowlist` names the directories that save-file scanning is allowed

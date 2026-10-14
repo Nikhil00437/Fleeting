@@ -427,6 +427,19 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             except Exception:
                 log.exception("trash purge failed")
 
+        # #138: age out notes past their capture source's retention. Boot, for
+        # the same reason the purge above uses boot — this is a tray app, not a
+        # daemon with a scheduler. Trashes rather than deletes, so the recoverable
+        # window in `trash_retention_days` still applies to a policy firing on a
+        # timer you set once and forgot.
+        if cfg.notes.retention_by_source:
+            from .services.retention import prune as _prune_retention
+
+            try:
+                _prune_retention(db, cfg.notes.retention_by_source, confirm=True, bus=bus)
+            except Exception:
+                log.exception("retention prune failed")
+
         # Migrate the embedding corpus if the model changed since last run.
         backfill_task = _maybe_backfill_embeddings(db, cfg, bus, st)
         if backfill_task is not None:

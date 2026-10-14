@@ -274,6 +274,15 @@ class NotesConfig:
     # #274: notes sit in the trash this long before the boot purge hard-deletes
     # them. 0 disables the purge entirely (trash grows forever).
     trash_retention_days: int = 30
+    # #138: how long each capture source stays in the database at all, as
+    # `"youtube:7, file:30"` — days, keyed on `notes.type`. Empty means no
+    # per-source ageing, which is the safe direction: a policy that quietly
+    # applied to everything would age out the notes you wrote in favour of the
+    # ones you were dictated.
+    #
+    # Retention *trashes*; `trash_retention_days` above is what makes it final.
+    # Both stages matter — the first is the recoverable one.
+    retention_by_source: str = ""
     # #99: encrypt the *content* of notes marked sensitive, key in the keyring.
     # Off by default: turning it on does not rewrite what is already stored, so
     # existing plaintext keeps reading back unchanged.

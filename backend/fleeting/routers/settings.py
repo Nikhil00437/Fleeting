@@ -93,6 +93,7 @@ def _settings_payload(request: Request) -> dict:
         "activity_excluded_apps": cfg.activity.excluded_apps,
         "activity_auto_daily_log": cfg.activity.auto_daily_log,
         "activity_watch_allowlist": cfg.activity.watch_allowlist,
+        "notes_retention_by_source": cfg.notes.retention_by_source,
         "activity_mirror_daily_log": cfg.activity.mirror_daily_log,
         "activity_auto_weekly_log": cfg.activity.auto_weekly_log,
         "activity_retention_days": cfg.activity.retention_days,
@@ -253,6 +254,8 @@ async def update_settings(body: SettingsIn, request: Request) -> dict:
         cfg.activity.auto_daily_log = body.activity_auto_daily_log
     if body.activity_watch_allowlist is not None:
         cfg.activity.watch_allowlist = body.activity_watch_allowlist.strip()
+    if body.notes_retention_by_source is not None:
+        cfg.notes.retention_by_source = body.notes_retention_by_source.strip()
     if body.activity_mirror_daily_log is not None:
         cfg.activity.mirror_daily_log = body.activity_mirror_daily_log
     if body.activity_auto_weekly_log is not None:
