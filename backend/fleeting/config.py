@@ -180,6 +180,15 @@ class ActivityConfig:
     # Bearer token required on mutating /api requests. Empty = disabled, which
     # keeps the single-user loopback setup working with no extra setup.
     api_token: str = ""
+    # #142: require the token for *reads* too, not just writes.
+    #
+    # Off by default, and that is a real constraint rather than caution: the
+    # browser SPA is served from the same origin, so it cannot hold a secret it
+    # then sends to that origin — anything in the page is readable by the page.
+    # The Origin guard is what protects the browser case; this protects the case
+    # of another local process reading your notes with curl. Turn it on when the
+    # scripts are your own clients and the browser tab is not the concern.
+    reads_require_token: bool = False
     # Days of window-activity history to keep. Older rows are pruned on boot;
     # daily reports only ever look back 24h.
     retention_days: int = 30

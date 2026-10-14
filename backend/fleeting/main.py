@@ -188,6 +188,21 @@ def _setup_logging(cfg: LoggingConfig | None = None) -> None:
     root.setLevel(getattr(logging, str(cfg.level).upper(), logging.INFO))
 
 
+def _presented_token(request: Request) -> tuple[str, str]:
+    """The `(scheme, token)` a request presents, header first then query string.
+
+    `EventSource` cannot set an `Authorization` header, so the SSE stream has to
+    carry its token as `?token=`. The header is tried first because a query
+    string ends up in proxy logs and shell history — this is a fallback that
+    exists because the alternative is a stream nobody can authenticate at all.
+    """
+    header = request.headers.get("authorization") or ""
+    scheme, _, presented = header.partition(" ")
+    if presented:
+        return scheme, presented
+    return "bearer", request.query_params.get("token") or ""
+
+
 def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> FastAPI:
     ensure_dirs()
     if cfg is None and load_from_disk:
@@ -463,14 +478,20 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
                 log.warning("blocked request with foreign Host header %r", host)
                 return JSONResponse({"detail": "invalid host"}, status_code=421)
 
+        # #142: reads are covered too, not only writes. A local process that can
+        # POST to the API can also GET every note out of it, and "only writes need
+        # a token" was the weakest part of the guard. Off by default because a
+        # same-origin browser SPA cannot be a secret-holder — see the config
+        # comment — but a script-driven install should be running with it on.
+        mutating = request.method not in _SAFE_METHODS
+        needs_token = mutating or cfg.activity.reads_require_token
         if (
             st.api_token
             and path.startswith("/api")
             and path not in _TOKEN_EXEMPT
-            and request.method not in _SAFE_METHODS
+            and needs_token
         ):
-            header = request.headers.get("authorization") or ""
-            scheme, _, presented = header.partition(" ")
+            scheme, presented = _presented_token(request)
             # compare_digest avoids leaking the token through response timing.
             if scheme.lower() != "bearer" or not secrets.compare_digest(
                 presented, st.api_token

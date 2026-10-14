@@ -288,6 +288,24 @@ Sending an empty key through Settings clears it. "Revoke the key I no longer
 want lying around" is a thing people need to do, so leaving the old one behind
 was not an option.
 
+## Requiring a token for reads
+
+By default the API token guards **writes** only, and `/api/health` is exempt so the
+app can come up before it has a token. That means a local process could `curl`
+every note out of the running app.
+
+Set `activity.reads_require_token = true` to close that. The SSE stream carries its
+token as `?token=` because `EventSource` cannot set an `Authorization` header — the
+header is still tried first, since a query string ends up in proxy logs and shell
+history.
+
+**It is off by default, and that is a real constraint rather than caution.** The SPA
+is served from the same origin it calls, so a page cannot hold a secret it then sends
+to its own origin — anything in the page is readable by the page. Turning this on
+would break the browser app rather than protect it. The Origin guard already covers
+the browser case; this setting is for when your clients are `flee`, curl and MCP, and
+another local process reading your notes is the thing you want stopped.
+
 ## Egress self-check
 
 `GET /api/offline` reads your config and reports what is *configured* to reach the
