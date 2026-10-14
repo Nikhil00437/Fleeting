@@ -80,11 +80,22 @@ def render_note_md(note: dict, schema: list[str] | None = None) -> str:
     if source.get("channel"):
         fm_lines.append(f"channel: {source['channel']}")
     fm_lines.extend(extra_frontmatter(note, schema))
+
+    # #120: attachments become wikilinks into the vault's own `attachments/`
+    # folder. Relative by construction — the link is built from two vault paths
+    # and nothing else, so a vault that is zipped, synced or emailed keeps
+    # working.
+    from .vault_attachments import link_lines
+
     fm_lines.append("---")
 
     parts = ["\n".join(fm_lines), f"# {note.get('title') or 'Untitled capture'}"]
     if note.get("summary"):
         parts.append(note["summary"])
+
+    links = link_lines(note)
+    if links:
+        parts.extend(links)
 
     items = note.get("action_items") or []
     if items:
@@ -418,9 +429,18 @@ def record_sync(
 
 
 def remove_note(cfg: PathsConfig, note: dict) -> None:
+    """Drop the note's file *and* its attachment folder (#120).
+
+    Removing only the `.md` would leave the images beside it — the same leak the
+    note file was removed to prevent, one directory level down.
+    """
     if not cfg.vault_sync:
         return
     path = vault_path_for(cfg, note)
+    from .vault_attachments import remove_attachments
+
+    remove_attachments(cfg, note)
+
     vault_root = expand_path(cfg.vault_dir).resolve()
     try:
         if path.exists() and vault_root in path.resolve().parents:

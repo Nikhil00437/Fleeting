@@ -154,3 +154,28 @@ def vault_health(request: Request) -> dict:
 
     st = request.app.state.st
     return scan(st.cfg.paths, st.db)
+
+
+@router.get("/attachments/{note_id}")
+def vault_attachments_plan(note_id: str, request: Request) -> dict:
+    """#120: what copying this note's attachments would do, before it does it."""
+    from ..services.vault_attachments import plan
+
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, {"error": "no_such_note", "note_id": note_id})
+    return plan(st.cfg.paths, st.db, note)
+
+
+@router.post("/attachments/{note_id}")
+def vault_attachments_copy(note_id: str, request: Request) -> dict:
+    """Copy them. Idempotent — an unchanged file is left alone, because a vault
+    full of touched files breaks every incremental tool the user owns."""
+    from ..services.vault_attachments import copy_attachments
+
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, {"error": "no_such_note", "note_id": note_id})
+    return copy_attachments(st.cfg.paths, st.db, note)
