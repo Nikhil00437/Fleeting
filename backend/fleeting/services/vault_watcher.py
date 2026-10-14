@@ -533,7 +533,7 @@ def resync_all(
             continue
         expected_path = vault_path_for(cfg.paths, note)
         if not expected_path.exists() and note_id not in seen_note_ids:
-            out_path = sync_note(cfg.paths, note)
+            out_path = sync_note(cfg.paths, note, db)
             if out_path:
                 synced_notes += 1
 

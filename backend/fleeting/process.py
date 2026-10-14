@@ -420,7 +420,7 @@ class Processor:
                         embed_note(note, self.db, self.cfg)
                     except Exception as exc:
                         log.warning("failed to embed note %s: %s", note_id, exc)
-                markdown.sync_note(self.cfg.paths, note)
+                markdown.sync_note(self.cfg.paths, note, self.db)
                 self._maybe_notify(note)
                 # close out the syncing stage's timing before the final publish
                 fresh = self.db.get_note(note_id) or {}

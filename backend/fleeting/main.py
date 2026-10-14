@@ -650,6 +650,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         settings,
         system,
         tasks,
+        vault,
         writing,
     )
 
@@ -677,6 +678,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app.include_router(writing.prompts_router)
     app.include_router(writing.templates_router)
     app.include_router(processes.router)
+    app.include_router(vault.router)
     from .routers import templates
 
     app.include_router(templates.router)
