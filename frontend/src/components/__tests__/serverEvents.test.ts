@@ -3,6 +3,7 @@ import { applyServerEvent, emptyServerState, type ServerState } from "../serverE
 
 const base = (): ServerState => ({
   liveApp: null,
+  todaySeconds: null,
   whisper: null,
   timelineKey: 0,
   tasksKey: 0,
@@ -125,6 +126,26 @@ describe("other event types", () => {
     expect(s.liveApp).toBeNull();
   });
 
+  it("carries today_seconds telemetry when provided", () => {
+    const s = applyServerEvent(base(), {
+      type: "activity.live",
+      data: { session: { app_class: "code" }, today_seconds: 1200 },
+    });
+    expect(s.todaySeconds).toBe(1200);
+  });
+
+  it("preserves previous today_seconds when not provided", () => {
+    let s = applyServerEvent(base(), {
+      type: "activity.live",
+      data: { session: { app_class: "code" }, today_seconds: 1200 },
+    });
+    s = applyServerEvent(s, {
+      type: "activity.live",
+      data: { session: { app_class: "kitty" } },
+    });
+    expect(s.todaySeconds).toBe(1200);
+  });
+
   it("tolerates a missing session key", () => {
     const s = applyServerEvent(base(), { type: "activity.live", data: {} });
     expect(s.liveApp).toBeNull();
@@ -186,6 +207,7 @@ describe("emptyServerState", () => {
     const s = emptyServerState();
     expect(s).toEqual({
       liveApp: null,
+      todaySeconds: null,
       whisper: null,
       timelineKey: 0,
       tasksKey: 0,

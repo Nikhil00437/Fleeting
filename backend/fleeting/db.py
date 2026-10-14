@@ -486,6 +486,36 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log(at DESC);
     """,
+    # v30 — 0.10 #113/#118/#120. The vault sync log.
+    #
+    # A *log*, not a mirror of current state, because the question the vault
+    # cannot answer from the filesystem alone is "what did we last write, and
+    # did the file change under us?". A stat() tells you the file is newer than
+    # the row; only a recorded hash of the bytes we wrote can tell you whether
+    # it is *our* content or the user's edit on top of it. Without that, every
+    # file edited in Obsidian looks like a conflict and every conflict looks
+    # like a change to accept.
+    #
+    # New standalone table, so plain SQL — no ALTER, and nothing here can trip
+    # the "a bare ALTER aborts the whole chain" trap an older database hits.
+    #
+    # `hash_before` is the hash of what we wrote; `hash_after` is what we read
+    # back. Equal means clean. A `conflict` row records both, because by the
+    # time anyone resolves one the "before" is otherwise gone.
+    """
+    CREATE TABLE IF NOT EXISTS vault_sync_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id TEXT,
+        path TEXT,
+        direction TEXT NOT NULL DEFAULT 'write',
+        hash_before TEXT,
+        hash_after TEXT,
+        conflict INTEGER NOT NULL DEFAULT 0,
+        at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS vault_sync_log_note ON vault_sync_log(note_id, id DESC);
+    CREATE INDEX IF NOT EXISTS vault_sync_log_at ON vault_sync_log(at DESC);
+    """,
 ]
 
 
@@ -1177,6 +1207,20 @@ class Database:
             self.commit()
             self._unlink_audio(note.get("audio_path"), audio_root)
         return note
+
+    def prune_vault_sync_log(self, cap: int = 2000) -> int:
+        """Trim the vault sync log. Separate from `vault_log` so the service has
+        no private reach into the database, and so the cap lives next to the
+        table it bounds."""
+        total = self.execute("SELECT COUNT(*) c FROM vault_sync_log").fetchone()["c"]
+        if total <= cap:
+            return 0
+        self.conn.execute(
+            "DELETE FROM vault_sync_log WHERE id IN"
+            " (SELECT id FROM vault_sync_log ORDER BY id DESC LIMIT -1 OFFSET ?)",
+            (cap,),
+        )
+        return int(total) - cap
 
     def trashed_notes(self, limit: int = 200) -> list[dict]:
         """Notes in the trash, most recently trashed first."""

@@ -659,7 +659,8 @@ export const api = {
 
   activityWeek: (days = 7) => req<{ day: string; seconds: number }[]>(`/activity/week?days=${days}`),
 
-  liveSession: () => req<{ session: ActivitySession | null; paused: boolean }>("/activity/live"),
+  liveSession: () =>
+    req<{ session: ActivitySession | null; paused: boolean; today_seconds?: number; private_until?: string | null }>("/activity/live"),
 
   pauseActivity: (paused: boolean) =>
     req<{ paused: boolean }>("/activity/pause", { method: "POST", body: JSON.stringify({ paused }) }),

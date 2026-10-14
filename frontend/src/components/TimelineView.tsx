@@ -103,6 +103,7 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
   const [day, setDay] = useState(todayLocal());
   const [data, setData] = useState<ActivityDay | null>(null);
   const [live, setLive] = useState<ActivitySession | null>(null);
+  const [liveTodaySeconds, setLiveTodaySeconds] = useState<number | null>(null);
   const [files, setFiles] = useState<FilesActivity | null>(null);
   const [filesLoading, setFilesLoading] = useState(true);
   const [filesHours, setFilesHours] = useState<number>(24);
@@ -174,14 +175,23 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
 
   // Live session ticker (only meaningful for today)
   useEffect(() => {
-    if (day !== todayLocal()) return;
-    const t = window.setInterval(() => {
+    if (day !== todayLocal()) {
+      setLiveTodaySeconds(null);
+      return;
+    }
+    const pollLive = () => {
       api
         .liveSession()
-        .then((r) => setLive(r.session))
+        .then((r) => {
+          setLive(r.session);
+          if (typeof r.today_seconds === "number") {
+            setLiveTodaySeconds(r.today_seconds);
+          }
+        })
         .catch(() => {});
-    }, 5000);
-    api.liveSession().then((r) => setLive(r.session)).catch(() => {});
+    };
+    const t = window.setInterval(pollLive, 5000);
+    pollLive();
     return () => window.clearInterval(t);
   }, [day]);
 
@@ -201,9 +211,26 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
   }
 
   const isToday = day === todayLocal();
-  const total = data?.total_seconds ?? 0;
+  const total = isToday && liveTodaySeconds !== null ? liveTodaySeconds : (data?.total_seconds ?? 0);
   const apps = data?.apps ?? [];
-  const allSessions = data?.sessions ?? [];
+  const baseSessions = data?.sessions ?? [];
+  const allSessions = useMemo(() => {
+    if (!isToday || !live || baseSessions.length === 0) return baseSessions;
+    const idx = baseSessions.findIndex((s) => s.id === live.id);
+    if (idx !== -1 && (baseSessions[idx].seconds !== live.seconds || baseSessions[idx].last_seen !== live.last_seen)) {
+      const copy = [...baseSessions];
+      copy[idx] = { ...copy[idx], seconds: live.seconds, last_seen: live.last_seen };
+      return copy;
+    }
+    return baseSessions;
+  }, [baseSessions, isToday, live]);
+
+  useEffect(() => {
+    if (!isToday || liveTodaySeconds === null || !data) return;
+    if (Math.abs(liveTodaySeconds - (data.total_seconds ?? 0)) >= 20) {
+      load();
+    }
+  }, [isToday, liveTodaySeconds, data, load]);
 
   // #54 merges need a same-day selection; the API refuses anything else.
   const mergePickedSessions = allSessions.filter((s) => mergePicked.includes(s.id));
@@ -261,22 +288,33 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
       .reverse();
   }, [allSessions, selectedApp, selectedHour, sessionQuery]);
 
+  const effectiveWeek = useMemo(() => {
+    if (!isToday || liveTodaySeconds === null || week.length === 0) return week;
+    const last = week[week.length - 1];
+    if (last.day === day && last.seconds !== liveTodaySeconds) {
+      const copy = [...week];
+      copy[copy.length - 1] = { ...last, seconds: liveTodaySeconds };
+      return copy;
+    }
+    return week;
+  }, [week, isToday, liveTodaySeconds, day]);
+
   const weekBars = useMemo(
     () =>
-      week.map((d) => ({
+      effectiveWeek.map((d) => ({
         key: d.day,
         label: shortDayLabel(d.day, rangeDays),
         value: d.seconds,
         sub: d.day === day ? "selected" : undefined,
         hint: `${prettyDay(d.day)} (${d.day}): ${fmtSecs(d.seconds)}`,
       })),
-    [week, rangeDays, day],
+    [effectiveWeek, rangeDays, day],
   );
 
   const selectedDayIndex = useMemo(() => {
-    const idx = week.findIndex((d) => d.day === day);
+    const idx = effectiveWeek.findIndex((d) => d.day === day);
     return idx >= 0 ? idx : null;
-  }, [week, day]);
+  }, [effectiveWeek, day]);
 
   const activeAppObj = useMemo(
     () => (selectedApp ? apps.find((a) => a.app === selectedApp) ?? null : null),
@@ -441,7 +479,7 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
                 </p>
                 <p className="mt-0.5 text-xs text-ink-400">
                   <span className="font-mono font-semibold text-ink-200">
-                    {fmtSecs(week.reduce((s, d) => s + d.seconds, 0))}
+                    {fmtSecs(effectiveWeek.reduce((s, d) => s + d.seconds, 0))}
                   </span>{" "}
                   tracked across the last {rangeDays} days
                 </p>
@@ -511,7 +549,7 @@ export default function TimelineView({ onToast, refreshKey, onOpenNote }: Props)
               </div>
             </div>
 
-            {week.length > 0 ? (
+            {effectiveWeek.length > 0 ? (
               trendMode === "bars" ? (
                 <Bars
                   data={weekBars}

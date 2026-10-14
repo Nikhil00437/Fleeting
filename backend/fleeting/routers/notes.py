@@ -183,7 +183,7 @@ def update_note(note_id: str, body: NoteUpdateIn, request: Request) -> NoteOut:
     note = st.db.update_note(note_id, changes)
     assert note is not None
     if note["status"] == "done":
-        markdown.sync_note(st.cfg.paths, note)
+        markdown.sync_note(st.cfg.paths, note, st.db)
 
     # #435: a human fixing a voice transcript teaches whisper new words.
     if note["type"] == "voice" and "raw_text" in changes:
@@ -309,7 +309,7 @@ def restore_note(note_id: str, request: Request) -> NoteOut:
     note = st.db.update_note(note_id, {"trashed_at": None})
     assert note
     # Re-mirror: trash removed the vault file, so restore must put it back.
-    markdown.sync_note(st.cfg.paths, note)
+    markdown.sync_note(st.cfg.paths, note, st.db)
     st.bus.publish("note.updated", note)
     return _out(note)
 
@@ -511,7 +511,7 @@ def revert_note_version(note_id: str, version_id: int, request: Request) -> Note
     )
     assert note
     if note["status"] == "done":
-        markdown.sync_note(st.cfg.paths, note)
+        markdown.sync_note(st.cfg.paths, note, st.db)
     try:
         embed_note(note, st.db, st.cfg)
     except Exception:
@@ -567,7 +567,7 @@ async def regenerate_note(note_id: str, body: RegenerateIn, request: Request) ->
         },
     )
     assert note
-    markdown.sync_note(st.cfg.paths, note)
+    markdown.sync_note(st.cfg.paths, note, st.db)
     try:
         embed_note(note, st.db, st.cfg)
     except Exception:
@@ -704,7 +704,7 @@ def export_note(note_id: str, request: Request) -> dict:
     note = st.db.get_note(note_id)
     if not note:
         raise HTTPException(404, "note not found")
-    path = markdown.sync_note(st.cfg.paths, note)
+    path = markdown.sync_note(st.cfg.paths, note, st.db)
     if path is None:
         raise HTTPException(400, "vault sync is disabled in settings")
     return {"ok": True, "path": str(path)}

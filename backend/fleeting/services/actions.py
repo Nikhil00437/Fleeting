@@ -40,7 +40,7 @@ def _sync_vault_and_notify_note(
         return
     if note.get("status") == "done":
         try:
-            markdown.sync_note(cfg.paths, note)
+            markdown.sync_note(cfg.paths, note, db)
         except Exception:
             log.warning("failed to sync note %s to vault", note_id, exc_info=True)
     bus.publish("note.updated", note)
@@ -169,7 +169,7 @@ def create_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
     note = db.insert_note(note_data)
     if note.get("status") == "done":
         try:
-            markdown.sync_note(cfg.paths, note)
+            markdown.sync_note(cfg.paths, note, db)
         except Exception:
             log.warning("failed to sync note %s to vault", note["id"], exc_info=True)
 
@@ -798,7 +798,7 @@ def _restore_undo(rec: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
         restored = db.get_note(note["id"])
         if restored:
             try:
-                markdown.sync_note(cfg.paths, restored)
+                markdown.sync_note(cfg.paths, restored, db)
             except Exception:
                 log.warning("undo could not restore vault file for %s", note["id"], exc_info=True)
         bus.publish("note.created", restored or note)

@@ -17,6 +17,7 @@ export interface ServerNote {
 
 export interface ServerState {
   liveApp: string | null;
+  todaySeconds: number | null;
   whisper: Record<string, unknown> | null;
   timelineKey: number;
   tasksKey: number;
@@ -40,6 +41,7 @@ export interface RawEvent {
 export function emptyServerState(): ServerState {
   return {
     liveApp: null,
+    todaySeconds: null,
     whisper: null,
     timelineKey: 0,
     tasksKey: 0,
@@ -108,9 +110,12 @@ export function applyServerEvent(
     case "activity.live": {
       const session = asRecord(data.session);
       const app = session?.app_class;
+      const todaySeconds =
+        typeof data.today_seconds === "number" ? data.today_seconds : state.todaySeconds;
       return {
         ...state,
         liveApp: typeof app === "string" ? app : null,
+        todaySeconds,
         ...noEffects,
       };
     }

@@ -97,6 +97,7 @@ def live_session(request: Request) -> dict:
 
     return {
         "session": st.activity.current_session(),
+        "today_seconds": st.activity.today_screentime_seconds(),
         "paused": st.activity.is_paused(),
         # #65 the tray sets this; the UI shows it so a pause is never a mystery.
         "private_until": private_until(st.db),

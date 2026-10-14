@@ -64,7 +64,7 @@ async def apply_enrichment(
     from . import markdown
 
     try:
-        markdown.sync_note(cfg.paths, out)
+        markdown.sync_note(cfg.paths, out, db)
     except Exception:
         log.warning("vault sync failed after reprocessing %s", note["id"], exc_info=True)
     return out

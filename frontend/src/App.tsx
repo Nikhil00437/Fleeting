@@ -220,6 +220,17 @@ export default function App() {
   refreshStats();
  }, [toast, refreshStats]);
 
+ // Re-sync telemetry whenever the active view changes
+ useEffect(() => {
+  refreshStats();
+ }, [view, refreshStats]);
+
+ // Periodic telemetry refresh as a background fallback (every 60s)
+ useEffect(() => {
+  const timer = window.setInterval(refreshStats, 60000);
+  return () => window.clearInterval(timer);
+ }, [refreshStats]);
+
  // Electron IPC listeners (window state & tray navigation)
  useEffect(() => {
   if (!desktop) return;
@@ -301,6 +312,15 @@ export default function App() {
     serverState.current = next;
     if (next.notes !== before.notes) setNotes(next.notes as Note[]);
     if (next.liveApp !== before.liveApp) setLiveApp(next.liveApp);
+    if (next.todaySeconds != null && next.todaySeconds !== before.todaySeconds) {
+      setTrackedToday(next.todaySeconds);
+      setWeek((prev) => {
+        if (prev.length === 0) return prev;
+        const copy = [...prev];
+        copy[copy.length - 1] = next.todaySeconds!;
+        return copy;
+      });
+    }
     if (next.whisper !== before.whisper)
      setWhisperProgress(next.whisper as WhisperProgress | null);
     if (next.timelineKey !== before.timelineKey) setTimelineKey(next.timelineKey);

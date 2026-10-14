@@ -44,7 +44,7 @@ def _sync_vault_and_notify_note(st: Any, note_id: str | None) -> None:
         return
     if note.get("status") == "done":
         try:
-            markdown.sync_note(st.cfg.paths, note)
+            markdown.sync_note(st.cfg.paths, note, st.db)
         except Exception:
             log.warning("failed to sync note %s to vault", note_id, exc_info=True)
     st.bus.publish("note.updated", note)

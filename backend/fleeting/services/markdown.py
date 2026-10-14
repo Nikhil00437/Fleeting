@@ -318,7 +318,7 @@ def vault_path_for(cfg: PathsConfig, note: dict) -> Path:
     return vault / date[:4] / note_filename(note)
 
 
-def sync_note(cfg: PathsConfig, note: dict) -> Path | None:
+def sync_note(cfg: PathsConfig, note: dict, db: Any = None) -> Path | None:
     """Write/update the note's markdown file. Returns path or None if sync off.
 
     #26: sensitive notes never leave the database — the vault mirror is a
@@ -334,12 +334,56 @@ def sync_note(cfg: PathsConfig, note: dict) -> Path | None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         rendered = render_note_md(note)
+        # #113: what the file held before we touched it. Recorded *before* the
+        # write, and only when it differs from the hash of our last write, so
+        # the log says "the user edited this" rather than "we wrote it again".
+        previous = _current_hash(path)
         path.write_text(rendered, encoding="utf-8")
         sync_registry.register(path, rendered)
     except OSError as exc:
         log.error("vault sync failed for note %s: %s", note.get("id"), exc)
         return None
+    record_sync(note.get("id"), path, previous, hash_text(rendered), db=db)
     return path
+
+
+def _current_hash(path: Path) -> str | None:
+    """Hash of what is on disk now, or None if the file is absent/unreadable."""
+    try:
+        return hash_text(path.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+
+
+def hash_text(text: str) -> str:
+    """One hash function for the whole vault, so a value recorded by the writer
+    and a value computed by the conflict checker are comparable at all."""
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def record_sync(
+    note_id: str | None,
+    path: Path,
+    hash_before: str | None,
+    hash_after: str,
+    db: Any = None,
+    conflict: bool = False,
+) -> None:
+    """Append to the vault sync log.
+
+    `db` is a parameter and is never defaulted from a global path. `sync_note` is
+    called from the vault watcher, from the capture pipeline and from tests, and a
+    helper that goes looking for "the" database on its own is how test data ends
+    up in the user's real one — which has happened here before. No database, no
+    record: an unrecorded write is a missing feature, not a wrong one.
+    """
+    if db is None:
+        return
+    from .vault_log import record
+
+    record(db, str(note_id or ""), str(path), "write", hash_before, hash_after, conflict=conflict)
 
 
 def remove_note(cfg: PathsConfig, note: dict) -> None:

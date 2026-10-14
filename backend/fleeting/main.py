@@ -348,7 +348,13 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
             cfg.activity,
             on_day_rollover=rollover,
             on_screentime_milestone=generate_milestone_digest,
-            on_tick=lambda session: bus.publish("activity.live", {"session": session}),
+            on_tick=lambda session: bus.publish(
+                "activity.live",
+                {
+                    "session": session,
+                    "today_seconds": st.activity.today_screentime_seconds(),
+                },
+            ),
         )
         activity_task = None
         if cfg.activity.enabled:
