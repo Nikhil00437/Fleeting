@@ -314,13 +314,39 @@ def restore_note(note_id: str, request: Request) -> NoteOut:
     return _out(note)
 
 
+class PurgeIn(BaseModel):
+    """#456. An explicit `confirm` — deleting is irreversible and skipping the
+    recoverable window deserves a deliberate word."""
+
+    confirm: bool = False
+
+
 @router.post("/{note_id}/purge")
-def purge_note(note_id: str, request: Request) -> dict:
-    """Hard-delete a trashed note now, skipping the retention window."""
+def purge_note(note_id: str, request: Request, body: PurgeIn | None = None) -> dict:
+    """Hard-delete a trashed note now, skipping the retention window.
+
+    #456: two things this did not do. It accepted a *live* note, which made it a
+    fast path from "here" to "gone" that skipped the recoverable window the rest
+    of the app depends on; and it took no confirmation, so a mistyped URL was
+    enough. Purging what is already in the trash, deliberately, is still allowed
+    — but it has to be said out loud.
+    """
     st = request.app.state.st
     note = st.db.get_note(note_id)
     if not note:
         raise HTTPException(404, "note not found")
+    if not note.get("trashed_at"):
+        raise HTTPException(
+            409,
+            {
+                "error": "not_trashed",
+                "message": (
+                    "This note is not in the trash. Delete it first, so the change "
+                    "is recoverable, then purge it if you really mean it."
+                ),
+            },
+        )
+    require_confirm(body, bool(body and body.confirm), preview(1, [note_id], operation="permanently delete"))
     note = st.db.delete_note(
         note_id, audio_root=st.cfg_audio_dir(), attachments_root=st.cfg_attachments_dir()
     )

@@ -306,6 +306,28 @@ would break the browser app rather than protect it. The Origin guard already cov
 the browser case; this setting is for when your clients are `flee`, curl and MCP, and
 another local process reading your notes is the thing you want stopped.
 
+## Nothing is deleted without a window
+
+Every delete in the app is a trash first. `notes.trash_retention_days` is what turns
+that permanent — the first stage is the recoverable one.
+
+Two paths did not do this, and both mattered more than they look:
+
+- **The assistant's `delete_note` tool used to hard-delete.** It is a *tool call*,
+  so the caller can be a model that decided a note was not worth keeping, and a
+  model that is wrong about that is precisely the mistake you cannot undo. It now
+  trashes, and reports `recoverable: true` so the caller knows.
+- **`POST /api/notes/{id}/purge` accepted any note and asked for no confirmation.**
+  A mistyped URL was enough to destroy something. It now refuses a note that is not
+  already in the trash, and wants an explicit `confirm`.
+
+Purging what is already in the trash is still allowed — that is what the button is
+for. And `POST /api/forget` is still a hard delete, because irreversibility is the
+entire point of a panic button.
+
+A test asserts that no module hard-deletes outside those two, so the *next* path
+that appears is caught too.
+
 ## Keeping less
 
 `notes.retention_by_source` sets how long each capture source stays in the database

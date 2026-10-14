@@ -19,6 +19,7 @@ from typing import Any, Callable
 from .. import config as _config
 from ..config import Config, ensure_dirs
 from ..db import Database, new_id
+from ..db import now_iso
 from ..events import EventBus
 from . import dailylog, markdown
 
@@ -188,27 +189,36 @@ def cfg_audio_dir() -> Path:
 
 
 def delete_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
-    """Delete a note and associated tasks, removing from vault mirror."""
+    """Move a note to the trash, removing it from the vault mirror.
+
+    #456: this used to hard-delete. It is a *tool call*, so the caller can be a
+    model that decided the note was not worth keeping — and a model that is
+    wrong about that is exactly the case you cannot undo. The note now survives
+    until the retention purge, like every other delete in the app.
+
+    The audio file is deliberately left where it is: `delete_note` removed it on
+    the way past, and a note in the trash that cannot be restored properly is
+    worse than one that briefly holds a file it no longer shows.
+    """
     note_id = params.get("note_id") or params.get("id")
     if not note_id:
         return {"ok": False, "error": "note_id is required"}
 
     str_note_id = str(note_id)
-    task_rows = db.execute("SELECT id FROM tasks WHERE note_id = ?", (str_note_id,)).fetchall()
-    note = db.delete_note(str_note_id, audio_root=cfg_audio_dir())
-    if not note:
+    existing = db.get_note(str_note_id)
+    if not existing:
         return {"ok": False, "error": f"note {str_note_id} not found"}
 
     try:
-        markdown.remove_note(cfg.paths, note)
+        markdown.remove_note(cfg.paths, existing)
     except Exception:
         log.warning("failed to remove note %s from vault", str_note_id, exc_info=True)
 
-    for trow in task_rows:
-        bus.publish("task.deleted", {"id": trow["id"], "note_id": str_note_id})
-
-    bus.publish("note.deleted", {"id": str_note_id})
-    return {"ok": True, "id": str_note_id}
+    note = db.update_note(str_note_id, {"trashed_at": now_iso()})
+    if note is None:
+        return {"ok": False, "error": f"note {str_note_id} not found"}
+    bus.publish("note.updated", note)
+    return {"ok": True, "id": str_note_id, "trashed": True, "recoverable": True}
 
 
 def pin_note(params: dict, db: Database, cfg: Config, bus: EventBus) -> dict:
