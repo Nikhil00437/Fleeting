@@ -516,6 +516,37 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS vault_sync_log_note ON vault_sync_log(note_id, id DESC);
     CREATE INDEX IF NOT EXISTS vault_sync_log_at ON vault_sync_log(at DESC);
     """,
+    # v31 — 0.10 #119/#129/#130/#131/#132. The ingest queue and its
+    # already-seen set.
+    #
+    # One queue rather than a table per source: the bundle's own note says #132
+    # (podcasts) is #130 with a different fetcher, so the parts that have to be
+    # shared — status, error, re-runs, progress — are worth having once. Each
+    # source kind is a parser behind `services/ingest.py`.
+    #
+    # `ingested_sources` is the idempotence set. Re-running an import must not
+    # duplicate a year of notes, and the cheapest way to know what has been seen
+    # is to have written down what has been seen.
+    """
+    CREATE TABLE IF NOT EXISTS ingest_jobs (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        source TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        note_id TEXT,
+        error TEXT,
+        detail TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ingest_jobs_status ON ingest_jobs(status, created_at);
+    CREATE TABLE IF NOT EXISTS ingested_sources (
+        url TEXT PRIMARY KEY,
+        kind TEXT NOT NULL DEFAULT '',
+        title TEXT,
+        fetched_at TEXT NOT NULL
+    );
+    """,
 ]
 
 

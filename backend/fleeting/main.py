@@ -639,6 +639,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
         cleanup,
         collections,
         entities,
+        ingest,
         notes,
         exporter,
         forget,
@@ -679,6 +680,7 @@ def create_app(cfg: Config | None = None, *, load_from_disk: bool = True) -> Fas
     app.include_router(writing.templates_router)
     app.include_router(processes.router)
     app.include_router(vault.router)
+    app.include_router(ingest.router)
     from .routers import templates
 
     app.include_router(templates.router)

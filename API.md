@@ -2,7 +2,7 @@
 
 Generated from the OpenAPI spec by `scripts/gen_api_docs.py`. Do not edit — `tests/test_api_docs.py` regenerates and compares.
 
-Fleeting 0.1.0 · 225 paths · server `http://127.0.0.1:7425`
+Fleeting 0.1.0 · 231 paths · server `http://127.0.0.1:7425`
 
 The [spec itself](backend/fleeting/api_docs.py) is the source of truth for what the
 guards do; this file is an index of what exists.
@@ -230,6 +230,17 @@ Liveness. Exempt from the token.
 | --- | --- | --- | --- |
 | GET | `/api/health-panel` | Health Panel | 200 — OK, 421 — foreign Host, 423 — app is locked |
 | POST | `/api/health-panel/retry` | Health Panel Retry | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 423 — app is locked |
+
+### `ingest`
+
+| Method | Path | Summary | Codes |
+| --- | --- | --- | --- |
+| POST | `/api/ingest` | Enqueue Ingest | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 422, 423 — app is locked |
+| GET | `/api/ingest/failures` | Ingest Failures | 200 — OK, 421 — foreign Host, 423 — app is locked |
+| GET | `/api/ingest/jobs` | Ingest Jobs | 200 — OK, 421 — foreign Host, 422, 423 — app is locked |
+| POST | `/api/ingest/jobs/{job_id}/run` | Run Ingest Job | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 422, 423 — app is locked |
+| POST | `/api/ingest/preview` | Preview Ingest | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 422, 423 — app is locked |
+| GET | `/api/ingest/progress` | Ingest Progress | 200 — OK, 421 — foreign Host, 423 — app is locked |
 
 ### `notes`
 
