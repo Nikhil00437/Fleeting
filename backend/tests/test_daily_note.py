@@ -24,6 +24,7 @@ is a surprise, and this is a convention rather than a requirement.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -239,11 +240,58 @@ def test_a_users_note_in_the_daily_folder_is_not_treated_as_ours(on, db) -> None
 # ---- sensitive and interaction with #118 -----------------------------------
 
 
+def test_a_note_trashed_before_the_sync_landed_is_not_indexed(on, db) -> None:
+    """The race, closed.
+
+    The vault sync runs after the note reaches `done`, so a note trashed in that
+    window used to get its daily line written *after* `remove` had taken it
+    away — a dangling link that #118 reports as broken forever.
+    """
+    note = add(db, "n1")
+    note["trashed_at"] = "2026-02-01T00:00:00+00:00"
+    assert daily_note.append(on, note) is None
+
+
 def test_a_sensitive_note_is_not_indexed(on, db) -> None:
     """Same rule as the note file (#26): a daily note is a plain-text copy that
     outlives the app."""
     note = add(db, "s1", sensitive=1)
     assert daily_note.append(on, note) is None
+
+
+def test_the_daily_file_is_not_imported_back_as_a_note(on, db) -> None:
+    """The loop, closed.
+
+    The watcher saw a file the app had just written, parsed it into a note titled
+    with the date, synced that note, and indexed it again — which then made the
+    next day's file contain it too. Found as a flaky test, which is a poor way
+    to discover a feedback loop.
+    """
+    from fleeting.services.vault_watcher import sync_file_change
+
+    note = add(db)
+    path = daily_note.append(on, note)
+    assert sync_file_change(path, db, None, on) is None
+
+
+def test_the_daily_file_is_registered_for_echo_suppression(on, db) -> None:
+    """The mechanism, not just the guard: the watcher skips a file the app wrote
+    because the registry recognises the bytes."""
+    from fleeting.services.markdown import sync_registry
+
+    note = add(db)
+    path = daily_note.append(on, note)
+    assert sync_registry.is_echo(path, path.read_text(encoding="utf-8"))
+
+
+def test_a_user_renamed_daily_folder_is_still_recognised(on, db) -> None:
+    """Skipped by content, not by path: the folder name is the user's choice."""
+    from fleeting.services.vault_watcher import sync_file_change
+
+    note = add(db)
+    on.vault_daily_dir = "Journal"
+    path = daily_note.append(on, note)
+    assert sync_file_change(path, db, None, on) is None
 
 
 def test_the_daily_file_is_not_an_orphan(on, db) -> None:
@@ -280,7 +328,16 @@ def test_trashing_through_the_api_removes_the_line(client) -> None:
     note_id = client.post("/api/capture/text", json={"text": "journal me"}).json()["id"]
     wait_done(client, note_id)
     day = daily_note.path_for(client.app.state.st.cfg.paths, client.app.state.st.db.get_note(note_id))
+
+    # Wait for the *line*, not just for the note to finish. The vault sync — and
+    # therefore the daily append — runs after the note reaches `done`, so
+    # deleting straight after `wait_done` races the append and the line lands
+    # afterwards. This was the flake in this test, not a bug in the feature.
+    deadline = time.monotonic() + 10
+    while note_id not in day.read_text(encoding="utf-8") and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert note_id in day.read_text(encoding="utf-8")
 
     client.delete(f"/api/notes/{note_id}")
-    assert note_id not in day.read_text(encoding="utf-8")
+    remaining = day.read_text(encoding="utf-8")
+    assert note_id not in remaining, f"still in {day}:\n{remaining[:800]}"

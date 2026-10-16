@@ -16,6 +16,11 @@ dependencies = [
     # backups. There is no stdlib cipher — hand-rolling one is never the answer,
     # and an external openssl subprocess is a worse dependency than this.
     "cryptography>=43.0",
+    # #131: PDF text extraction. Pure Python, no binaries, no external process —
+    # shelling out to poppler would make the feature work on machines that
+    # happen to have it installed and silently fail on ones that do not. Poppler
+    # is still used when present, because it reads more files.
+    "pypdf>=5.0",
     "evdev>=2.0.0",
 ]
 

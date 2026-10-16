@@ -256,6 +256,7 @@ def sync_file_change(
         dict describing the action taken (e.g. {"action": "updated", "note_id": note_id}),
         or None if no action or suppressed echo.
     """
+    from .daily_note import is_daily_file
     from .markdown import parse_note_md, render_note_md
 
     path = Path(path)
@@ -276,6 +277,21 @@ def sync_file_change(
     # Filter out hidden or non-markdown files
     name = path.name
     if name.startswith(".") or name.startswith("#") or not name.endswith(".md") or name.endswith(".tmp.md") or ".tmp." in name:
+        return None
+
+    # 1b. The app's own daily index is not an incoming note.
+    #
+    # #117. Echo suppression covers files `sync_note` wrote *this* session, and a
+    # watcher restart or a fresh process loses that — so the daily file was being
+    # parsed back into a note titled with the date, written back out, and indexed
+    # again. Observed first as a flaky test, which is a poor way to find a loop.
+    #
+    # Skipped by content rather than by path: a user can rename the folder, and
+    # the file's own frontmatter is what says what it is.
+    try:
+        if is_daily_file(path):
+            return None
+    except OSError:
         return None
 
     # 2. Read content

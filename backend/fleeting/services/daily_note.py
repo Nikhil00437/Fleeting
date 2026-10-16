@@ -108,6 +108,13 @@ def append(cfg: Any, note: dict) -> Path | None:
     path = path_for(cfg, note)
     if path is None or note.get("sensitive"):
         return None
+    if note.get("trashed_at"):
+        # The vault sync runs in the pipeline, *after* the note reaches `done`. A
+        # note trashed in that window would otherwise get its daily line written
+        # after `remove` had already taken it away — a dangling link that #118
+        # then reports as broken forever. The race is real, not theoretical: it
+        # showed up as a flaky test in the full suite before this check existed.
+        return None
     line = _link_for(cfg, note)
     text = _read(path)
     if line in text:
@@ -117,7 +124,14 @@ def append(cfg: Any, note: dict) -> Path | None:
         body += "\n"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body + line + "\n", encoding="utf-8")
+        written = body + line + "\n"
+        path.write_text(written, encoding="utf-8")
+        # Echo suppression, the same as `sync_note`. Without this the watcher
+        # sees a file the app just wrote and imports it back as a note — and a
+        # note it imports is itself synced, and indexed again.
+        from .markdown import sync_registry
+
+        sync_registry.register(path, written)
     except OSError as exc:
         # A daily index is a convenience. Failing the note's sync because an
         # index could not be appended would be a worse trade than a missing line.
