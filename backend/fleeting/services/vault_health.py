@@ -136,7 +136,14 @@ def scan(cfg: Any, db: Any) -> dict[str, Any]:
 
     orphans: list[dict[str, Any]] = []
     no_frontmatter: list[dict[str, Any]] = []
+    from .daily_note import is_daily_file
+
     for path in files:
+        if is_daily_file(path):
+            # #117's daily index. It has no `id:` by design — it is an index, not
+            # a note — and without this it would be one guaranteed orphan per day,
+            # which is how a health report stops being read.
+            continue
         ids = _note_ids(path)
         if ids:
             claimed |= ids

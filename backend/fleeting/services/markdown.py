@@ -386,6 +386,14 @@ def sync_note(cfg: PathsConfig, note: dict, db: Any = None) -> Path | None:
         log.error("vault sync failed for note %s: %s", note.get("id"), exc)
         return None
     record_sync(note.get("id"), path, previous, hash_text(rendered), db=db)
+    # #117: index it in the day's file. Best effort and last — a daily index is a
+    # convenience, and failing the note's own sync over one would be a bad trade.
+    try:
+        from .daily_note import append as _append_daily
+
+        _append_daily(cfg, note)
+    except Exception:  # noqa: BLE001
+        log.warning("daily note index failed for %s", note.get("id"), exc_info=True)
     return path
 
 
@@ -440,6 +448,13 @@ def remove_note(cfg: PathsConfig, note: dict) -> None:
     from .vault_attachments import remove_attachments
 
     remove_attachments(cfg, note)
+    # #117: a link to a deleted note is dangling, and #118 reports it forever.
+    try:
+        from .daily_note import remove as _remove_daily
+
+        _remove_daily(cfg, note)
+    except Exception:  # noqa: BLE001
+        log.warning("daily note index removal failed for %s", note.get("id"), exc_info=True)
 
     vault_root = expand_path(cfg.vault_dir).resolve()
     try:

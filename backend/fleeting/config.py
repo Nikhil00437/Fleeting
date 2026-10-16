@@ -98,6 +98,9 @@ class PathsConfig:
     # #114. Comma-separated field names, rendered in this order. Empty means the
     # built-in frontmatter only.
     vault_frontmatter_schema: str = ""
+    # #117. Empty means off — a `Daily/` folder appearing in a vault that never
+    # asked for one is a surprise. Set to "Daily" to enable.
+    vault_daily_dir: str = ""
 
 
 @dataclass

@@ -138,7 +138,7 @@ def test_the_copy_is_a_real_copy_not_a_link(cfg, db, files, note) -> None:
     """A hard link makes editing the attachment in the vault silently edit the
     app's copy — two files that look independent and are not."""
     source = attach(db, files)
-    result = vault_attachments.copy_attachments(cfg, db, note, files)
+    vault_attachments.copy_attachments(cfg, db, note, files)
     target = next((cfg_paths(cfg) / "attachments").rglob("diagram.png"))
     assert target.read_bytes() == source.read_bytes()
     assert target.stat().st_ino != source.stat().st_ino
