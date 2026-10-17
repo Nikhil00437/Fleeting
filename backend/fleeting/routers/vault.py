@@ -179,3 +179,25 @@ def vault_attachments_copy(note_id: str, request: Request) -> dict:
     if not note:
         raise HTTPException(404, {"error": "no_such_note", "note_id": note_id})
     return copy_attachments(st.cfg.paths, st.db, note)
+
+
+@router.get("/provenance")
+def vault_provenance(request: Request) -> dict:
+    """#473: how many notes came from where.
+
+    Answered from the notes themselves rather than a maintained tally, so the
+    counts cannot drift from what is actually there.
+    """
+    from ..services.provenance import SOURCES
+
+    st = request.app.state.st
+    counts = {name: 0 for name in SOURCES}
+    for row in st.db.execute(
+        "SELECT provenance, COUNT(*) c FROM notes WHERE trashed_at IS NULL GROUP BY provenance"
+    ):
+        counts[row["provenance"] or "text"] = row["c"]
+    return {
+        "counts": counts,
+        "total": sum(counts.values()),
+        "filter": "GET /api/notes?provenance=<name>",
+    }

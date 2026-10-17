@@ -1194,12 +1194,14 @@ class Database:
         starred: bool = False,
         include_snoozed: bool = False,
         review_state: str | None = None,
+        provenance: str | None = None,
     ) -> list[dict]:
         where = ["archived = :archived"]
         # #274: trashed notes are hidden everywhere by default and only surface
         # through the explicit trash listing.
         where.append("trashed_at IS NULL" if not trashed else "trashed_at IS NOT NULL")
         params: dict = {"archived": 1 if archived else 0, "limit": limit, "offset": offset}
+        params["provenance"] = provenance
         if starred:
             where.append("starred = 1")
         if review_state:
@@ -1218,6 +1220,12 @@ class Database:
             params["status"] = status
         if note_type:
             where.append("type = :note_type")
+        if provenance is not None:
+            # #473. Plain equality on the derived string, not a JSON query:
+            # "show me everything from a YouTube link" has to be answerable
+            # without the caller knowing how `source` is shaped.
+            where.append("provenance = :provenance")
+        if note_type is not None:
             params["note_type"] = note_type
         order = "pinned DESC, created_at DESC" if pinned_first else "created_at DESC"
         rows = self.execute(
@@ -3355,7 +3363,13 @@ def _note_to_sql(note: dict) -> dict:
     out = dict(note)
     # A bare string, so no JSON encoding — but it *does* need to be present, or
     # every insert that omits it fails to bind.
-    out.setdefault("provenance", "")
+    #
+    # #473: derived once, from the note itself, by one function. A second place
+    # that decides "what counts as a YouTube capture" is a second place that
+    # disagrees with the first — the same lesson as #459's sensitive flag.
+    from .services.provenance import provenance_of as _provenance_of
+
+    out.setdefault("provenance", _provenance_of(out))
     # #99: symmetric with `_row_to_note`. Only for notes flagged sensitive, and
     # only while the setting is on — turning it off must not make previously
     # encrypted rows undecryptable, and decrypt() handles both forms anyway.

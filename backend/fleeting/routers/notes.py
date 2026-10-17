@@ -78,6 +78,10 @@ def list_notes(
     tag: str | None = None,
     status: str | None = None,
     type: str | None = None,
+    provenance: str | None = Query(
+        None,
+        description="#473: one of youtube, voice, text, file, rss, url, pdf, audio, markdown, vault",
+    ),
     archived: bool = False,
     starred: bool = False,
     review_state: str | None = None,
@@ -89,6 +93,7 @@ def list_notes(
         tag=tag,
         status=status,
         note_type=type,
+        provenance=provenance,
         archived=archived,
         starred=starred,
         review_state=review_state,
