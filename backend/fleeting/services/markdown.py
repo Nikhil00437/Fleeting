@@ -464,3 +464,47 @@ def remove_note(cfg: PathsConfig, note: dict) -> None:
         log.error("vault cleanup failed for note %s: %s", note.get("id"), exc)
 
 
+def obsidian_uri(cfg: PathsConfig, note: dict) -> dict[str, Any]:
+    """#134: the `obsidian://` URL that opens this note in Obsidian.
+
+    **Obsidian resolves by vault *name*, not by path.** The name is the folder
+    on disk, so a vault at `~/Documents/MyVault` is opened with `MyVault`, and
+    the file argument is relative to it with no leading slash. Getting either
+    wrong produces a link that silently does nothing when clicked, which is the
+    worst failure mode a button can have.
+
+    Percent-encoded: vault names and note filenames both routinely contain
+    spaces, `#` and `&`, and an unencoded `&` truncates the query string.
+    """
+    from urllib.parse import quote
+
+    path = vault_path_for(cfg, note)
+    vault_root = expand_path(cfg.vault_dir)
+    name = vault_root.name or "vault"
+    try:
+        relative = path.relative_to(vault_root).as_posix()
+    except ValueError:
+        # Defence in depth. `folder_for` already refuses traversal and strips
+        # leading slashes (see `test_no_folder_template_can_put_a_note_outside_the_vault`),
+        # so nothing reaches here through normal use. Kept because the failure it
+        # prevents — an `obsidian://` link that silently opens the wrong note —
+        # is invisible when it happens, and a guard that cannot currently fire is
+        # cheaper than the day it is needed.
+        return {
+            "available": False,
+            "reason": "this note's file is outside the configured vault",
+            "path": str(path),
+            "vault": name,
+        }
+    return {
+        "available": True,
+        "url": (
+            "obsidian://open?vault="
+            + quote(name, safe="")
+            + "&file="
+            + quote(relative.removesuffix(".md"), safe="")
+        ),
+        "vault": name,
+        "file": relative,
+        "path": str(path),
+    }

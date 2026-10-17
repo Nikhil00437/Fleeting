@@ -2,7 +2,7 @@
 
 Generated from the OpenAPI spec by `scripts/gen_api_docs.py`. Do not edit — `tests/test_api_docs.py` regenerates and compares.
 
-Fleeting 0.1.0 · 232 paths · server `http://127.0.0.1:7425`
+Fleeting 0.1.0 · 236 paths · server `http://127.0.0.1:7425`
 
 The [spec itself](backend/fleeting/api_docs.py) is the source of truth for what the
 guards do; this file is an index of what exists.
@@ -157,6 +157,14 @@ Tool calls. Destructive tools soft-delete (#456).
 | GET | `/api/assistant/suggestions` | Suggestions | 200 — OK, 421 — foreign Host, 423 — app is locked |
 | GET | `/api/assistant/traces` | Llm Traces | 200 — OK, 421 — foreign Host, 422, 423 — app is locked |
 | POST | `/api/assistant/undo` | Undo | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 422, 423 — app is locked |
+
+### `calendar`
+
+| Method | Path | Summary | Codes |
+| --- | --- | --- | --- |
+| GET | `/api/calendar/day` | Calendar Day | 200 — OK, 421 — foreign Host, 422, 423 — app is locked |
+| POST | `/api/calendar/import` | Import Calendar | 200 — OK, 401 — token required, 403 — cross-origin write, or read-only demo, 409 — confirmation required, 421 — foreign Host, 422, 423 — app is locked |
+| GET | `/api/calendar/status` | Calendar Status | 200 — OK, 421 — foreign Host, 423 — app is locked |
 
 ### `capture`
 
@@ -457,6 +465,7 @@ Action items, including those extracted from notes.
 | GET | `/api/vault/frontmatter` | Vault Frontmatter | 200 — OK, 421 — foreign Host, 423 — app is locked |
 | PUT | `/api/vault/frontmatter` | Set Vault Frontmatter | 200 — OK, 401 — token required, 409 — confirmation required, 421 — foreign Host, 422 |
 | GET | `/api/vault/health` | Vault Health | 200 — OK, 421 — foreign Host, 423 — app is locked |
+| GET | `/api/vault/obsidian/{note_id}` | Vault Obsidian | 200 — OK, 421 — foreign Host, 422, 423 — app is locked |
 | GET | `/api/vault/provenance` | Vault Provenance | 200 — OK, 421 — foreign Host, 423 — app is locked |
 
 ### `writing`

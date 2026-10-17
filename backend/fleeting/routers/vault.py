@@ -201,3 +201,20 @@ def vault_provenance(request: Request) -> dict:
         "total": sum(counts.values()),
         "filter": "GET /api/notes?provenance=<name>",
     }
+
+
+@router.get("/obsidian/{note_id}")
+def vault_obsidian(note_id: str, request: Request) -> dict:
+    """#134: the `obsidian://` URL that opens this note in Obsidian.
+
+    Obsidian resolves by vault *name* and a path relative to it, so both are in
+    the response and a mismatch is visible before anyone clicks a button that
+    would silently do nothing.
+    """
+    from ..services.markdown import obsidian_uri
+
+    st = request.app.state.st
+    note = st.db.get_note(note_id)
+    if not note:
+        raise HTTPException(404, {"error": "no_such_note", "note_id": note_id})
+    return obsidian_uri(st.cfg.paths, note)
